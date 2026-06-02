@@ -1,14 +1,23 @@
 /**
- * claw-ctx v1.0.0 Plugin for OpenClaw
- * Standalone Context Engine with claw-mem integration.
+ * claw-ctx v3.0.0 Plugin for OpenClaw
+ * Standalone Context Engine with claw-mem integration,
+ * C2 confidence gating, RL experience injection, governance signal pass-through,
+ * and cross-domain signal injection.
  */
 import { createClawContextEngine } from "./engine";
+
+export { ConfidenceGate, type ConfidenceMode, type ConfidenceReport } from "./confidence_gate";
+export { RLInjector, MockRLProvider, type RLExperience, type RLProvider } from "./rl_injector";
+export { GovernanceInjector, MockGovernanceProvider, type GovernanceSignal, type GovernanceProvider, type GovernanceLayer } from "./governance_injector";
+export { CrossDomainInjector, MockCrossDomainProvider, type InjectedSignal, type CrossDomainProvider } from "./cross_domain_injector";
+export { CIInjector, MockCIProvider, type CISignal, type CIProvider } from "./ci_injector";
+export { TokenBudgetManager, type BudgetAllocation, type BudgetConfig, type BudgetResult } from "./token_budget_manager";
 
 const plugin = {
   id: "claw-ctx",
   name: "Claw Context Engine",
-  description: "Standalone Context Engine with memory integration for OpenClaw agents",
-  version: "1.0.0",
+  description: "Context Engine with C2 gating, RL injection, governance signals, cross-domain injection, and CI/CD signals for OpenClaw agents",
+  version: "4.0.0",
   kind: "context-engine",
 
   register(api: any) {
