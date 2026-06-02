@@ -1,0 +1,17 @@
+{
+  "name": "@opensourceclaw/claw-ctx",
+  "version": "1.0.0",
+  "description": "Context Engine for OpenClaw — standalone TypeScript plugin",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && cp openclaw.plugin.json dist/",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": ["openclaw", "plugin", "context-engine"],
+  "author": "Peter Cheng",
+  "license": "Apache-2.0"
+}

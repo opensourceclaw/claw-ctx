@@ -1,0 +1,25 @@
+{
+  "id": "claw-ctx",
+  "kind": "memory",
+  "name": "Claw Context Engine",
+  "description": "Standalone Context Engine with claw-mem integration for OpenClaw",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "workspaceDir": {
+        "type": "string"
+      },
+      "topK": {
+        "type": "number",
+        "default": 10
+      },
+      "debug": {
+        "type": "boolean",
+        "default": false
+      }
+    }
+  },
+  "activation": {
+    "onStartup": true
+  }
+}
