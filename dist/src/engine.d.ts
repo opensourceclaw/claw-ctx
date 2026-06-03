@@ -16,6 +16,8 @@ interface ClawCtxConfig {
     workspaceDir?: string;
     topK?: number;
     debug?: boolean;
+    compactThreshold?: number;
+    reserveRatio?: number;
 }
 interface ClawCtxLogger {
     info: (...a: any[]) => void;

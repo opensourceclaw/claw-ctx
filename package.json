@@ -1,6 +1,6 @@
 {
   "name": "@opensourceclaw/claw-ctx",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "description": "Context Engine for OpenClaw with C2 gating, RL injection, governance, cross-domain, and CI/CD signals \u2014 standalone TypeScript plugin",
   "main": "dist/index.js",
   "scripts": {

@@ -16,6 +16,16 @@
       "debug": {
         "type": "boolean",
         "default": false
+      },
+      "compactThreshold": {
+        "type": "number",
+        "description": "Compaction trigger threshold (default: 100000)",
+        "default": 100000
+      },
+      "reserveRatio": {
+        "type": "number",
+        "description": "Safe target ratio (default: 0.7)",
+        "default": 0.7
       }
     }
   },

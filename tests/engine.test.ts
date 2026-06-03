@@ -280,15 +280,14 @@ describe('ClawContextEngine', () => {
 
     it('compact uses crossDomain reserve', async () => {
       const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
-      // With a high reserve, the effective threshold should be lower
       const result = await engine.compact({
         sessionId: 'test',
         sessionFile: '/tmp/test.md',
         force: false,
-        currentTokenCount: 79000,
-        reserveForCrossDomain: 2000,
+        currentTokenCount: 110000,
+        reserveForCrossDomain: 5000,
       });
-      // 79000 >= 80000 - 2000 = 78000, so compaction should trigger
+      // v4.1.0: 110000 >= 100000 - 5000 = 95000, triggers compaction
       expect(result.compacted).toBe(true);
     });
 
@@ -371,11 +370,11 @@ describe('ClawContextEngine', () => {
         sessionId: 'test',
         sessionFile: '/tmp/test.md',
         force: false,
-        currentTokenCount: 79000,
-        reserveForCrossDomain: 500,
-        reserveForCI: 500,
+        currentTokenCount: 105000,
+        reserveForCrossDomain: 3000,
+        reserveForCI: 3000,
       });
-      // 79000 >= 80000 - 500 - 500 = 79000, so compaction triggers
+      // v4.1.0: 105000 >= 100000 - 3000 - 3000 = 94000, triggers compaction
       expect(result.compacted).toBe(true);
     });
 

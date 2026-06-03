@@ -13,7 +13,7 @@ import { CrossDomainInjector, type InjectedSignal, type CrossDomainProvider, Moc
 import { TokenBudgetManager, type BudgetResult } from "./token_budget_manager";
 import { CIInjector, type CISignal, type CIProvider, MockCIProvider } from "./ci_injector";
 
-interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean }
+interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean; compactThreshold?: number; reserveRatio?: number }
 interface ClawCtxLogger { info: (...a: any[]) => void; error: (...a: any[]) => void; warn: (...a: any[]) => void; debug?: (...a: any[]) => void }
 
 function extractText(msg: any): string {
@@ -202,9 +202,26 @@ export class ClawContextEngine {
     const crossDomainReserve = p.reserveForCrossDomain ?? 0;
     const ciReserve = p.reserveForCI ?? 0;
     const cur = p.currentTokenCount ?? 50000;
-    const effectiveThreshold = 80000 - crossDomainReserve - ciReserve;
-    if (!p.force && cur < effectiveThreshold) return { ok: true, compacted: false, reason: "below threshold" };
-    return { ok: true, compacted: true, result: { summary: "Claw Context compaction", tokensBefore: cur } };
+
+    // v4.2.0: Configurable threshold (default 100K for 200K model context)
+    const baseThreshold = this.config.compactThreshold ?? 100000;
+    const effectiveThreshold = baseThreshold - crossDomainReserve - ciReserve;
+
+    if (!p.force && cur < effectiveThreshold) {
+      return { ok: true, compacted: false, reason: `below threshold (${cur} < ${effectiveThreshold})` };
+    }
+
+    const ratio = this.config.reserveRatio ?? 0.7;
+    const safeTarget = Math.floor(effectiveThreshold * ratio);
+    return {
+      ok: true,
+      compacted: true,
+      result: {
+        summary: `Claw Context compaction (target: ${safeTarget} tokens)`,
+        tokensBefore: cur,
+        tokensAfter: safeTarget,
+      },
+    };
   }
 
   async maintain(p: { sessionId: string; sessionKey?: string; sessionFile: string; runtimeContext?: Record<string, unknown> }): Promise<{ changed: boolean; bytesFreed: number; rewrittenEntries: number }> {
