@@ -9,7 +9,7 @@ exports.createClawContextEngine = createClawContextEngine;
  * v2.0.0 adds: C2 confidence gating, RL experience injection, governance signal pass-through.
  * v3.0.0 adds: cross-domain signal injection, token budget management.
  */
-const memory_manager_1 = require("../../claw-mem/claw_mem_plugin/dist/src/memory_manager");
+const memory_manager_1 = require("../../../claw-mem/claw_mem_plugin/dist/src/memory_manager");
 const confidence_gate_1 = require("./confidence_gate");
 const rl_injector_1 = require("./rl_injector");
 const governance_injector_1 = require("./governance_injector");
