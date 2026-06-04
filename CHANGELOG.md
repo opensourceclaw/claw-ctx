@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.2.1 (2026-06-05)
+
+### Fixed
+- Correct import path to claw-mem for proper TypeScript compilation
+
 ## v4.1.0 (2026-06-03)
 
 ### Added — Session Continuity
