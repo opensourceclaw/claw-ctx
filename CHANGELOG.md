@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.2.2 (2026-06-05)
+
+### Fixed
+- Correct import path to claw-mem (../../claw-mem/dist/memory_manager)
+
 ## v4.2.1 (2026-06-05)
 
 ### Fixed

@@ -5,7 +5,7 @@
  * v2.0.0 adds: C2 confidence gating, RL experience injection, governance signal pass-through.
  * v3.0.0 adds: cross-domain signal injection, token budget management.
  */
-import { type MemoryManager } from "../../../claw-mem/claw_mem_plugin/dist/src/memory_manager";
+import { type MemoryManager } from "../../claw-mem/dist/memory_manager";
 import { ConfidenceGate, type ConfidenceMode, type ConfidenceReport } from "./confidence_gate";
 import { type RLExperience, type RLProvider } from "./rl_injector";
 import { type GovernanceSignal, type GovernanceProvider, type GovernanceLayer } from "./governance_injector";
