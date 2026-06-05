@@ -370,6 +370,12 @@ export class SmartBudgetAllocator {
     return this.taskDetector;
   }
 
+  /** Get the last allocation (for DriftBudgetLinker integration) */
+  getAllocation(): BudgetAllocation | null {
+    if (this.history.length === 0) return null;
+    return this.history[this.history.length - 1].allocation;
+  }
+
   /** Get current config */
   getConfig(): BudgetConfig {
     return { ...this.config };

@@ -14,6 +14,7 @@ import { TokenBudgetManager, type BudgetResult } from "./token_budget_manager";
 import { TiktokenCounter, FallbackCounter, createTokenCounter, type TokenCounterResult } from "./token-counter";
 import { DriftDetector, TopicModel, type DriftAlert, type DriftReport, type DriftConfig, DEFAULT_DRIFT_CONFIG } from "./drift-detector";
 import { SmartBudgetAllocator, type TaskType, type BudgetAllocation as SmartBudgetAllocation, type AllocationHistory } from "./smart-budget-allocator";
+import { SessionStateExtractor, type SessionState, type Entity } from "./session-state-extractor";
 import { CIInjector, type CISignal, type CIProvider, MockCIProvider } from "./ci_injector";
 
 // v4.3.0: Global token counter instance for precise counting
@@ -60,7 +61,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.5.0", ownsCompaction: false, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.7.0", ownsCompaction: false, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -87,7 +88,8 @@ export class ClawContextEngine {
   private driftDetector: DriftDetector;
   private driftAlerts: DriftAlert[] = [];
   private _smartBudgetAllocator: SmartBudgetAllocator;
-  // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget allocator
+  private _sessionState: SessionState | null = null;
+  // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
     this.config = config; this.logger = logger;
@@ -130,7 +132,17 @@ export class ClawContextEngine {
     this._session(p.sessionId);
     const c = extractText(p.message);
     if (!c || c.length < 20) return { ingested: false };
-    try { this.manager.store(c, "episodic"); return { ingested: true }; } catch { return { ingested: false }; }
+    try {
+      this.manager.store(c, "episodic");
+
+      // v4.7.0: Extract and merge session state
+      const newState = SessionStateExtractor.extract([{ content: c, role: p.message.role }], p.sessionId);
+      this._sessionState = this._sessionState
+        ? SessionStateExtractor.merge(this._sessionState, newState)
+        : newState;
+
+      return { ingested: true };
+    } catch { return { ingested: false }; }
   }
 
   async ingestBatch(p: { sessionId: string; sessionKey?: string; messages: any[]; isHeartbeat?: boolean }): Promise<{ ingestedCount: number }> {
@@ -619,6 +631,19 @@ export class ClawContextEngine {
   /** Get budget allocation history */
   getBudgetHistory(): AllocationHistory[] {
     return this._smartBudgetAllocator.getHistory();
+  }
+
+  // ── v4.7.0: Session State ────────────────────────────────────────
+
+  /** Get current session state */
+  getSessionState(): SessionState | null {
+    return this._sessionState;
+  }
+
+  /** Get key entities from session state */
+  getKeyEntities(): Record<string, Entity[]> {
+    if (!this._sessionState) return { person: [], tool: [], concept: [], file: [], project: [], other: [] };
+    return SessionStateExtractor.getKeyEntities(this._sessionState) as Record<string, Entity[]>;
   }
 }
 

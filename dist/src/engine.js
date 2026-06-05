@@ -18,6 +18,7 @@ const token_budget_manager_1 = require("./token_budget_manager");
 const token_counter_1 = require("./token-counter");
 const drift_detector_1 = require("./drift-detector");
 const smart_budget_allocator_1 = require("./smart-budget-allocator");
+const session_state_extractor_1 = require("./session-state-extractor");
 const ci_injector_1 = require("./ci_injector");
 // v4.3.0: Global token counter instance for precise counting
 let globalTokenCounter = (0, token_counter_1.createTokenCounter)("cl100k_base");
@@ -61,7 +62,7 @@ function selectByBudget(items, budget) {
     }
     return sorted.slice(0, lo);
 }
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.5.0", ownsCompaction: false, turnMaintenanceMode: "foreground", hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.7.0", ownsCompaction: false, turnMaintenanceMode: "foreground", hostRequirements: {} };
 class SearchCache {
     store = new Map();
     ttl;
@@ -91,7 +92,8 @@ class ClawContextEngine {
     driftDetector;
     driftAlerts = [];
     _smartBudgetAllocator;
-    // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget allocator
+    _sessionState = null;
+    // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor
     constructor(config, logger, manager) {
         this.config = config;
         this.logger = logger;
@@ -137,6 +139,11 @@ class ClawContextEngine {
             return { ingested: false };
         try {
             this.manager.store(c, "episodic");
+            // v4.7.0: Extract and merge session state
+            const newState = session_state_extractor_1.SessionStateExtractor.extract([{ content: c, role: p.message.role }], p.sessionId);
+            this._sessionState = this._sessionState
+                ? session_state_extractor_1.SessionStateExtractor.merge(this._sessionState, newState)
+                : newState;
             return { ingested: true };
         }
         catch {
@@ -599,6 +606,17 @@ class ClawContextEngine {
     /** Get budget allocation history */
     getBudgetHistory() {
         return this._smartBudgetAllocator.getHistory();
+    }
+    // ── v4.7.0: Session State ────────────────────────────────────────
+    /** Get current session state */
+    getSessionState() {
+        return this._sessionState;
+    }
+    /** Get key entities from session state */
+    getKeyEntities() {
+        if (!this._sessionState)
+            return { person: [], tool: [], concept: [], file: [], project: [], other: [] };
+        return session_state_extractor_1.SessionStateExtractor.getKeyEntities(this._sessionState);
     }
 }
 exports.ClawContextEngine = ClawContextEngine;

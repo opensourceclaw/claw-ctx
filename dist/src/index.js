@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TASK_BUDGET_PROFILES = exports.DEFAULT_BUDGET_CONFIG = exports.QualityBasedAdjuster = exports.TaskTypeDetector = exports.SmartBudgetAllocator = exports.DEFAULT_DRIFT_CONFIG = exports.TopicModel = exports.DriftDetector = exports.createTokenCounter = exports.FallbackCounter = exports.TiktokenCounter = exports.TokenBudgetManager = exports.MockCIProvider = exports.CIInjector = exports.MockCrossDomainProvider = exports.CrossDomainInjector = exports.MockGovernanceProvider = exports.GovernanceInjector = exports.MockRLProvider = exports.RLInjector = exports.ConfidenceGate = void 0;
+exports.DEFAULT_DRIFT_BUDGET_CONFIG = exports.DriftBudgetLinker = exports.SessionStateExtractor = exports.TASK_BUDGET_PROFILES = exports.DEFAULT_BUDGET_CONFIG = exports.QualityBasedAdjuster = exports.TaskTypeDetector = exports.SmartBudgetAllocator = exports.DEFAULT_DRIFT_CONFIG = exports.TopicModel = exports.DriftDetector = exports.createTokenCounter = exports.FallbackCounter = exports.TiktokenCounter = exports.TokenBudgetManager = exports.MockCIProvider = exports.CIInjector = exports.MockCrossDomainProvider = exports.CrossDomainInjector = exports.MockGovernanceProvider = exports.GovernanceInjector = exports.MockRLProvider = exports.RLInjector = exports.ConfidenceGate = void 0;
 /**
  * claw-ctx v4.2.2 Plugin for OpenClaw
  * Standalone Context Engine with claw-mem integration,
@@ -38,11 +38,16 @@ Object.defineProperty(exports, "TaskTypeDetector", { enumerable: true, get: func
 Object.defineProperty(exports, "QualityBasedAdjuster", { enumerable: true, get: function () { return smart_budget_allocator_1.QualityBasedAdjuster; } });
 Object.defineProperty(exports, "DEFAULT_BUDGET_CONFIG", { enumerable: true, get: function () { return smart_budget_allocator_1.DEFAULT_BUDGET_CONFIG; } });
 Object.defineProperty(exports, "TASK_BUDGET_PROFILES", { enumerable: true, get: function () { return smart_budget_allocator_1.TASK_BUDGET_PROFILES; } });
+var session_state_extractor_1 = require("./session-state-extractor");
+Object.defineProperty(exports, "SessionStateExtractor", { enumerable: true, get: function () { return session_state_extractor_1.SessionStateExtractor; } });
+var drift_budget_linker_1 = require("./drift-budget-linker");
+Object.defineProperty(exports, "DriftBudgetLinker", { enumerable: true, get: function () { return drift_budget_linker_1.DriftBudgetLinker; } });
+Object.defineProperty(exports, "DEFAULT_DRIFT_BUDGET_CONFIG", { enumerable: true, get: function () { return drift_budget_linker_1.DEFAULT_DRIFT_BUDGET_CONFIG; } });
 const plugin = {
     id: "claw-ctx",
     name: "Claw Context Engine",
     description: "Context Engine with C2 gating, RL injection, governance signals, cross-domain injection, and CI/CD signals for OpenClaw agents",
-    version: "4.5.0",
+    version: "4.7.0",
     kind: "context-engine",
     register(api) {
         const config = {

@@ -14,6 +14,7 @@ import { TokenBudgetManager } from "./token_budget_manager";
 import { type TokenCounterResult } from "./token-counter";
 import { type DriftAlert, type DriftReport, type DriftConfig } from "./drift-detector";
 import { SmartBudgetAllocator, type BudgetAllocation as SmartBudgetAllocation, type AllocationHistory } from "./smart-budget-allocator";
+import { type SessionState, type Entity } from "./session-state-extractor";
 import { type CISignal, type CIProvider } from "./ci_injector";
 declare let globalTokenCounter: {
     count(text: string): TokenCounterResult;
@@ -58,6 +59,7 @@ export declare class ClawContextEngine {
     private driftDetector;
     private driftAlerts;
     private _smartBudgetAllocator;
+    private _sessionState;
     constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager);
     private _session;
     bootstrap(p: {
@@ -281,6 +283,10 @@ export declare class ClawContextEngine {
     getSmartBudgetAllocator(): SmartBudgetAllocator;
     /** Get budget allocation history */
     getBudgetHistory(): AllocationHistory[];
+    /** Get current session state */
+    getSessionState(): SessionState | null;
+    /** Get key entities from session state */
+    getKeyEntities(): Record<string, Entity[]>;
 }
 export declare function createClawContextEngine(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager): ClawContextEngine;
 export {};
