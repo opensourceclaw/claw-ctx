@@ -1,0 +1,52 @@
+{
+  "project": "claw-ctx",
+  "version": "4.5.0",
+  "next_version": "5.0.0",
+  "createdAt": "2026-06-05T11:00:00+08:00",
+  "phase": "completed",
+  "specDir": "docs/v4.x/specs",
+  "planDir": "docs/v4.x/plans",
+  "mixMode": {
+    "planner": "friday",
+    "executor": "edith",
+    "validator": "friday",
+    "description": "Friday plans via inbox, Edith executes, Friday validates"
+  },
+  "harness": {
+    "mode": "plan",
+    "sandbox": true,
+    "selfTest": true,
+    "coverageThreshold": 80
+  },
+  "rsi": {
+    "enabled": true,
+    "cycle": "per_version",
+    "metrics": ["test_coverage", "latency", "token_count_accuracy"]
+  },
+  "phases": {
+    "v4.3.0": {
+      "name": "Token 精确计数",
+      "status": "completed",
+      "spec": "docs/v4.x/specs/v430-token-counter.md",
+      "completedAt": "2026-06-05"
+    },
+    "v4.4.0": {
+      "name": "上下文漂移检测",
+      "status": "completed",
+      "spec": "docs/v4.x/specs/v440-drift-detector.md",
+      "completedAt": "2026-06-05"
+    },
+    "v4.5.0": {
+      "name": "智能预算分配",
+      "status": "completed",
+      "spec": "docs/v4.x/specs/v450-smart-budget.md",
+      "completedAt": "2026-06-05"
+    }
+  },
+  "constraints": [
+    "All code and comments in English",
+    "Type hints required",
+    "Docstrings required",
+    "Coverage >= 80%"
+  ]
+}

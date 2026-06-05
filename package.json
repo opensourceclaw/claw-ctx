@@ -1,7 +1,7 @@
 {
   "name": "@opensourceclaw/claw-ctx",
-  "version": "4.2.2",
-  "description": "Context Engine for OpenClaw with C2 gating, RL injection, governance, cross-domain, and CI/CD signals \u2014 standalone TypeScript plugin",
+  "version": "4.5.0",
+  "description": "Context Engine for OpenClaw with C2 gating, RL injection, governance, cross-domain, and CI/CD signals — standalone TypeScript plugin",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc && cp openclaw.plugin.json dist/",
@@ -20,5 +20,8 @@
     "context-engine"
   ],
   "author": "Peter Cheng",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "dependencies": {
+    "js-tiktoken": "^1.0.21"
+  }
 }

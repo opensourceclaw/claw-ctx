@@ -1,8 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TokenBudgetManager = exports.MockCIProvider = exports.CIInjector = exports.MockCrossDomainProvider = exports.CrossDomainInjector = exports.MockGovernanceProvider = exports.GovernanceInjector = exports.MockRLProvider = exports.RLInjector = exports.ConfidenceGate = void 0;
+exports.TASK_BUDGET_PROFILES = exports.DEFAULT_BUDGET_CONFIG = exports.QualityBasedAdjuster = exports.TaskTypeDetector = exports.SmartBudgetAllocator = exports.DEFAULT_DRIFT_CONFIG = exports.TopicModel = exports.DriftDetector = exports.createTokenCounter = exports.FallbackCounter = exports.TiktokenCounter = exports.TokenBudgetManager = exports.MockCIProvider = exports.CIInjector = exports.MockCrossDomainProvider = exports.CrossDomainInjector = exports.MockGovernanceProvider = exports.GovernanceInjector = exports.MockRLProvider = exports.RLInjector = exports.ConfidenceGate = void 0;
 /**
- * claw-ctx v3.0.0 Plugin for OpenClaw
+ * claw-ctx v4.2.2 Plugin for OpenClaw
  * Standalone Context Engine with claw-mem integration,
  * C2 confidence gating, RL experience injection, governance signal pass-through,
  * and cross-domain signal injection.
@@ -24,11 +24,25 @@ Object.defineProperty(exports, "CIInjector", { enumerable: true, get: function (
 Object.defineProperty(exports, "MockCIProvider", { enumerable: true, get: function () { return ci_injector_1.MockCIProvider; } });
 var token_budget_manager_1 = require("./token_budget_manager");
 Object.defineProperty(exports, "TokenBudgetManager", { enumerable: true, get: function () { return token_budget_manager_1.TokenBudgetManager; } });
+var token_counter_1 = require("./token-counter");
+Object.defineProperty(exports, "TiktokenCounter", { enumerable: true, get: function () { return token_counter_1.TiktokenCounter; } });
+Object.defineProperty(exports, "FallbackCounter", { enumerable: true, get: function () { return token_counter_1.FallbackCounter; } });
+Object.defineProperty(exports, "createTokenCounter", { enumerable: true, get: function () { return token_counter_1.createTokenCounter; } });
+var drift_detector_1 = require("./drift-detector");
+Object.defineProperty(exports, "DriftDetector", { enumerable: true, get: function () { return drift_detector_1.DriftDetector; } });
+Object.defineProperty(exports, "TopicModel", { enumerable: true, get: function () { return drift_detector_1.TopicModel; } });
+Object.defineProperty(exports, "DEFAULT_DRIFT_CONFIG", { enumerable: true, get: function () { return drift_detector_1.DEFAULT_DRIFT_CONFIG; } });
+var smart_budget_allocator_1 = require("./smart-budget-allocator");
+Object.defineProperty(exports, "SmartBudgetAllocator", { enumerable: true, get: function () { return smart_budget_allocator_1.SmartBudgetAllocator; } });
+Object.defineProperty(exports, "TaskTypeDetector", { enumerable: true, get: function () { return smart_budget_allocator_1.TaskTypeDetector; } });
+Object.defineProperty(exports, "QualityBasedAdjuster", { enumerable: true, get: function () { return smart_budget_allocator_1.QualityBasedAdjuster; } });
+Object.defineProperty(exports, "DEFAULT_BUDGET_CONFIG", { enumerable: true, get: function () { return smart_budget_allocator_1.DEFAULT_BUDGET_CONFIG; } });
+Object.defineProperty(exports, "TASK_BUDGET_PROFILES", { enumerable: true, get: function () { return smart_budget_allocator_1.TASK_BUDGET_PROFILES; } });
 const plugin = {
     id: "claw-ctx",
     name: "Claw Context Engine",
     description: "Context Engine with C2 gating, RL injection, governance signals, cross-domain injection, and CI/CD signals for OpenClaw agents",
-    version: "4.0.0",
+    version: "4.5.0",
     kind: "context-engine",
     register(api) {
         const config = {

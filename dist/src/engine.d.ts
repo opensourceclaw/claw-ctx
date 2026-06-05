@@ -11,7 +11,16 @@ import { type RLExperience, type RLProvider } from "./rl_injector";
 import { type GovernanceSignal, type GovernanceProvider, type GovernanceLayer } from "./governance_injector";
 import { type InjectedSignal, type CrossDomainProvider } from "./cross_domain_injector";
 import { TokenBudgetManager } from "./token_budget_manager";
+import { type TokenCounterResult } from "./token-counter";
+import { type DriftAlert, type DriftReport, type DriftConfig } from "./drift-detector";
+import { SmartBudgetAllocator, type BudgetAllocation as SmartBudgetAllocation, type AllocationHistory } from "./smart-budget-allocator";
 import { type CISignal, type CIProvider } from "./ci_injector";
+declare let globalTokenCounter: {
+    count(text: string): TokenCounterResult;
+    countBatch(texts: string[]): import("./token-counter").BatchTokenResult;
+    decode(tokens: number[]): string;
+    isPrecise(): boolean;
+};
 interface ClawCtxConfig {
     workspaceDir?: string;
     topK?: number;
@@ -45,6 +54,10 @@ export declare class ClawContextEngine {
     private crossDomainInjector;
     private ciInjector;
     private budgetManager;
+    private _tokenCounter;
+    private driftDetector;
+    private driftAlerts;
+    private _smartBudgetAllocator;
     constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager);
     private _session;
     bootstrap(p: {
@@ -148,6 +161,14 @@ export declare class ClawContextEngine {
         bytesFreed: number;
         rewrittenEntries: number;
     }>;
+    /**
+     * v4.3.0: Get the token counter instance for external use.
+     */
+    getTokenCounter(): typeof globalTokenCounter;
+    /**
+     * v4.3.0: Count tokens in text with precise tiktoken or fallback.
+     */
+    countTokens(text: string): TokenCounterResult;
     afterTurn(p: {
         sessionId: string;
         sessionKey?: string;
@@ -226,6 +247,40 @@ export declare class ClawContextEngine {
      */
     private _storeSessionSummary;
     dispose(): Promise<void>;
+    /** Feed messages to drift detector (call after each turn) */
+    feedDriftDetector(messages: Array<{
+        content: string;
+        role?: string;
+    }>): DriftAlert[];
+    /** Get current drift score (0.0–1.0, higher = more drift) */
+    getDriftScore(): number;
+    /** Get comprehensive drift report for message history */
+    getDriftReport(history: Array<Array<{
+        role?: string;
+        content: string;
+    }>>): DriftReport;
+    /** Get all accumulated drift alerts */
+    getDriftAlerts(): DriftAlert[];
+    /** Reset drift detector state */
+    resetDriftDetector(): void;
+    /** Update drift detection config */
+    updateDriftConfig(config: Partial<DriftConfig>): void;
+    /**
+     * Calculate smart budget using SmartBudgetAllocator.
+     * Based on drift state and task type (auto-detected from recent messages).
+     */
+    calculateSmartBudget(totalBudget: number, taskType?: string, messages?: Array<{
+        role?: string;
+        content: string;
+    }>): {
+        allocation: SmartBudgetAllocation;
+        driftScore: number;
+        driftLevel: "stable" | "low" | "medium" | "high";
+    };
+    /** Get the smart budget allocator for external use */
+    getSmartBudgetAllocator(): SmartBudgetAllocator;
+    /** Get budget allocation history */
+    getBudgetHistory(): AllocationHistory[];
 }
 export declare function createClawContextEngine(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager): ClawContextEngine;
 export {};

@@ -1,5 +1,50 @@
 # Changelog
 
+## v4.5.0 (2026-06-05)
+
+### Added — 智能预算分配 (C1-P1)
+- **`calculateSmartBudget(totalBudget, taskType)`**: 基于漂移状态和任务类型的动态预算分配
+  - 高漂移 (drift ≥ 0.7) → buffer 扩大 15%，base 减少 → 为 compaction 预留空间
+  - 稳定上下文 (drift < 0.3) → base 扩大 5%，buffer 减少 → 更多有用信息
+  - 任务类型感知: coding (0.9x base), debug (0.8x base), review (0.7x base), planning (1.1x base)
+- `ClawContextEngine` 新增 API: `calculateSmartBudget()`, `feedDriftDetector()`, `getDriftReport()`, `getDriftAlerts()`, `resetDriftDetector()`, `updateDriftConfig()`
+
+### Changed
+- `assemble()` 高漂移时 system prompt 自动注入漂移警告和建议操作
+
+## v4.4.0 (2026-06-05)
+
+### Added — 上下文漂移检测 (C5-P0)
+- **`DriftDetector`**: 基于余弦相似度的主题漂移检测
+  - `feedTurn(messages)`: 逐轮喂入，计算相邻轮相似度，返回 DriftAlert[]
+  - `detectDrift(history: Message[])`: 平台消息数组批量分析（自动分组为 turns）
+  - `detectDrift(history: Turn[][])`: 预分组 turns 分析，返回 DriftReport
+  - `getDriftScore()`: 滑动窗口平均漂移分数 (0.0–1.0)
+  - `suggestActions()`: 建议操作 compact/suggest_new_session/summarize/refresh_memory
+  - `getAlerts()` / `reset()` / `updateConfig()` / `getDriftScores()`
+  - 三级警报: low(0.3)/medium(0.5)/high(0.7)
+  - `minMessages`: 最少消息数才开始检测（默认 5）
+- **`TopicModel`**:
+  - `extractTopics(messages)`: TF 加权关键词提取，去停用词，技术词 1.5x 加权
+  - `computeSimilarity(t1, t2)`: 单 Topic 或 Topic[] 对比，余弦相似度
+  - `getEmbedding(topics)`: 返回关键词权重向量
+- `ClawContextEngine` 集成: `assemble()` 自动喂入消息进行漂移检测
+
+## v4.3.0 (2026-06-05)
+
+### Added — Token 精确计数 (C1-P0)
+- **`TiktokenCounter`**: 基于 js-tiktoken 的精确 token 计数器
+  - `encode(text)` / `encodeBatch(texts)` / `decode(tokens)` / `getTokenCount(text)`
+  - `getStats(messages)` / `estimateTokenBudget(totalBudget, messages)`
+  - 支持 cl100k_base, p50k_base, r50k_base 编码及模型名称自动解析
+  - `setModel()` 运行时切换编码
+- **`FallbackCounter`**: CJK 字符感知备选估算
+  - CJK 字符 1.5 token/char，非 CJK 0.25 token/char，10% 开销因子
+  - `estimate()` / `isAccurate()` / `accuracy()`
+- **`createTokenCounter(model)`**: 智能工厂，自动选择 tiktoken 或 fallback
+- `engine.ts` 中原 `char/3.5` 估算替换为 tiktoken 精确计数
+- `getTokenCounter()` / `countTokens()` 公开 API
+
 ## v4.2.2 (2026-06-05)
 
 ### Fixed

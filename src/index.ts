@@ -1,5 +1,5 @@
 /**
- * claw-ctx v3.0.0 Plugin for OpenClaw
+ * claw-ctx v4.2.2 Plugin for OpenClaw
  * Standalone Context Engine with claw-mem integration,
  * C2 confidence gating, RL experience injection, governance signal pass-through,
  * and cross-domain signal injection.
@@ -12,12 +12,15 @@ export { GovernanceInjector, MockGovernanceProvider, type GovernanceSignal, type
 export { CrossDomainInjector, MockCrossDomainProvider, type InjectedSignal, type CrossDomainProvider } from "./cross_domain_injector";
 export { CIInjector, MockCIProvider, type CISignal, type CIProvider } from "./ci_injector";
 export { TokenBudgetManager, type BudgetAllocation, type BudgetConfig, type BudgetResult } from "./token_budget_manager";
+export { TiktokenCounter, FallbackCounter, createTokenCounter, type TiktokenEncodingName, type TokenCounterResult, type BatchTokenResult, type TokenStats, type TokenBudget } from "./token-counter";
+export { DriftDetector, TopicModel, DEFAULT_DRIFT_CONFIG, type Topic, type DriftAlert, type Action, type DriftConfig, type DriftReport } from "./drift-detector";
+export { SmartBudgetAllocator, TaskTypeDetector, QualityBasedAdjuster, DEFAULT_BUDGET_CONFIG, TASK_BUDGET_PROFILES, type TaskType, type BudgetConfig as SmartBudgetAllocatorConfig, type BudgetAllocation as SmartBudgetAllocation, type AllocationHistory, type TaskBudgetProfile } from "./smart-budget-allocator";
 
 const plugin = {
   id: "claw-ctx",
   name: "Claw Context Engine",
   description: "Context Engine with C2 gating, RL injection, governance signals, cross-domain injection, and CI/CD signals for OpenClaw agents",
-  version: "4.0.0",
+  version: "4.5.0",
   kind: "context-engine",
 
   register(api: any) {

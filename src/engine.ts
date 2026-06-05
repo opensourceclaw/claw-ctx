@@ -11,7 +11,13 @@ import { RLInjector, type RLExperience, type RLProvider, MockRLProvider } from "
 import { GovernanceInjector, type GovernanceSignal, type GovernanceProvider, type GovernanceLayer, MockGovernanceProvider } from "./governance_injector";
 import { CrossDomainInjector, type InjectedSignal, type CrossDomainProvider, MockCrossDomainProvider } from "./cross_domain_injector";
 import { TokenBudgetManager, type BudgetResult } from "./token_budget_manager";
+import { TiktokenCounter, FallbackCounter, createTokenCounter, type TokenCounterResult } from "./token-counter";
+import { DriftDetector, TopicModel, type DriftAlert, type DriftReport, type DriftConfig, DEFAULT_DRIFT_CONFIG } from "./drift-detector";
+import { SmartBudgetAllocator, type TaskType, type BudgetAllocation as SmartBudgetAllocation, type AllocationHistory } from "./smart-budget-allocator";
 import { CIInjector, type CISignal, type CIProvider, MockCIProvider } from "./ci_injector";
+
+// v4.3.0: Global token counter instance for precise counting
+let globalTokenCounter = createTokenCounter("cl100k_base");
 
 interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean; compactThreshold?: number; reserveRatio?: number }
 interface ClawCtxLogger { info: (...a: any[]) => void; error: (...a: any[]) => void; warn: (...a: any[]) => void; debug?: (...a: any[]) => void }
@@ -24,10 +30,19 @@ function extractText(msg: any): string {
   return String(c ?? "");
 }
 
+/**
+ * Estimate tokens using tiktoken (v4.3.0) or fallback.
+ * Replaces the old char/3.5 heuristic with precise token counting.
+ */
 function estimateTokens(text: string): number {
-  let t = 0;
-  for (const ch of text) t += /[\u4e00-\u9fff\u3400-\u4dbf]/.test(ch) ? 1 : 1 / 3.5;
-  return Math.ceil(t);
+  if (globalTokenCounter.isPrecise()) {
+    try {
+      return globalTokenCounter.count(text).tokens;
+    } catch {
+      // Fall through to fallback
+    }
+  }
+  return FallbackCounter.estimate(text);
 }
 
 interface ScoredItem { content: string; score: number }
@@ -45,7 +60,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.1.0", ownsCompaction: false, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.5.0", ownsCompaction: false, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -68,11 +83,19 @@ export class ClawContextEngine {
   private crossDomainInjector: CrossDomainInjector | null = null;
   private ciInjector: CIInjector | null = null;
   private budgetManager: TokenBudgetManager;
+  private _tokenCounter = globalTokenCounter;
+  private driftDetector: DriftDetector;
+  private driftAlerts: DriftAlert[] = [];
+  private _smartBudgetAllocator: SmartBudgetAllocator;
+  // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget allocator
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
     this.config = config; this.logger = logger;
     this.manager = manager ?? getMemoryManager({ workspace: config.workspaceDir || process.cwd(), autoDetect: false });
     this.budgetManager = new TokenBudgetManager();
+    this.driftDetector = new DriftDetector();
+    this._smartBudgetAllocator = new SmartBudgetAllocator();
+    this._smartBudgetAllocator.setDriftDetector(this.driftDetector);
   }
 
   private _session(id: string): void { if (this.sid !== id) { this.sid = id; this.manager.sessionId = id; } }
@@ -128,6 +151,16 @@ export class ClawContextEngine {
         mode: p.confidenceMode,
       });
       this.confidenceGate = gate;
+    }
+
+    // v5.0.0: Feed messages to drift detector
+    const recentMsgs = p.messages.slice(-2).map((m: any) => ({
+      content: extractText(m),
+      role: m.role,
+    }));
+    const newDriftAlerts = this.driftDetector.feedTurn(recentMsgs);
+    if (newDriftAlerts.length > 0) {
+      this.driftAlerts.push(...newDriftAlerts);
     }
 
     const q = p.prompt || extractText(p.messages[p.messages.length - 1]) || "";
@@ -193,7 +226,20 @@ export class ClawContextEngine {
     if (ciResult) additions.push(ciResult.block);
 
     const sys = additions.length ? additions.join("\n\n") : undefined;
-    return { messages: p.messages, estimatedTokens: tokens, systemPromptAddition: sys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report };
+
+    // v5.0.0: Include drift alerts in system prompt
+    let driftAwareSys = sys;
+    if (this.driftAlerts.length > 0) {
+      const recent = this.driftAlerts.slice(-2);
+      const driftBlock = recent
+        .map((a) => `[Drift ${a.level.toUpperCase()}] Score: ${a.driftScore.toFixed(2)} — ${a.suggestedActions.map((act) => act.description).join("; ")}`)
+        .join("\n");
+      driftAwareSys = sys
+        ? `${sys}\n\n[Drift Monitor]\n${driftBlock}`
+        : `[Drift Monitor]\n${driftBlock}`;
+    }
+
+    return { messages: p.messages, estimatedTokens: tokens, systemPromptAddition: driftAwareSys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report };
   }
 
   async compact(p: { sessionId: string; sessionKey?: string; sessionFile: string; tokenBudget?: number; force?: boolean; currentTokenCount?: number; compactionTarget?: string; customInstructions?: string; abortSignal?: AbortSignal; reserveForCrossDomain?: number; reserveForCI?: number }): Promise<{ ok: boolean; compacted: boolean; reason?: string; result?: { summary?: string; tokensBefore: number; tokensAfter?: number; details?: unknown } }> {
@@ -228,6 +274,20 @@ export class ClawContextEngine {
     this._session(p.sessionId);
     try { const mem = this.manager as any; if (mem.decayEngine) { const r = mem.decayEngine.runCycle(); return { changed: (r.evicted ?? 0) > 0, bytesFreed: (r.evicted ?? 0) * 500, rewrittenEntries: 0 }; } } catch { /* ok */ }
     return { changed: false, bytesFreed: 0, rewrittenEntries: 0 };
+  }
+
+  /**
+   * v4.3.0: Get the token counter instance for external use.
+   */
+  getTokenCounter(): typeof globalTokenCounter {
+    return this._tokenCounter;
+  }
+
+  /**
+   * v4.3.0: Count tokens in text with precise tiktoken or fallback.
+   */
+  countTokens(text: string): TokenCounterResult {
+    return this._tokenCounter.count(text);
   }
 
   async afterTurn(p: { sessionId: string; sessionKey?: string; sessionFile: string; messages: any[]; prePromptMessageCount: number; autoCompactionSummary?: string; isHeartbeat?: boolean; tokenBudget?: number }): Promise<void> {
@@ -491,6 +551,75 @@ export class ClawContextEngine {
   }
 
   async dispose(): Promise<void> { this.sid = null; this.cache = new SearchCache(30000); }
+
+  // ── v5.0.0: Drift Detection API ──────────────────────────────────
+
+  /** Feed messages to drift detector (call after each turn) */
+  feedDriftDetector(messages: Array<{ content: string; role?: string }>): DriftAlert[] {
+    return this.driftDetector.feedTurn(messages);
+  }
+
+  /** Get current drift score (0.0–1.0, higher = more drift) */
+  getDriftScore(): number {
+    return this.driftDetector.getDriftScore();
+  }
+
+  /** Get comprehensive drift report for message history */
+  getDriftReport(history: Array<Array<{ role?: string; content: string }>>): DriftReport {
+    return this.driftDetector.detectDrift(history);
+  }
+
+  /** Get all accumulated drift alerts */
+  getDriftAlerts(): DriftAlert[] {
+    return [...this.driftAlerts];
+  }
+
+  /** Reset drift detector state */
+  resetDriftDetector(): void {
+    this.driftDetector.reset();
+    this.driftAlerts = [];
+  }
+
+  /** Update drift detection config */
+  updateDriftConfig(config: Partial<DriftConfig>): void {
+    this.driftDetector.updateConfig(config);
+  }
+
+  // ── v4.5.0: Smart Budget Allocation ──────────────────────────────
+
+  /**
+   * Calculate smart budget using SmartBudgetAllocator.
+   * Based on drift state and task type (auto-detected from recent messages).
+   */
+  calculateSmartBudget(
+    totalBudget: number,
+    taskType: string = "unknown",
+    messages?: Array<{ role?: string; content: string }>
+  ): {
+    allocation: SmartBudgetAllocation;
+    driftScore: number;
+    driftLevel: "stable" | "low" | "medium" | "high";
+  } {
+    const sessionId = this.sid || "default";
+    const allocation = this._smartBudgetAllocator.allocate(sessionId, totalBudget, messages);
+
+    let driftLevel: "stable" | "low" | "medium" | "high" = "stable";
+    if (allocation.driftScore >= 0.7) driftLevel = "high";
+    else if (allocation.driftScore >= 0.5) driftLevel = "medium";
+    else if (allocation.driftScore >= 0.3) driftLevel = "low";
+
+    return { allocation, driftScore: allocation.driftScore, driftLevel };
+  }
+
+  /** Get the smart budget allocator for external use */
+  getSmartBudgetAllocator(): SmartBudgetAllocator {
+    return this._smartBudgetAllocator;
+  }
+
+  /** Get budget allocation history */
+  getBudgetHistory(): AllocationHistory[] {
+    return this._smartBudgetAllocator.getHistory();
+  }
 }
 
 export function createClawContextEngine(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager): ClawContextEngine {
