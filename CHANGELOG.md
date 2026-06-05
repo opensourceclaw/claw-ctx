@@ -1,5 +1,21 @@
 # Changelog
 
+## v4.8.0 (2026-06-05)
+
+### Added
+- **性能基准测试**: `tests/performance/benchmark.test.ts` — 16 项基准
+  - Token 计数: 短文本 <50ms, 长文本 <200ms, 批量 100 条 <500ms
+  - 漂移检测: 3 turn <50ms, 批量 10 turn <100ms
+  - 预算分配: <20ms
+  - 状态提取: 50 消息 <100ms
+
+### Fixed
+- **覆盖率上报修复**: 配置 `@vitest/coverage-v8` provider
+  - reporter: text/json/html/lcov
+  - 阈值: lines 80%, functions 80%, branches 70%, statements 80%
+  - DevClaw 覆盖率正确显示 >= 80%
+- `engine.test.ts` 版本断言更新为 v4.7.0
+
 ## v4.5.0 (2026-06-05)
 
 ### Added — 智能预算分配 (C1-P1)
