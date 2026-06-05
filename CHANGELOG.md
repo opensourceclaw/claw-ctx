@@ -1,5 +1,20 @@
 # Changelog
 
+## v4.9.0 (2026-06-05)
+
+### Added
+- **LongTermDependencyTracker**: 跨会话实体依赖追踪
+  - `track(entity1, entity2, sessionId)` — 记录实体共同出现
+  - `getRelated(entity)` — 查询关联实体及上下文
+  - `getDependencyChain(sessionId)` — 获取会话依赖链
+  - `exportGraph()` — 导出完整实体图（节点+边）
+  - `trackCausal(cause, effect, sessionId)` — 因果关系追踪
+  - `trackDecision(description, sessionId, entities)` — 决策链追踪
+  - `queryCausality(event)` — 查询因果关联
+  - `getCrossSessionRelations(entity)` — 跨会话关联查询
+  - `ingestFromSessionState(state)` — 与 SessionStateExtractor 集成
+- 16 个单元测试，覆盖核心功能
+
 ## v4.8.0 (2026-06-05)
 
 ### Added

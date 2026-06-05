@@ -1,10 +1,11 @@
 /**
- * claw-ctx v3.0.0 — Context Engine
+ * claw-ctx v4.9.0 — Context Engine
  *
  * Standalone Context Engine plugin. Uses claw-mem MemoryManager for storage/retrieval.
  * v2.0.0 adds: C2 confidence gating, RL experience injection, governance signal pass-through.
  * v3.0.0 adds: cross-domain signal injection, token budget management.
  */
+import * as fs from "fs";
 import { getMemoryManager, type MemoryManager } from "../../claw-mem/dist/memory_manager";
 import { ConfidenceGate, type ConfidenceMode, type ConfidenceReport } from "./confidence_gate";
 import { RLInjector, type RLExperience, type RLProvider, MockRLProvider } from "./rl_injector";
@@ -16,6 +17,7 @@ import { DriftDetector, TopicModel, type DriftAlert, type DriftReport, type Drif
 import { SmartBudgetAllocator, type TaskType, type BudgetAllocation as SmartBudgetAllocation, type AllocationHistory } from "./smart-budget-allocator";
 import { SessionStateExtractor, type SessionState, type Entity } from "./session-state-extractor";
 import { CIInjector, type CISignal, type CIProvider, MockCIProvider } from "./ci_injector";
+import { LongTermDependencyTracker } from "./long-term-dependency-tracker";
 
 // v4.3.0: Global token counter instance for precise counting
 let globalTokenCounter = createTokenCounter("cl100k_base");
@@ -61,7 +63,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.7.0", ownsCompaction: false, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.9.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -89,7 +91,8 @@ export class ClawContextEngine {
   private driftAlerts: DriftAlert[] = [];
   private _smartBudgetAllocator: SmartBudgetAllocator;
   private _sessionState: SessionState | null = null;
-  // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor
+  private _depTracker: LongTermDependencyTracker | null = null;
+  // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
     this.config = config; this.logger = logger;
@@ -140,6 +143,14 @@ export class ClawContextEngine {
       this._sessionState = this._sessionState
         ? SessionStateExtractor.merge(this._sessionState, newState)
         : newState;
+
+      // v4.9.0: Feed dependency tracker
+      if (this._depTracker) {
+        this._depTracker.ingestFromSessionState({
+          sessionId: p.sessionId,
+          entities: newState.entities,
+        });
+      }
 
       return { ingested: true };
     } catch { return { ingested: false }; }
@@ -254,32 +265,220 @@ export class ClawContextEngine {
     return { messages: p.messages, estimatedTokens: tokens, systemPromptAddition: driftAwareSys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report };
   }
 
-  async compact(p: { sessionId: string; sessionKey?: string; sessionFile: string; tokenBudget?: number; force?: boolean; currentTokenCount?: number; compactionTarget?: string; customInstructions?: string; abortSignal?: AbortSignal; reserveForCrossDomain?: number; reserveForCI?: number }): Promise<{ ok: boolean; compacted: boolean; reason?: string; result?: { summary?: string; tokensBefore: number; tokensAfter?: number; details?: unknown } }> {
+  async compact(p: { sessionId: string; sessionKey?: string; sessionFile: string; tokenBudget?: number; force?: boolean; currentTokenCount?: number; compactionTarget?: string; customInstructions?: string; abortSignal?: AbortSignal; reserveForCrossDomain?: number; reserveForCI?: number; runtimeContext?: any }): Promise<{ ok: boolean; compacted: boolean; reason?: string; result?: { summary?: string; tokensBefore: number; tokensAfter?: number; details?: unknown } }> {
     if (p.abortSignal?.aborted) return { ok: false, compacted: false, reason: "aborted" };
     this._session(p.sessionId);
-    const crossDomainReserve = p.reserveForCrossDomain ?? 0;
-    const ciReserve = p.reserveForCI ?? 0;
-    const cur = p.currentTokenCount ?? 50000;
 
-    // v4.2.0: Configurable threshold (default 100K for 200K model context)
-    const baseThreshold = this.config.compactThreshold ?? 100000;
-    const effectiveThreshold = baseThreshold - crossDomainReserve - ciReserve;
-
-    if (!p.force && cur < effectiveThreshold) {
-      return { ok: true, compacted: false, reason: `below threshold (${cur} < ${effectiveThreshold})` };
+    const sessionFile = p.sessionFile;
+    if (!sessionFile || !fs.existsSync(sessionFile)) {
+      const cur = p.currentTokenCount ?? 50000;
+      const baseThreshold = this.config.compactThreshold ?? 100000;
+      const crossDomainReserve = p.reserveForCrossDomain ?? 0;
+      const ciReserve = p.reserveForCI ?? 0;
+      const effectiveThreshold = baseThreshold - crossDomainReserve - ciReserve;
+      if (!p.force && cur < effectiveThreshold) {
+        return { ok: true, compacted: false, reason: `below threshold (${cur} < ${effectiveThreshold})`, result: { tokensBefore: cur, tokensAfter: cur } };
+      }
+      return { ok: false, compacted: false, reason: "session file not found" };
     }
 
-    const ratio = this.config.reserveRatio ?? 0.7;
-    const safeTarget = Math.floor(effectiveThreshold * ratio);
+    // tokenBudget from gateway = context window size (e.g. 204800)
+    // Aim for ~75% of budget to leave room for non-message overhead + response
+    const contextWindow = p.tokenBudget ?? this.config.compactThreshold ?? 200000;
+    const targetTokens = Math.floor(contextWindow * 0.75);
+
+    try {
+      const result = await this._executeCompaction(sessionFile, targetTokens);
+      if (!result.compacted) {
+        return { ok: true, compacted: false, reason: result.reason, result: { tokensBefore: result.tokensBefore ?? 0, tokensAfter: result.tokensBefore ?? 0 } };
+      }
+      return {
+        ok: true,
+        compacted: true,
+        result: {
+          summary: result.summary,
+          tokensBefore: result.tokensBefore,
+          tokensAfter: result.tokensAfter,
+          details: result.details,
+        },
+      };
+    } catch (e: any) {
+      this.logger.error("[claw-ctx] compaction failed:", e?.message ?? e);
+      return { ok: false, compacted: false, reason: `compaction error: ${e?.message ?? e}` };
+    }
+  }
+
+  /**
+   * Real session compaction: read session file, keep recent messages,
+   * summarize old ones, rewrite file. Returns the reduced file.
+   */
+  private async _executeCompaction(
+    sessionFile: string,
+    targetTokens: number
+  ): Promise<{ compacted: boolean; reason?: string; summary: string; tokensBefore: number; tokensAfter?: number; details?: unknown }> {
+    const lines = fs.readFileSync(sessionFile, "utf-8").split("\n").filter(l => l.trim());
+    const entries: Array<{ line: string; type: string; message?: any }> = [];
+
+    for (const line of lines) {
+      try {
+        const obj = JSON.parse(line);
+        entries.push({ line, type: obj.type ?? "unknown", message: obj.message });
+      } catch {
+        entries.push({ line, type: "unparseable" });
+      }
+    }
+
+    // Separate header entries from message entries
+    const headerTypes = new Set(["session", "model_change", "thinking_level_change", "custom", "custom_message"]);
+    const headers = entries.filter(e => headerTypes.has(e.type));
+    const msgEntries = entries.filter(e => e.type === "message");
+
+    if (msgEntries.length === 0) {
+      return { compacted: false, reason: "no messages to compact", summary: "", tokensBefore: 0 };
+    }
+
+    // Estimate tokens per message
+    const msgTokens: number[] = [];
+    let totalMsgTokens = 0;
+    for (const e of msgEntries) {
+      const t = this._estimateMessageTokens(e.message);
+      msgTokens.push(t);
+      totalMsgTokens += t;
+    }
+
+    if (totalMsgTokens <= targetTokens) {
+      return { compacted: false, reason: `already under target (${totalMsgTokens} <= ${targetTokens})`, summary: "", tokensBefore: totalMsgTokens };
+    }
+
+    // Walk from newest to oldest, accumulating tokens until we hit target
+    let acc = 0;
+    let keepFrom = msgEntries.length;
+    for (let i = msgEntries.length - 1; i >= 0; i--) {
+      acc += msgTokens[i];
+      if (acc > targetTokens) {
+        keepFrom = Math.min(msgEntries.length, Math.max(20, i + 1));
+        break;
+      }
+    }
+
+    const removedCount = keepFrom;
+    if (removedCount <= 10) {
+      return { compacted: false, reason: `too few messages to remove (${removedCount})`, summary: "", tokensBefore: totalMsgTokens };
+    }
+
+    // Build summary of removed messages
+    const oldMsgs = msgEntries.slice(0, removedCount);
+    const summaryBlock = this._buildSummary(oldMsgs, removedCount);
+
+    // Rewrite session file: headers + summary + kept messages
+    const keptMsgs = msgEntries.slice(removedCount);
+    const lastHeader = headers.length > 0 ? headers[headers.length - 1] : entries[0];
+    let lastHeaderId = "root";
+    try { lastHeaderId = JSON.parse(lastHeader.line).id ?? "root"; } catch { /* ok */ }
+
+    const newLines: string[] = [
+      ...headers.map(h => h.line),
+      JSON.stringify({ type: "message", id: this._makeId(), parentId: lastHeaderId, timestamp: new Date().toISOString(), message: { role: "user", content: summaryBlock } }),
+      ...keptMsgs.map(m => m.line),
+    ];
+
+    // Atomic write
+    const tmpFile = sessionFile + ".compact.tmp";
+    fs.writeFileSync(tmpFile, newLines.join("\n") + "\n", "utf-8");
+    fs.renameSync(tmpFile, sessionFile);
+
+    const newTokens = keptMsgs.reduce((sum, _m, i) => sum + msgTokens[removedCount + i], 0) + estimateTokens(summaryBlock);
+    this.logger.info(`[claw-ctx] COMPACT: ${msgEntries.length} msgs → ${keptMsgs.length + 1} msgs, ${totalMsgTokens} → ≈${newTokens} tokens`);
+
     return {
-      ok: true,
       compacted: true,
-      result: {
-        summary: `Claw Context compaction (target: ${safeTarget} tokens)`,
-        tokensBefore: cur,
-        tokensAfter: safeTarget,
-      },
+      summary: `Removed ${removedCount} old messages (kept ${keptMsgs.length} recent + 1 summary). Tokens: ${totalMsgTokens} → ≈${newTokens}`,
+      tokensBefore: totalMsgTokens,
+      tokensAfter: newTokens,
+      details: { messagesBefore: msgEntries.length, messagesAfter: keptMsgs.length + 1, removedCount, tokensBefore: totalMsgTokens, tokensAfter: newTokens },
     };
+  }
+
+  /** Estimate tokens in a message, handling string and array content */
+  private _estimateMessageTokens(msg: any): number {
+    if (!msg) return 0;
+    const content = msg.content;
+    if (typeof content === "string") return estimateTokens(content);
+    if (Array.isArray(content)) {
+      let total = 0;
+      for (const block of content) {
+        if (typeof block === "string") { total += estimateTokens(block); }
+        else if (block?.text) { total += estimateTokens(block.text); }
+        else if (block?.input) { total += estimateTokens(JSON.stringify(block.input)); }
+      }
+      return total || 10; // minimum token cost for structured messages
+    }
+    return estimateTokens(String(content ?? ""));
+  }
+
+  /** Determine how many messages to keep from the end to stay under budget */
+  private _computeKeepCount(msgTokens: number[], budget: number): number {
+    let acc = 0;
+    for (let i = msgTokens.length - 1; i >= 0; i--) {
+      acc += msgTokens[i];
+      if (acc > budget) {
+        // Keep at least 20 messages
+        const natural = msgTokens.length - i - 1;
+        return Math.min(msgTokens.length, Math.max(20, natural));
+      }
+    }
+    return msgTokens.length; // everything fits
+  }
+
+  /** Build a concise summary from old messages */
+  private _buildSummary(oldMsgs: Array<{ message?: any }>, count: number): string {
+    const topics = new Set<string>();
+    const keywordSet = new Set([
+      "code", "bug", "fix", "deploy", "test", "refactor", "build",
+      "config", "error", "performance", "api", "database", "task",
+      "version", "release", "review", "compile", "compact", "compaction",
+      "context", "token", "memory", "session", "plugin", "gateway",
+      "TypeScript", "openclaw", "claw-ctx", "claw-mem", "devclaw"
+    ]);
+
+    // Extract key topics from removed messages
+    const lastUserMsgs: string[] = [];
+    for (const entry of oldMsgs) {
+      const msg = entry.message;
+      if (!msg) continue;
+      const role = msg.role;
+      let text = "";
+      const content = msg.content;
+      if (typeof content === "string") { text = content; }
+      else if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block?.text) text += block.text + " ";
+        }
+      }
+      if (!text) continue;
+
+      // Collect keywords
+      for (const kw of keywordSet) {
+        if (text.toLowerCase().includes(kw.toLowerCase())) {
+          topics.add(kw);
+        }
+      }
+      // Collect last few user messages for context
+      if (role === "user" && lastUserMsgs.length < 5) {
+        lastUserMsgs.push(text.slice(0, 200));
+      }
+    }
+
+    const topicStr = topics.size > 0 ? [...topics].slice(0, 15).join(", ") : "general discussion";
+    const userSummary = lastUserMsgs.length > 0
+      ? `\nKey requests: ${lastUserMsgs.map(t => `"${t.slice(0, 100)}"`).join("; ")}`
+      : "";
+
+    return `[Compacted History — ${count} earlier messages summarized]\nTopics: ${topicStr}${userSummary}\n\nContinue with the current task using the remaining recent context below.`;
+  }
+
+  private _makeId(): string {
+    return "ctxc-" + Math.random().toString(36).slice(2, 10);
   }
 
   async maintain(p: { sessionId: string; sessionKey?: string; sessionFile: string; runtimeContext?: Record<string, unknown> }): Promise<{ changed: boolean; bytesFreed: number; rewrittenEntries: number }> {
@@ -383,6 +582,17 @@ export class ClawContextEngine {
     } else {
       this.crossDomainInjector.setProvider(provider);
     }
+  }
+
+  /** v4.9.0: Get or create the long-term dependency tracker */
+  getDependencyTracker(): LongTermDependencyTracker {
+    if (!this._depTracker) this._depTracker = new LongTermDependencyTracker();
+    return this._depTracker;
+  }
+
+  /** v4.9.0: Set a custom dependency tracker */
+  setDependencyTracker(tracker: LongTermDependencyTracker): void {
+    this._depTracker = tracker;
   }
 
   /** Set a custom CI provider (e.g., bridge to GitHub Actions API) */

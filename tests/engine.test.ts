@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { ClawContextEngine, createClawContextEngine } from '../src/engine';
 import { MockRLProvider } from '../src/rl_injector';
 import { MockGovernanceProvider } from '../src/governance_injector';
@@ -7,6 +10,27 @@ import { MockCIProvider } from '../src/ci_injector';
 
 function mockLogger(): any {
   return { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} };
+}
+
+function createSessionFile(msgCount: number = 30): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-ctx-test-'));
+  const file = path.join(dir, 'session.jsonl');
+  const entries = [
+    JSON.stringify({ type: 'session', version: '3', id: 'test', timestamp: new Date().toISOString(), cwd: '/tmp' }),
+  ];
+  // Large filler: each message ~200 tokens → 30 messages = ~6000 tokens
+  const filler = 'Lorem ipsum dolor sit amet '.repeat(40); // ~600 chars, ~170 tokens each
+  for (let i = 0; i < msgCount; i++) {
+    entries.push(JSON.stringify({
+      type: 'message',
+      id: `msg-${i}`,
+      parentId: i === 0 ? 'test' : `msg-${i - 1}`,
+      timestamp: new Date(Date.now() - (msgCount - i) * 1000).toISOString(),
+      message: { role: i % 2 === 0 ? 'user' : 'assistant', content: `Msg ${i}: ${filler}` },
+    }));
+  }
+  fs.writeFileSync(file, entries.join('\n') + '\n', 'utf-8');
+  return file;
 }
 
 describe('ClawContextEngine', () => {
@@ -206,7 +230,7 @@ describe('ClawContextEngine', () => {
 
     it('info shows v2.0.0', () => {
       const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
-      expect(engine.info.version).toBe('4.7.0');
+      expect(engine.info.version).toBe('4.9.0');
     });
   });
 
@@ -280,15 +304,18 @@ describe('ClawContextEngine', () => {
 
     it('compact uses crossDomain reserve', async () => {
       const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const sessionFile = createSessionFile(30);
+      // Small tokenBudget (1000) forces compaction on 6K-token session
       const result = await engine.compact({
         sessionId: 'test',
-        sessionFile: '/tmp/test.md',
+        sessionFile,
         force: false,
         currentTokenCount: 110000,
+        tokenBudget: 4000,
         reserveForCrossDomain: 5000,
       });
-      // v4.1.0: 110000 >= 100000 - 5000 = 95000, triggers compaction
       expect(result.compacted).toBe(true);
+      expect(result.ok).toBe(true);
     });
 
     it('getBudgetManager returns budget manager', () => {
@@ -366,21 +393,23 @@ describe('ClawContextEngine', () => {
 
     it('compact uses ci reserve', async () => {
       const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const sessionFile = createSessionFile(30);
       const result = await engine.compact({
         sessionId: 'test',
-        sessionFile: '/tmp/test.md',
+        sessionFile,
         force: false,
         currentTokenCount: 105000,
+        tokenBudget: 4000,
         reserveForCrossDomain: 3000,
         reserveForCI: 3000,
       });
-      // v4.1.0: 105000 >= 100000 - 3000 - 3000 = 94000, triggers compaction
       expect(result.compacted).toBe(true);
+      expect(result.ok).toBe(true);
     });
 
     it('info shows v4.0.0', () => {
       const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
-      expect(engine.info.version).toBe('4.7.0');
+      expect(engine.info.version).toBe('4.9.0');
     });
   });
 });

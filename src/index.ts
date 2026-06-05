@@ -1,5 +1,5 @@
 /**
- * claw-ctx v4.2.2 Plugin for OpenClaw
+ * claw-ctx v4.9.0 Plugin for OpenClaw
  * Standalone Context Engine with claw-mem integration,
  * C2 confidence gating, RL experience injection, governance signal pass-through,
  * and cross-domain signal injection.
@@ -17,12 +17,13 @@ export { DriftDetector, TopicModel, DEFAULT_DRIFT_CONFIG, type Topic, type Drift
 export { SmartBudgetAllocator, TaskTypeDetector, QualityBasedAdjuster, DEFAULT_BUDGET_CONFIG, TASK_BUDGET_PROFILES, type TaskType, type BudgetConfig as SmartBudgetAllocatorConfig, type BudgetAllocation as SmartBudgetAllocation, type AllocationHistory, type TaskBudgetProfile } from "./smart-budget-allocator";
 export { SessionStateExtractor, type SessionState, type Entity, type Decision, type TopicTag } from "./session-state-extractor";
 export { DriftBudgetLinker, DEFAULT_DRIFT_BUDGET_CONFIG, type DriftBudgetConfig, type BudgetAllocation as DriftBudgetAllocation } from "./drift-budget-linker";
+export { LongTermDependencyTracker, type EntityMention, type DependencyChain, type GraphNode, type GraphEdge, type Graph } from "./long-term-dependency-tracker";
 
 const plugin = {
   id: "claw-ctx",
   name: "Claw Context Engine",
   description: "Context Engine with C2 gating, RL injection, governance signals, cross-domain injection, and CI/CD signals for OpenClaw agents",
-  version: "4.7.0",
+  version: "4.9.0",
   kind: "context-engine",
 
   register(api: any) {
@@ -36,7 +37,7 @@ const plugin = {
       (api as any).registerContextEngine("claw-ctx", (_ctx: any) => {
         return createClawContextEngine(config, api.logger);
       });
-      api.logger.info("[claw-ctx] v1.0.0 registered");
+      api.logger.info("[claw-ctx] v4.9.0 registered");
     } catch (e) {
       api.logger.warn("[claw-ctx] registration failed:", e);
     }
