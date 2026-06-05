@@ -1,5 +1,5 @@
 /**
- * claw-ctx v4.9.0 — Context Engine
+ * claw-ctx v4.10.0 — Context Engine
  *
  * Standalone Context Engine plugin. Uses claw-mem MemoryManager for storage/retrieval.
  * v2.0.0 adds: C2 confidence gating, RL experience injection, governance signal pass-through.
@@ -37,15 +37,33 @@ function extractText(msg: any): string {
  * Estimate tokens using tiktoken (v4.3.0) or fallback.
  * Replaces the old char/3.5 heuristic with precise token counting.
  */
+// v4.10.0: Token count cache to avoid repeated tiktoken lookups
+const tokenCache = new Map<string, number>();
+const MAX_TOKEN_CACHE = 5000;
+
 function estimateTokens(text: string): number {
+  if (text.length < 500) {
+    const cached = tokenCache.get(text);
+    if (cached !== undefined) return cached;
+  }
+  let result: number;
   if (globalTokenCounter.isPrecise()) {
     try {
-      return globalTokenCounter.count(text).tokens;
+      result = globalTokenCounter.count(text).tokens;
     } catch {
-      // Fall through to fallback
+      result = FallbackCounter.estimate(text);
     }
+  } else {
+    result = FallbackCounter.estimate(text);
   }
-  return FallbackCounter.estimate(text);
+  if (text.length < 500) {
+    if (tokenCache.size >= MAX_TOKEN_CACHE) {
+      const firstKey = tokenCache.keys().next().value;
+      if (firstKey !== undefined) tokenCache.delete(firstKey);
+    }
+    tokenCache.set(text, result);
+  }
+  return result;
 }
 
 interface ScoredItem { content: string; score: number }
@@ -63,7 +81,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.9.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.10.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -854,6 +872,62 @@ export class ClawContextEngine {
   getKeyEntities(): Record<string, Entity[]> {
     if (!this._sessionState) return { person: [], tool: [], concept: [], file: [], project: [], other: [] };
     return SessionStateExtractor.getKeyEntities(this._sessionState) as Record<string, Entity[]>;
+  }
+
+  // ── v4.10.0: Health Check ──────────────────────────────────────
+
+  /** Health check: returns status and metrics for monitoring. */
+  healthCheck(): { status: "healthy" | "degraded" | "unhealthy"; score: number; checks: Record<string, boolean>; metrics: Record<string, number> } {
+    const checks: Record<string, boolean> = {};
+    const metrics: Record<string, number> = {};
+
+    // Token counter health
+    try {
+      const testResult = this._tokenCounter.count("health check test");
+      checks.tokenCounter = testResult.tokens > 0;
+      metrics.tokenCountLatency = testResult.tokens;
+    } catch {
+      checks.tokenCounter = false;
+    }
+
+    // Memory manager health
+    try {
+      const mem = this.manager as any;
+      checks.memoryManager = !!mem;
+      metrics.hasSession = this.sid ? 1 : 0;
+    } catch {
+      checks.memoryManager = false;
+    }
+
+    // Drift detector health
+    checks.driftDetector = this.driftDetector !== null;
+    metrics.driftScore = this.getDriftScore();
+
+    // Dependency tracker health
+    if (this._depTracker) {
+      const stats = this._depTracker.getStats();
+      checks.dependencyTracker = true;
+      metrics.trackedEntities = stats.entitiesTracked;
+      metrics.trackedSessions = stats.sessions;
+    } else {
+      checks.dependencyTracker = false;
+    }
+
+    // Token cache health
+    metrics.tokenCacheSize = tokenCache.size;
+    checks.tokenCache = true;
+
+    // Compute overall health score
+    const passedChecks = Object.values(checks).filter(Boolean).length;
+    const totalChecks = Object.keys(checks).length;
+    const score = totalChecks > 0 ? passedChecks / totalChecks : 0;
+
+    let status: "healthy" | "degraded" | "unhealthy";
+    if (score >= 0.8) status = "healthy";
+    else if (score >= 0.5) status = "degraded";
+    else status = "unhealthy";
+
+    return { status, score, checks, metrics };
   }
 }
 
