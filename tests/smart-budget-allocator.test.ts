@@ -4,9 +4,11 @@ import {
   TaskTypeDetector,
   QualityBasedAdjuster,
   DEFAULT_BUDGET_CONFIG,
+  TASK_BUDGET_PROFILES,
   type TaskType,
   type BudgetConfig,
 } from "../src/smart-budget-allocator";
+import { DriftDetector } from "../src/drift-detector";
 
 // ── TaskTypeDetector Tests ─────────────────────────────────────────
 
@@ -218,6 +220,80 @@ describe("SmartBudgetAllocator", () => {
       ];
       const a2 = a.allocate("s", 10000, msgs);
       expect(a2.taskType).toBe("coding");
+    });
+  });
+
+  describe("drift detector integration", () => {
+    it("applies drift detector for quality calculation", () => {
+      const detector = new DriftDetector({
+        minMessages: 1,
+        similarityThreshold: 0.5,
+      });
+      detector.feedTurn([{ content: "fix bug" }]);
+      detector.feedTurn([{ content: "fix login" }]);
+      detector.feedTurn([{ content: "completely different topic" }]);
+
+      const allocator = new SmartBudgetAllocator();
+      allocator.setDriftDetector(detector);
+
+      const allocation = allocator.allocate("test", 10000);
+      // driftScore should be set from the detector
+      expect(typeof allocation.driftScore).toBe("number");
+      expect(typeof allocation.quality).toBe("number");
+    });
+  });
+
+  describe("getConfig() and updateConfig()", () => {
+    it("returns current config", () => {
+      const a = new SmartBudgetAllocator({ minBaseContext: 5000 });
+      const config = a.getConfig();
+      expect(config.minBaseContext).toBe(5000);
+      expect(config.totalBudget).toBe(8000);
+    });
+
+    it("updates config at runtime", () => {
+      const a = new SmartBudgetAllocator();
+      a.updateConfig({ minBaseContext: 3000, learningRate: 0.8 });
+      const config = a.getConfig();
+      expect(config.minBaseContext).toBe(3000);
+      expect(config.learningRate).toBe(0.8);
+    });
+  });
+
+  describe("getTaskDetector()", () => {
+    it("exposes task detector for external use", () => {
+      const a = new SmartBudgetAllocator();
+      const detector = a.getTaskDetector();
+      expect(detector.detect([{ content: "fix the bug deploy" }])).toBe("coding");
+    });
+  });
+
+  describe("getAllocation()", () => {
+    it("returns last allocation", () => {
+      const a = new SmartBudgetAllocator();
+      expect(a.getAllocation()).toBeNull();
+      a.allocate("s1", 10000);
+      const last = a.getAllocation();
+      expect(last).not.toBeNull();
+      expect(last?.sessionId).toBe("s1");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("handles messages with numeric content", () => {
+      const a = new SmartBudgetAllocator();
+      const alloc = a.allocate("s", 10000, [
+        { content: "12345" },
+        { content: "abc def 999" },
+      ]);
+      expect(alloc.taskType).toBeDefined();
+    });
+
+    it("handles very small budget", () => {
+      const a = new SmartBudgetAllocator();
+      const alloc = a.allocate("s", 100);
+      // Buffer cannot be less than minBuffer (400 by default), so budget should adjust
+      expect(alloc.totalBudget).toBe(100);
     });
   });
 });

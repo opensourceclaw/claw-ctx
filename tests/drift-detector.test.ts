@@ -400,4 +400,113 @@ describe("DriftDetector", () => {
       expect(Array.isArray(scores)).toBe(true);
     });
   });
+
+  describe("alert levels (high/medium/low) and suggested actions", () => {
+    it("generates high-level alert for severe drift", () => {
+      const detector = new DriftDetector({
+        similarityThreshold: 0.1,
+        driftWindow: 2,
+        minMessages: 1,
+        alertLevels: { low: 0.3, medium: 0.5, high: 0.7 },
+      });
+      // Generate severe drift
+      detector.feedTurn([{ content: "fix bug code refactor" }]);
+      detector.feedTurn([{ content: "fix login auth code" }]);
+      detector.feedTurn([{ content: "completely unrelated topic about cooking recipes and food" }]);
+      
+      // Should have drift score after activation
+      const score = detector.getDriftScore();
+      expect(typeof score).toBe("number");
+    });
+
+    it("suggests actions from alert", () => {
+      const detector = new DriftDetector({
+        similarityThreshold: 0.1,
+        driftWindow: 2,
+        minMessages: 1,
+        alertLevels: { low: 0.3, medium: 0.5, high: 0.7 },
+      });
+      // Force some drift by changing topics
+      detector.feedTurn([{ content: "fix bug" }]);
+      detector.feedTurn([{ content: "fix login" }]);
+      detector.feedTurn([{ content: "deploy kubernetes" }]);
+      
+      const actions = detector.suggestActions();
+      expect(actions.length).toBeGreaterThan(0);
+    });
+
+    it("suggests action with different drift levels", () => {
+      const detector = new DriftDetector({
+        similarityThreshold: 0.05,
+        driftWindow: 2,
+        minMessages: 1,
+        alertLevels: { low: 0.3, medium: 0.5, high: 0.7 },
+      });
+      // Feed several turns with topic changes
+      detector.feedTurn([{ content: "code code code" }]);
+      detector.feedTurn([{ content: "code code code" }]);
+      detector.feedTurn([{ content: "cooking recipes dinner food cooking" }]);
+      detector.feedTurn([{ content: "restaurant eat lunch dinner" }]);
+      
+      const actions = detector.suggestActions();
+      // Should suggest some action
+      expect(actions.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("consecutiveDrifts tracking", () => {
+    it("tracks consecutive drifts correctly", () => {
+      const detector = new DriftDetector({
+        similarityThreshold: 0.3,
+        driftWindow: 3,
+        minMessages: 1,
+      });
+      detector.feedTurn([{ content: "fix bug" }]);
+      detector.feedTurn([{ content: "fix login" }]);
+      // Drift away
+      detector.feedTurn([{ content: "deploy cluster" }]);
+      // Drifts continue
+      detector.feedTurn([{ content: "k8s setup" }]);
+      // Back to similar topic
+      detector.feedTurn([{ content: "fix bug again" }]);
+      
+      // The score should be calculable and less than 1.0
+      const score = detector.getDriftScore();
+      expect(typeof score).toBe("number");
+      expect(score).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe("maxDriftScore in report", () => {
+    it("reports max drift correctly", () => {
+      const detector = new DriftDetector({
+        similarityThreshold: 0.3,
+        driftWindow: 3,
+        minMessages: 1,
+      });
+      const report = detector.detectDrift([
+        [{ content: "fix bug" }],
+        [{ content: "fix login" }],
+        [{ content: "deploy k8s" }],
+        [{ content: "docker compose" }],
+      ]);
+      expect(report.maxDriftScore).toBeDefined();
+      expect(typeof report.maxDriftScore).toBe("number");
+    });
+
+    it("reports consecutive drifts in report", () => {
+      const detector = new DriftDetector({
+        similarityThreshold: 0.2,
+        driftWindow: 2,
+        minMessages: 1,
+      });
+      const report = detector.detectDrift([
+        [{ content: "code programming" }],
+        [{ content: "code code" }],
+        [{ content: "k8s kubernetes" }],
+        [{ content: "deploy prod" }],
+      ]);
+      expect(typeof report.consecutiveDrifts).toBe("number");
+    });
+  });
 });

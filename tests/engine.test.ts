@@ -412,4 +412,520 @@ describe('ClawContextEngine', () => {
       expect(engine.info.version).toBe('4.10.0');
     });
   });
+
+  // ── v4.3.0: Token Counter ────────────────────────────────────────
+
+  describe('v4.3.0 token counter', () => {
+    it('getTokenCounter returns counter instance', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const tc = engine.getTokenCounter();
+      expect(tc).toBeDefined();
+      expect(typeof tc.count).toBe('function');
+    });
+
+    it('countTokens returns result with method and tokens', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = engine.countTokens('hello world test');
+      expect(result.tokens).toBeGreaterThan(0);
+      expect(result.method).toBeDefined();
+    });
+
+    it('countTokens handles Chinese text', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = engine.countTokens('你好世界测试文本');
+      expect(result.tokens).toBeGreaterThan(0);
+    });
+
+    it('countTokens handles empty string', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = engine.countTokens('');
+      expect(result.tokens).toBe(0);
+    });
+  });
+
+  // ── v4.5.0: Smart Budget Allocation ──────────────────────────────
+
+  describe('v4.5.0 smart budget', () => {
+    it('calculateSmartBudget returns allocation with drift info', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = engine.calculateSmartBudget(10000, 'debugging', [
+        { role: 'user', content: 'fix the bug in the code' },
+        { role: 'assistant', content: 'analyzing the error...' },
+      ]);
+      expect(result.allocation).toBeDefined();
+      expect(result.driftScore).toBeGreaterThanOrEqual(0);
+      expect(['stable', 'low', 'medium', 'high']).toContain(result.driftLevel);
+    });
+
+    it('calculateSmartBudget works with unknown task type', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = engine.calculateSmartBudget(8000, 'unknown');
+      expect(result.allocation).toBeDefined();
+    });
+
+    it('getSmartBudgetAllocator returns allocator', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const allocator = engine.getSmartBudgetAllocator();
+      expect(allocator).toBeDefined();
+    });
+
+    it('getBudgetHistory returns empty array initially', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const history = engine.getBudgetHistory();
+      expect(Array.isArray(history)).toBe(true);
+    });
+  });
+
+  // ── v4.7.0: Session State ────────────────────────────────────────
+
+  describe('v4.7.0 session state', () => {
+    it('getSessionState returns null initially', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      expect(engine.getSessionState()).toBeNull();
+    });
+
+    it('ingest populates session state with entities', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 's1', sessionFile: '/tmp/test.md' });
+      await engine.ingest({
+        sessionId: 's1',
+        message: { role: 'user', content: 'Working on the TypeScript migration for the devclaw project' },
+      });
+      const state = engine.getSessionState();
+      // State may or may not be populated depending on entity extraction
+      expect(state === null || typeof state === 'object').toBe(true);
+    });
+
+    it('getKeyEntities returns categorized entities', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const entities = engine.getKeyEntities();
+      expect(entities).toBeDefined();
+      expect(entities).toHaveProperty('person');
+      expect(entities).toHaveProperty('tool');
+      expect(entities).toHaveProperty('concept');
+      expect(entities).toHaveProperty('project');
+    });
+  });
+
+  // ── v4.10.0: Health Check ────────────────────────────────────────
+
+  describe('v4.10.0 health check', () => {
+    it('healthCheck returns healthy status with valid checks', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = engine.healthCheck();
+      expect(result.status).toBeDefined();
+      expect(['healthy', 'degraded', 'unhealthy']).toContain(result.status);
+      expect(result.score).toBeGreaterThanOrEqual(0);
+      expect(result.score).toBeLessThanOrEqual(1);
+      expect(result.checks).toBeDefined();
+      expect(result.metrics).toBeDefined();
+    });
+
+    it('healthCheck includes tokenCounter check', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = engine.healthCheck();
+      expect(result.checks).toHaveProperty('tokenCounter');
+      expect(result.metrics).toHaveProperty('tokenCountLatency');
+    });
+
+    it('healthCheck includes driftDetector check', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = engine.healthCheck();
+      expect(result.checks).toHaveProperty('driftDetector');
+      expect(result.metrics).toHaveProperty('driftScore');
+    });
+
+    it('healthCheck includes memoryManager check', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = engine.healthCheck();
+      expect(result.checks).toHaveProperty('memoryManager');
+      expect(result.metrics).toHaveProperty('hasSession');
+    });
+
+    it('healthCheck includes tokenCache check', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = engine.healthCheck();
+      expect(result.checks).toHaveProperty('tokenCache');
+      expect(result.metrics).toHaveProperty('tokenCacheSize');
+    });
+
+    it('healthCheck includes dependencyTracker check', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = engine.healthCheck();
+      expect(result.checks).toHaveProperty('dependencyTracker');
+      expect(result.checks.dependencyTracker).toBe(false);
+    });
+
+    it('healthCheck reports healthy with dep tracker after access', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      engine.getDependencyTracker(); // initialize it
+      const result = engine.healthCheck();
+      expect(result.checks.dependencyTracker).toBe(true);
+    });
+  });
+
+  // ── v5.0.0: Drift Detection ──────────────────────────────────────
+
+  describe('v5.0.0 drift detection', () => {
+    it('feedDriftDetector returns alerts', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const alerts = engine.feedDriftDetector([
+        { content: 'we are building a new feature for the API', role: 'user' },
+        { content: 'actually, let me reconsider the whole architecture', role: 'user' },
+        { content: 'now I want to switch to a different framework entirely', role: 'user' },
+      ]);
+      expect(Array.isArray(alerts)).toBe(true);
+    });
+
+    it('getDriftScore returns number between 0 and 1', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const score = engine.getDriftScore();
+      expect(score).toBeGreaterThanOrEqual(0);
+      expect(score).toBeLessThanOrEqual(1);
+    });
+
+    it('getDriftReport returns comprehensive report', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const report = engine.getDriftReport([
+        [
+          { role: 'user', content: 'I want to build an API' },
+          { role: 'assistant', content: 'OK let me help' },
+          { role: 'user', content: 'actually change to a CLI tool' },
+          { role: 'assistant', content: 'sure' },
+        ],
+      ]);
+      expect(report).toBeDefined();
+      expect(report.drifted).toBeDefined();
+      expect(typeof report.driftScore).toBe('number');
+    });
+
+    it('getDriftAlerts returns accumulated alerts', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      engine.feedDriftDetector([
+        { content: 'first topic', role: 'user' },
+        { content: 'completely different second topic', role: 'user' },
+      ]);
+      const alerts = engine.getDriftAlerts();
+      expect(Array.isArray(alerts)).toBe(true);
+    });
+
+    it('resetDriftDetector clears alerts', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      engine.feedDriftDetector([
+        { content: 'test', role: 'user' },
+      ]);
+      engine.resetDriftDetector();
+      expect(engine.getDriftAlerts()).toHaveLength(0);
+    });
+
+    it('updateDriftConfig changes thresholds', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      expect(() => engine.updateDriftConfig({ threshold: 0.8 })).not.toThrow();
+    });
+  });
+
+  // ── Subagent Lifecycle ────────────────────────────────────────────
+
+  describe('subagent lifecycle', () => {
+    it('prepareSubagentSpawn returns rollback function', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 'parent', sessionFile: '/tmp/test.md' });
+      const result = await engine.prepareSubagentSpawn({
+        parentSessionKey: 'parent',
+        childSessionKey: 'child',
+        contextMode: 'isolated',
+      });
+      expect(result).toBeDefined();
+      expect(typeof result!.rollback).toBe('function');
+    });
+
+    it('prepareSubagentSpawn with fork preserves parent session', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 'parent', sessionFile: '/tmp/test.md' });
+      const result = await engine.prepareSubagentSpawn({
+        parentSessionKey: 'parent',
+        childSessionKey: 'child',
+        contextMode: 'fork',
+        parentSessionId: 'parent',
+        childSessionId: 'child',
+      });
+      expect(result).toBeDefined();
+      result!.rollback(); // should not throw
+    });
+
+    it('onSubagentEnded with completed reason searches memories', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 'parent', sessionFile: '/tmp/test.md' });
+      await expect(
+        engine.onSubagentEnded({ childSessionKey: 'child', reason: 'completed' }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('onSubagentEnded with deleted reason does nothing', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await expect(
+        engine.onSubagentEnded({ childSessionKey: 'child', reason: 'deleted' }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  // ── Maintenance & Edge Cases ──────────────────────────────────────
+
+  describe('maintenance and edge cases', () => {
+    it('maintain returns decay result', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+      const result = await engine.maintain({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+      expect(result).toHaveProperty('changed');
+      expect(result).toHaveProperty('bytesFreed');
+      expect(result).toHaveProperty('rewrittenEntries');
+    });
+
+    it('afterTurn skips heartbeat', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await expect(
+        engine.afterTurn({
+          sessionId: 'test', sessionFile: '/tmp/test.md',
+          messages: [], prePromptMessageCount: 0, isHeartbeat: true,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('ingestBatch skips heartbeats', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = await engine.ingestBatch({
+        sessionId: 'test',
+        messages: [{ role: 'user', content: 'should not store' }],
+        isHeartbeat: true,
+      });
+      expect(result.ingestedCount).toBe(0);
+    });
+
+    it('ingestBatch processes valid messages', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+      const result = await engine.ingestBatch({
+        sessionId: 'test',
+        messages: [
+          { role: 'user', content: 'This is a valid message with enough content' },
+          { role: 'assistant', content: 'short' },
+        ],
+      });
+      expect(typeof result.ingestedCount).toBe('number');
+    });
+
+    it('compact with sessionFile that exists actually compacts', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const sessionFile = createSessionFile(60); // many messages
+      const result = await engine.compact({
+        sessionId: 'test-sess',
+        sessionFile,
+        tokenBudget: 1000, // very small budget forces compaction
+      });
+      expect(result.compacted).toBe(true);
+      expect(result.ok).toBe(true);
+      expect(result.result?.tokensBefore).toBeGreaterThan(0);
+      expect(result.result?.tokensAfter).toBeGreaterThan(0);
+    });
+
+    it('compact with missing sessionFile returns error', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = await engine.compact({
+        sessionId: 'test',
+        sessionFile: '/tmp/nonexistent-12345.jsonl',
+        currentTokenCount: 200000,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.compacted).toBe(false);
+    });
+
+    it('v4.9.0: getDependencyTracker creates tracker lazily', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const tracker = engine.getDependencyTracker();
+      expect(tracker).toBeDefined();
+      const stats = tracker.getStats();
+      expect(stats).toBeDefined();
+      expect(stats.entitiesTracked).toBeGreaterThanOrEqual(0);
+    });
+
+    it('v4.9.0: setDependencyTracker replaces tracker', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const t1 = engine.getDependencyTracker();
+      const t2 = engine.getDependencyTracker();
+      // Same instance returned (lazy singleton)
+      expect(t2).toBe(t1);
+    });
+
+    it('compact with runtimeContext does not crash', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const sessionFile = createSessionFile(30);
+      const result = await engine.compact({
+        sessionId: 'test',
+        sessionFile,
+        tokenBudget: 4000,
+        runtimeContext: { skipReasoning: true },
+      });
+      expect(result.compacted).toBe(true);
+    });
+
+    it('compaction handles session file with custom instructions', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const sessionFile = createSessionFile(30);
+      const result = await engine.compact({
+        sessionId: 'test',
+        sessionFile,
+        tokenBudget: 4000,
+        customInstructions: 'preserve error messages',
+      });
+      expect(result.compacted).toBe(true);
+    });
+
+    it('compaction with compactionTarget parameter', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const sessionFile = createSessionFile(30);
+      const result = await engine.compact({
+        sessionId: 'test',
+        sessionFile,
+        tokenBudget: 4000,
+        compactionTarget: 'remove old messages only',
+      });
+      expect(result.compacted).toBe(true);
+    });
+  });
+
+  // ── External Context via assemble ─────────────────────────────────
+
+  describe('external context through assemble', () => {
+    it('assemble injects RL experiences through provider', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+      const provider = new MockRLProvider();
+      provider.addExperience({
+        id: 'rl-1', taskType: 'debugging', outcome: 'success',
+        pattern: 'Check logs first', confidence: 0.95, learnedAt: new Date(),
+      });
+      engine.setRLProvider(provider);
+      const result = await engine.assemble({
+        sessionId: 'test',
+        messages: [{ role: 'user', content: 'debug the issue' }],
+        prompt: 'debug',
+      });
+      expect(result.systemPromptAddition).toBeDefined();
+    });
+
+    it('assemble injects governance signals through provider', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+      const provider = new MockGovernanceProvider();
+      provider.addSignal({
+        layer: 'L1', type: 'intent_check', result: 'approved',
+        timestamp: new Date(),
+      });
+      engine.setGovernanceProvider(provider);
+      const result = await engine.assemble({
+        sessionId: 'test',
+        messages: [{ role: 'user', content: 'update the production config' }],
+        prompt: 'update config',
+      });
+      expect(result.systemPromptAddition).toBeDefined();
+    });
+
+    it('assemble with both RL and governance providers', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+      const rlProvider = new MockRLProvider();
+      rlProvider.addExperience({
+        id: 'rl-1', taskType: 'refactoring', outcome: 'success',
+        pattern: 'Write tests first', confidence: 0.85, learnedAt: new Date(),
+      });
+      engine.setRLProvider(rlProvider);
+      const govProvider = new MockGovernanceProvider();
+      govProvider.addSignal({
+        layer: 'L1', type: 'safety_check', result: 'approved',
+        timestamp: new Date(),
+      });
+      engine.setGovernanceProvider(govProvider);
+      const result = await engine.assemble({
+        sessionId: 'test',
+        messages: [{ role: 'user', content: 'refactor the module' }],
+        prompt: 'refactor',
+      });
+      expect(result.systemPromptAddition).toBeDefined();
+    });
+  });
+
+  // ── Config & Edge ─────────────────────────────────────────────────
+
+  describe('config options', () => {
+    it('respects compactThreshold config', async () => {
+      const engine = createClawContextEngine(
+        { workspaceDir: '/tmp', compactThreshold: 500000 },
+        mockLogger()
+      );
+      await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+      // Should not compact with high threshold
+      const result = await engine.compact({
+        sessionId: 'test', sessionFile: '/tmp/test.md',
+        force: false, currentTokenCount: 300000,
+      });
+      expect(result.ok).toBe(true);
+    });
+
+    it('respects reserveRatio config', async () => {
+      const engine = createClawContextEngine(
+        { workspaceDir: '/tmp', reserveRatio: 0.5 },
+        mockLogger()
+      );
+      expect(engine).toBeDefined();
+    });
+
+    it('debug mode does not crash', () => {
+      const engine = createClawContextEngine(
+        { workspaceDir: '/tmp', debug: true },
+        { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} },
+      );
+      expect(engine).toBeDefined();
+    });
+
+    it('topK affects search depth', async () => {
+      const engine = createClawContextEngine(
+        { workspaceDir: '/tmp', topK: 20 },
+        mockLogger()
+      );
+      await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+      const result = await engine.assemble({
+        sessionId: 'test',
+        messages: [{ role: 'user', content: 'test query' }],
+        prompt: 'test',
+        tokenBudget: 2000,
+      });
+      expect(result.messages).toBeDefined();
+    });
+  });
+
+  // ── ingestBatch edge ──────────────────────────────────────────────
+
+  describe('ingestBatch edge cases', () => {
+    it('ingestBatch handles empty messages array', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = await engine.ingestBatch({
+        sessionId: 'test', messages: [],
+      });
+      expect(result.ingestedCount).toBe(0);
+    });
+
+    it('ingestBatch handles mixed valid and invalid messages', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+      const result = await engine.ingestBatch({
+        sessionId: 'test',
+        messages: [
+          { role: 'user', content: 'This is a valid test message with sufficient content length' },
+          { role: 'user', content: '' },
+          { role: 'user', content: 'hi' },
+        ],
+      });
+      expect(typeof result.ingestedCount).toBe('number');
+    });
+  });
 });

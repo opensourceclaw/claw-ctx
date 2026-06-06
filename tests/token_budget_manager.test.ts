@@ -138,4 +138,66 @@ describe("TokenBudgetManager", () => {
       expect(config.bufferPct).toBe(20);
     });
   });
+
+  describe("edge cases: min/max clamping", () => {
+    it("clamps crossDomain to maxCrossDomain", () => {
+      const m = freshBm({
+        baseContextPct: 30,
+        crossDomainPct: 60,
+        ciPct: 5,
+        bufferPct: 5,
+      });
+      // crossDomain % (6000) > maxCrossDomain (5000 default)
+      const r = m.calculate(10000);
+      expect(r.allocation.crossDomainSignals).toBeLessThanOrEqual(5000);
+    });
+
+    it("clamps ciSignals to maxCI", () => {
+      const m = freshBm({
+        baseContextPct: 30,
+        crossDomainPct: 5,
+        ciPct: 60,
+        bufferPct: 5,
+      });
+      const r = m.calculate(10000);
+      expect(r.allocation.ciSignals).toBeLessThanOrEqual(3000);
+    });
+
+    it("applies minBaseContext when base is too low", () => {
+      const m = freshBm({
+        baseContextPct: 5,
+        crossDomainPct: 10,
+        ciPct: 80,
+        bufferPct: 5,
+      });
+      const r = m.calculate(10000);
+      expect(r.allocation.baseContext).toBeGreaterThanOrEqual(1000);
+    });
+  });
+
+  describe("custom max limits", () => {
+    it("respects custom maxCrossDomain", () => {
+      const m = freshBm({
+        baseContextPct: 50,
+        crossDomainPct: 30,
+        ciPct: 10,
+        bufferPct: 10,
+        maxCrossDomain: 2000,
+      });
+      const r = m.calculate(10000);
+      expect(r.allocation.crossDomainSignals).toBeLessThanOrEqual(2000);
+    });
+
+    it("respects custom maxCI", () => {
+      const m = freshBm({
+        baseContextPct: 50,
+        crossDomainPct: 10,
+        ciPct: 30,
+        bufferPct: 10,
+        maxCI: 2000,
+      });
+      const r = m.calculate(10000);
+      expect(r.allocation.ciSignals).toBeLessThanOrEqual(2000);
+    });
+  });
 });

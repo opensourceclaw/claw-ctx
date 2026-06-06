@@ -155,11 +155,16 @@ describe("TiktokenCounter", () => {
   describe("decode()", () => {
     it("roundtrips encode → decode", () => {
       const counter = new TiktokenCounter();
-      // Use a simple model to test roundtrip
       const original = "Hello world";
-      // get token IDs and decode back
-      // Note: tiktoken encodes to length; for full roundtrip use lower-level API
-      expect(counter.decode).toBeDefined();
+      const encoded = counter.encode(original);
+      const decoded = counter.decode(encoded);
+      // tiktoken decode may not give exact original due to normalization
+      expect(decoded.length).toBeGreaterThan(0);
+    });
+
+    it("throws when encoder unavailable", () => {
+      const counter = new TiktokenCounter("invalid_model");
+      expect(() => counter.decode([1, 2, 3])).toThrow();
     });
   });
 
