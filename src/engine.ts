@@ -19,6 +19,14 @@ import { SessionStateExtractor, type SessionState, type Entity } from "./session
 import { CIInjector, type CISignal, type CIProvider, MockCIProvider } from "./ci_injector";
 import { LongTermDependencyTracker } from "./long-term-dependency-tracker";
 
+// v4.11.0: RL-driven memory strategy selection
+import {
+  MemoryStrategySelector,
+  type MemoryStrategy,
+  type StrategyContext,
+  type StrategyResult,
+} from "../../claw-rl/src/memory_strategy_selector";
+
 // v4.3.0: Global token counter instance for precise counting
 let globalTokenCounter = createTokenCounter("cl100k_base");
 
@@ -110,6 +118,8 @@ export class ClawContextEngine {
   private _smartBudgetAllocator: SmartBudgetAllocator;
   private _sessionState: SessionState | null = null;
   private _depTracker: LongTermDependencyTracker | null = null;
+  // v4.11.0: RL memory strategy selector
+  private _strategySelector: MemoryStrategySelector;
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -119,6 +129,8 @@ export class ClawContextEngine {
     this.driftDetector = new DriftDetector();
     this._smartBudgetAllocator = new SmartBudgetAllocator();
     this._smartBudgetAllocator.setDriftDetector(this.driftDetector);
+    // v4.11.0: RL strategy selector
+    this._strategySelector = new MemoryStrategySelector();
   }
 
   private _session(id: string): void { if (this.sid !== id) { this.sid = id; this.manager.sessionId = id; } }
@@ -611,6 +623,76 @@ export class ClawContextEngine {
   /** v4.9.0: Set a custom dependency tracker */
   setDependencyTracker(tracker: LongTermDependencyTracker): void {
     this._depTracker = tracker;
+  }
+
+  // ── v4.11.0: RL Memory Strategy Selection ──────────────────────────
+
+  /** Select best memory recall strategy based on current context. */
+  selectMemoryStrategy(context: {
+    tokenBudget?: number;
+    taskComplexity?: "simple" | "medium" | "complex";
+  }): StrategyResult {
+    const driftScore = this.getDriftScore();
+    const budget = context.tokenBudget ?? 8000;
+
+    return this._strategySelector.select({
+      tokenBudget: budget,
+      currentDrift: driftScore,
+      taskComplexity: context.taskComplexity ?? "medium",
+      sessionLength: 50, // default estimate
+    });
+  }
+
+  /** Recall memories using the specified strategy. */
+  recallWithStrategy(
+    strategy: MemoryStrategy,
+    query: string,
+  ): Promise<any[]> {
+    switch (strategy) {
+      case "aggressive_recall":
+        return this._recallAggressive(query);
+      case "selective_recall":
+        return this._recallSelective(query);
+      case "minimal_context":
+        return this._recallMinimal(query);
+      case "drift_adaptive":
+        return this._recallAdaptive(query);
+    }
+  }
+
+  /** Record feedback for RL learning after strategy execution. */
+  recordStrategyFeedback(strategy: MemoryStrategy, reward: number): void {
+    this._strategySelector.recordFeedback(strategy, reward);
+  }
+
+  /** Get strategy selector stats. */
+  getStrategyStats() {
+    return this._strategySelector.getStats();
+  }
+
+  /** Reset strategy selector state. */
+  resetStrategySelector(): void {
+    this._strategySelector.reset();
+  }
+
+  private _recallAggressive(query: string): Promise<any[]> {
+    return Promise.resolve(this.manager.search(query, undefined, 20) as any[] ?? []);
+  }
+
+  private _recallSelective(query: string): Promise<any[]> {
+    const all = this.manager.search(query, undefined, 50) as any[];
+    if (!Array.isArray(all)) return Promise.resolve([]);
+    return Promise.resolve(all.filter((r: any) => (r.score ?? 0) >= 0.5));
+  }
+
+  private _recallMinimal(query: string): Promise<any[]> {
+    return Promise.resolve(this.manager.search(query, undefined, 3) as any[] ?? []);
+  }
+
+  private _recallAdaptive(query: string): Promise<any[]> {
+    const driftScore = this.getDriftScore();
+    const topK = driftScore > 0.5 ? 12 : 6;
+    return Promise.resolve(this.manager.search(query, undefined, topK) as any[] ?? []);
   }
 
   /** Set a custom CI provider (e.g., bridge to GitHub Actions API) */
