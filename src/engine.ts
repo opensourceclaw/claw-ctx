@@ -25,7 +25,7 @@ import {
   type MemoryStrategy,
   type StrategyContext,
   type StrategyResult,
-} from "../../claw-rl/src/memory_strategy_selector";
+} from "./memory_strategy_selector";
 
 // v4.3.0: Global token counter instance for precise counting
 let globalTokenCounter = createTokenCounter("cl100k_base");
@@ -1016,3 +1016,6 @@ export class ClawContextEngine {
 export function createClawContextEngine(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager): ClawContextEngine {
   return new ClawContextEngine(config, logger, manager);
 }
+
+export type { StrategyStats } from './memory_strategy_selector';
+
