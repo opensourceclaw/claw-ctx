@@ -295,5 +295,32 @@ describe("SmartBudgetAllocator", () => {
       // Buffer cannot be less than minBuffer (400 by default), so budget should adjust
       expect(alloc.totalBudget).toBe(100);
     });
+
+    it("allocate without messages returns unknown task type", () => {
+      const a = new SmartBudgetAllocator();
+      const alloc = a.allocate("s", 10000);
+      expect(alloc.taskType).toBe("unknown");
+    });
+
+    it("adjust returns different profiles per task", () => {
+      const coding = allocator.adjust("coding", 1.0);
+      const reasoning = allocator.adjust("reasoning", 1.0);
+      // Different task types have different profiles
+      expect(coding.baseContext).not.toBe(reasoning.baseContext);
+    });
+
+    it("getTaskDetector detect with empty messages", () => {
+      const a = new SmartBudgetAllocator();
+      expect(a.getTaskDetector().detect([])).toBe("unknown");
+    });
+
+    it("getHistory returns independent copy", () => {
+      const a = new SmartBudgetAllocator();
+      a.allocate("s1", 10000);
+      a.allocate("s2", 10000);
+      const h = a.getHistory();
+      h.splice(0, 1);
+      expect(a.getHistory()).toHaveLength(2); // original unchanged
+    });
   });
 });

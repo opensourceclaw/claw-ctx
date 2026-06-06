@@ -509,4 +509,44 @@ describe("DriftDetector", () => {
       expect(typeof report.consecutiveDrifts).toBe("number");
     });
   });
+
+  describe("edge cases", () => {
+    it("handles empty feedTurn gracefully", () => {
+      const detector = new DriftDetector({ minMessages: 1 });
+      expect(() => detector.feedTurn([])).not.toThrow();
+    });
+
+    it("getDriftScore returns 0 with no history", () => {
+      const detector = new DriftDetector({ minMessages: 1 });
+      expect(detector.getDriftScore()).toBe(0);
+    });
+
+    it("suggestActions with no history returns suggestions", () => {
+      const detector = new DriftDetector({ minMessages: 1 });
+      const actions = detector.suggestActions();
+      expect(Array.isArray(actions)).toBe(true);
+    });
+
+    it("getConfig returns current config", () => {
+      const detector = new DriftDetector({
+        threshold: 0.6,
+        similarityThreshold: 0.4,
+        driftWindow: 3,
+        minMessages: 2,
+      });
+      const config = detector.getConfig();
+      expect(config.threshold).toBe(0.6);
+      expect(config.similarityThreshold).toBe(0.4);
+      expect(config.driftWindow).toBe(3);
+      expect(config.minMessages).toBe(2);
+    });
+
+    it("updateConfig partial update preserves defaults", () => {
+      const detector = new DriftDetector({ similarityThreshold: 0.4 });
+      detector.updateConfig({ threshold: 0.9 });
+      const config = detector.getConfig();
+      expect(config.threshold).toBe(0.9);
+      expect(config.similarityThreshold).toBe(0.4); // preserved
+    });
+  });
 });
