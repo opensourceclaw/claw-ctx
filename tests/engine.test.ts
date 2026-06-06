@@ -1,7 +1,19 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+
+// Mock claw-mem to avoid CJS/ESM conflict
+vi.mock('../../claw-mem/dist/memory_manager', () => ({
+  getMemoryManager: () => ({
+    sessionId: '',
+    store: vi.fn(),
+    search: vi.fn().mockReturnValue([]),
+    injectConstitution: vi.fn(),
+  }),
+  MemoryManager: class {},
+}));
+
 import { ClawContextEngine, createClawContextEngine } from '../src/engine';
 import { MockRLProvider } from '../src/rl_injector';
 import { MockGovernanceProvider } from '../src/governance_injector';

@@ -27,7 +27,8 @@ export default defineConfig({
         lines: [70, 85],
       },
     },
-    // Performance benchmarks timeout
+    pool: 'forks',
+    singleFork: true,
     testTimeout: 30000,
   },
 });
