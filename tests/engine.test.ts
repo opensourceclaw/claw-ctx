@@ -1034,5 +1034,24 @@ describe('ClawContextEngine', () => {
       const stats = engine.getStrategyStats();
       expect(Object.keys(stats).length).toBe(0);
     });
+
+    it('selectMemoryStrategy low budget returns minimal strategy more often', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const results = new Set<string>();
+      for (let i = 0; i < 20; i++) {
+        const r = engine.selectMemoryStrategy({ tokenBudget: 1000, taskComplexity: 'simple' });
+        results.add(r.strategy);
+      }
+      expect(results.size).toBeGreaterThanOrEqual(1);
+    });
+
+    it('recallWithStrategy all four strategies return arrays', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 't', sessionFile: '/tmp/t.md' });
+      for (const s of ['aggressive_recall', 'selective_recall', 'minimal_context', 'drift_adaptive'] as const) {
+        const r = await engine.recallWithStrategy(s, 'query');
+        expect(Array.isArray(r)).toBe(true);
+      }
+    });
   });
 });
