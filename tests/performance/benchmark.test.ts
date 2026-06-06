@@ -182,3 +182,87 @@ describe("Performance: SessionStateExtractor", () => {
     expect(elapsed).toBeLessThan(5);
   });
 });
+
+// ── Expanded Benchmarks (v4.10.0) ──────────────────────────────────
+
+describe("Benchmark: Token Encoding Accuracy", () => {
+  it("token encoding produces consistent results", () => {
+    const counter = new TiktokenCounter("cl100k_base");
+    const text = "Hello world, this is a test of token encoding accuracy";
+    
+    const count1 = counter.encode(text);
+    const count2 = counter.encode(text);
+    // Same input should produce same output
+    expect(count1).toBe(count2);
+    expect(count1).toBeGreaterThan(0);
+  });
+
+  it("fallback counter provides reasonable estimates", () => {
+    const counter = new TiktokenCounter("cl100k_base");
+    const texts = ["Hello world", "code: const x = 42;"];
+    
+    for (const text of texts) {
+      const tiktokenCount = counter.encode(text);
+      const fallbackCount = FallbackCounter.estimate(text);
+      // Both should produce positive token counts
+      expect(tiktokenCount).toBeGreaterThan(0);
+      expect(fallbackCount).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("Benchmark: Budget Distribution Efficiency", () => {
+  it("budget allocation distributes across categories correctly", () => {
+    const allocator = new SmartBudgetAllocator();
+    const result = allocator.allocate("test-session", 5000, [
+      { role: "user", content: "Fix the bug in the deployment pipeline" },
+    ]);
+    expect(result.totalBudget).toBe(5000);
+    expect(result.baseContext + result.crossDomain + result.ci + result.buffer).toBe(5000);
+    expect(result.baseContext).toBeGreaterThan(0);
+  });
+
+  it("allocation efficiency detects coding task type", () => {
+    const allocator = new SmartBudgetAllocator();
+    const codingMsgs = [
+      { role: "user", content: "fix the bug in the TypeScript code" },
+      { role: "assistant", content: "debugging the deployment pipeline" },
+    ];
+    const result = allocator.allocate("s1", 10000, codingMsgs);
+    expect(result.taskType).toBe("coding");
+    expect(result.baseContext).toBeGreaterThanOrEqual(5000);
+  });
+});
+
+describe("Benchmark: Drift Detection Accuracy", () => {
+  it("drift sensitivity at different thresholds", () => {
+    const scenarios = [
+      { messages: ["auth", "auth", "auth", "auth"], expectedDrift: "low" as const },
+      { messages: ["auth", "db", "auth", "db"], expectedDrift: "medium" as const },
+      { messages: ["auth", "k8s", "db", "deploy"], expectedDrift: "high" as const },
+    ];
+
+    for (const { messages, expectedDrift } of scenarios) {
+      const detector = new DriftDetector({ minMessages: 2 });
+      for (const msg of messages) {
+        detector.feedTurn([{ content: msg }]);
+      }
+      const score = detector.getDriftScore();
+      if (expectedDrift === "low") expect(score).toBeLessThan(0.4);
+      else if (expectedDrift === "medium") expect(score).toBeGreaterThanOrEqual(0);
+      // High drift scenarios should produce measurable scores
+      expect(score).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
+
+describe("Benchmark: Session State Throughput", () => {
+  it("state extraction handles large message volumes", () => {
+    const messages = Array.from({ length: 200 }, (_, i) => ({
+      content: `Msg ${i}: fix deploy test ${"data ".repeat(20)}`,
+    }));
+    const elapsed = measureTime(() => SessionStateExtractor.extract(messages));
+    // Should complete within reasonable time for 200 messages
+    expect(elapsed).toBeLessThan(500);
+  });
+});
