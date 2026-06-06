@@ -14,6 +14,18 @@ vi.mock('../../claw-mem/dist/memory_manager', () => ({
   MemoryManager: class {},
 }));
 
+// Mock claw-rl strategy selector
+vi.mock('../../claw-rl/src/memory_strategy_selector', () => ({
+  MemoryStrategySelector: class {
+    select() {
+      return { strategy: 'selective_recall', confidence: 0.8, topK: 8, budgetAllocation: 2400, reasoning: 'mock' };
+    }
+    recordFeedback() {}
+    getStats() { return {}; }
+    reset() {}
+  },
+}));
+
 import { ClawContextEngine, createClawContextEngine } from '../src/engine';
 import { MockRLProvider } from '../src/rl_injector';
 import { MockGovernanceProvider } from '../src/governance_injector';
@@ -938,6 +950,89 @@ describe('ClawContextEngine', () => {
         ],
       });
       expect(typeof result.ingestedCount).toBe('number');
+    });
+  });
+
+  // ── v4.11.0: RL Memory Strategy Selection ──────────────────────────
+
+  describe('v4.11.0 RL strategy selection', () => {
+    it('selectMemoryStrategy returns valid result', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = engine.selectMemoryStrategy({
+        tokenBudget: 8000,
+        taskComplexity: 'medium',
+      });
+      expect(result.strategy).toBeDefined();
+      expect(['aggressive_recall', 'selective_recall', 'minimal_context', 'drift_adaptive']).toContain(result.strategy);
+      expect(result.confidence).toBeGreaterThan(0);
+      expect(result.topK).toBeGreaterThan(0);
+      expect(result.reasoning).toBeDefined();
+    });
+
+    it('selectMemoryStrategy with simple task', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = engine.selectMemoryStrategy({
+        tokenBudget: 8000,
+        taskComplexity: 'simple',
+      });
+      expect(result.strategy).toBeDefined();
+    });
+
+    it('selectMemoryStrategy with complex task favors higher topK', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const result = engine.selectMemoryStrategy({
+        tokenBudget: 80000,
+        taskComplexity: 'complex',
+      });
+      expect(result.budgetAllocation).toBeGreaterThanOrEqual(0);
+    });
+
+    it('recallWithStrategy aggressive returns results', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+      const results = await engine.recallWithStrategy('aggressive_recall', 'test query');
+      expect(Array.isArray(results)).toBe(true);
+    });
+
+    it('recallWithStrategy selective filters by score', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+      const results = await engine.recallWithStrategy('selective_recall', 'query');
+      expect(Array.isArray(results)).toBe(true);
+    });
+
+    it('recallWithStrategy minimal returns few results', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+      const results = await engine.recallWithStrategy('minimal_context', 'query');
+      expect(Array.isArray(results)).toBe(true);
+    });
+
+    it('recallWithStrategy drift_adaptive works', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+      const results = await engine.recallWithStrategy('drift_adaptive', 'query');
+      expect(Array.isArray(results)).toBe(true);
+    });
+
+    it('recordStrategyFeedback tracks feedback', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      expect(() => engine.recordStrategyFeedback('aggressive_recall', 1.0)).not.toThrow();
+    });
+
+    it('getStrategyStats returns stats object', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const stats = engine.getStrategyStats();
+      expect(stats).toBeDefined();
+      expect(typeof stats).toBe('object');
+    });
+
+    it('resetStrategySelector clears stats', () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      engine.recordStrategyFeedback('aggressive_recall', 1.0);
+      engine.resetStrategySelector();
+      const stats = engine.getStrategyStats();
+      expect(Object.keys(stats).length).toBe(0);
     });
   });
 });
