@@ -6,18 +6,18 @@
  * v3.0.0 adds: cross-domain signal injection, token budget management.
  */
 import * as fs from "fs";
-import { getMemoryManager, type MemoryManager } from "../../claw-mem/dist/memory_manager";
-import { ConfidenceGate, type ConfidenceMode, type ConfidenceReport } from "./confidence_gate";
-import { RLInjector, type RLExperience, type RLProvider, MockRLProvider } from "./rl_injector";
-import { GovernanceInjector, type GovernanceSignal, type GovernanceProvider, type GovernanceLayer, MockGovernanceProvider } from "./governance_injector";
-import { CrossDomainInjector, type InjectedSignal, type CrossDomainProvider, MockCrossDomainProvider } from "./cross_domain_injector";
-import { TokenBudgetManager, type BudgetResult } from "./token_budget_manager";
-import { TiktokenCounter, FallbackCounter, createTokenCounter, type TokenCounterResult } from "./token-counter";
-import { DriftDetector, TopicModel, type DriftAlert, type DriftReport, type DriftConfig, DEFAULT_DRIFT_CONFIG } from "./drift-detector";
-import { SmartBudgetAllocator, type TaskType, type BudgetAllocation as SmartBudgetAllocation, type AllocationHistory } from "./smart-budget-allocator";
-import { SessionStateExtractor, type SessionState, type Entity } from "./session-state-extractor";
-import { CIInjector, type CISignal, type CIProvider, MockCIProvider } from "./ci_injector";
-import { LongTermDependencyTracker } from "./long-term-dependency-tracker";
+import { getMemoryManager, type MemoryManager } from "../../claw-mem/dist/memory_manager.js";
+import { ConfidenceGate, type ConfidenceMode, type ConfidenceReport } from "./confidence_gate.js";
+import { RLInjector, type RLExperience, type RLProvider, MockRLProvider } from "./rl_injector.js";
+import { GovernanceInjector, type GovernanceSignal, type GovernanceProvider, type GovernanceLayer, MockGovernanceProvider } from "./governance_injector.js";
+import { CrossDomainInjector, type InjectedSignal, type CrossDomainProvider, MockCrossDomainProvider } from "./cross_domain_injector.js";
+import { TokenBudgetManager, type BudgetResult } from "./token_budget_manager.js";
+import { TiktokenCounter, FallbackCounter, createTokenCounter, type TokenCounterResult } from "./token-counter.js";
+import { DriftDetector, TopicModel, type DriftAlert, type DriftReport, type DriftConfig, DEFAULT_DRIFT_CONFIG } from "./drift-detector.js";
+import { SmartBudgetAllocator, type TaskType, type BudgetAllocation as SmartBudgetAllocation, type AllocationHistory } from "./smart-budget-allocator.js";
+import { SessionStateExtractor, type SessionState, type Entity } from "./session-state-extractor.js";
+import { CIInjector, type CISignal, type CIProvider, MockCIProvider } from "./ci_injector.js";
+import { LongTermDependencyTracker } from "./long-term-dependency-tracker.js";
 
 // v4.11.0: RL-driven memory strategy selection
 import {
@@ -25,7 +25,7 @@ import {
   type MemoryStrategy,
   type StrategyContext,
   type StrategyResult,
-} from "./memory_strategy_selector";
+} from "./memory_strategy_selector.js";
 
 // v4.3.0: Global token counter instance for precise counting
 let globalTokenCounter = createTokenCounter("cl100k_base");

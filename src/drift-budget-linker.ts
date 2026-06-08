@@ -10,8 +10,8 @@
  * - total stays constant
  */
 
-import type { DriftDetector } from "./drift-detector";
-import type { BudgetAllocation as SmartBudgetAllocation } from "./smart-budget-allocator";
+import type { DriftDetector } from "./drift-detector.js";
+import type { BudgetAllocation as SmartBudgetAllocation } from "./smart-budget-allocator.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
