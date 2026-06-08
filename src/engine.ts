@@ -50,10 +50,11 @@ const tokenCache = new Map<string, number>();
 const MAX_TOKEN_CACHE = 5000;
 
 function estimateTokens(text: string): number {
-  if (text.length < 500) {
-    const cached = tokenCache.get(text);
-    if (cached !== undefined) return cached;
-  }
+  // Use fast key for all text lengths: short text uses full text, long text uses hash
+  const cacheKey = text.length < 500 ? text : text.slice(0, 50) + "|" + text.length + "|" + text.slice(-50);
+  const cached = tokenCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   let result: number;
   if (globalTokenCounter.isPrecise()) {
     try {
@@ -64,13 +65,11 @@ function estimateTokens(text: string): number {
   } else {
     result = FallbackCounter.estimate(text);
   }
-  if (text.length < 500) {
-    if (tokenCache.size >= MAX_TOKEN_CACHE) {
-      const firstKey = tokenCache.keys().next().value;
-      if (firstKey !== undefined) tokenCache.delete(firstKey);
-    }
-    tokenCache.set(text, result);
+  if (tokenCache.size >= MAX_TOKEN_CACHE) {
+    const firstKey = tokenCache.keys().next().value;
+    if (firstKey !== undefined) tokenCache.delete(firstKey);
   }
+  tokenCache.set(cacheKey, result);
   return result;
 }
 
@@ -80,10 +79,13 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   if (items.length === 0) return [];
   const sorted = [...items].sort((a, b) => b.score - a.score);
   const counts = sorted.map((m) => estimateTokens(m.content));
-  let lo = 0, hi = sorted.length;
+  // Use prefix sums for O(n) budget selection
+  const prefix = [0];
+  for (let i = 0; i < counts.length; i++) prefix.push(prefix[i] + counts[i]);
+  let lo = 0, hi = counts.length;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
-    if (counts.slice(0, mid).reduce((s, t) => s + t, 0) <= budget) lo = mid;
+    if (prefix[mid] <= budget) lo = mid;
     else hi = mid - 1;
   }
   return sorted.slice(0, lo);
@@ -96,7 +98,7 @@ class SearchCache<T> {
   private ttl: number;
   constructor(ttl = 30000) { this.ttl = ttl; }
   get(k: string): T | undefined { const e = this.store.get(k); if (e && Date.now() - e.ts < this.ttl) return e.data; this.store.delete(k); return undefined; }
-  set(k: string, d: T): void { this.store.set(k, { data: d, ts: Date.now() }); if (this.store.size > 50) { const a = [...this.store.entries()].sort((a,b) => a[1].ts - b[1].ts)[0]; if (a) this.store.delete(a[0]); } }
+  set(k: string, d: T): void { this.store.set(k, { data: d, ts: Date.now() }); if (this.store.size > 50) { const firstKey = this.store.keys().next().value; if (firstKey !== undefined) this.store.delete(firstKey); } }
 }
 
 export class ClawContextEngine {
