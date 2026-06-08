@@ -8,7 +8,7 @@
  * v4.5.0: Initial implementation
  */
 
-import type { DriftDetector } from "./drift-detector";
+import type { DriftDetector } from "./drift-detector.js";
 
 // ── Types ──────────────────────────────────────────────────────────
 

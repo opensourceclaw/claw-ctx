@@ -4,20 +4,20 @@
  * C2 confidence gating, RL experience injection, governance signal pass-through,
  * and cross-domain signal injection.
  */
-import { createClawContextEngine } from "./engine";
+import { createClawContextEngine } from "./engine.js";
 
-export { ConfidenceGate, type ConfidenceMode, type ConfidenceReport } from "./confidence_gate";
-export { RLInjector, MockRLProvider, type RLExperience, type RLProvider } from "./rl_injector";
-export { GovernanceInjector, MockGovernanceProvider, type GovernanceSignal, type GovernanceProvider, type GovernanceLayer } from "./governance_injector";
-export { CrossDomainInjector, MockCrossDomainProvider, type InjectedSignal, type CrossDomainProvider } from "./cross_domain_injector";
-export { CIInjector, MockCIProvider, type CISignal, type CIProvider } from "./ci_injector";
-export { TokenBudgetManager, type BudgetAllocation, type BudgetConfig, type BudgetResult } from "./token_budget_manager";
-export { TiktokenCounter, FallbackCounter, createTokenCounter, type TiktokenEncodingName, type TokenCounterResult, type BatchTokenResult, type TokenStats, type TokenBudget } from "./token-counter";
-export { DriftDetector, TopicModel, DEFAULT_DRIFT_CONFIG, type Topic, type DriftAlert, type Action, type DriftConfig, type DriftReport } from "./drift-detector";
-export { SmartBudgetAllocator, TaskTypeDetector, QualityBasedAdjuster, DEFAULT_BUDGET_CONFIG, TASK_BUDGET_PROFILES, type TaskType, type BudgetConfig as SmartBudgetAllocatorConfig, type BudgetAllocation as SmartBudgetAllocation, type AllocationHistory, type TaskBudgetProfile } from "./smart-budget-allocator";
-export { SessionStateExtractor, type SessionState, type Entity, type Decision, type TopicTag } from "./session-state-extractor";
-export { DriftBudgetLinker, DEFAULT_DRIFT_BUDGET_CONFIG, type DriftBudgetConfig, type BudgetAllocation as DriftBudgetAllocation } from "./drift-budget-linker";
-export { LongTermDependencyTracker, type EntityMention, type DependencyChain, type GraphNode, type GraphEdge, type Graph } from "./long-term-dependency-tracker";
+export { ConfidenceGate, type ConfidenceMode, type ConfidenceReport } from "./confidence_gate.js";
+export { RLInjector, MockRLProvider, type RLExperience, type RLProvider } from "./rl_injector.js";
+export { GovernanceInjector, MockGovernanceProvider, type GovernanceSignal, type GovernanceProvider, type GovernanceLayer } from "./governance_injector.js";
+export { CrossDomainInjector, MockCrossDomainProvider, type InjectedSignal, type CrossDomainProvider } from "./cross_domain_injector.js";
+export { CIInjector, MockCIProvider, type CISignal, type CIProvider } from "./ci_injector.js";
+export { TokenBudgetManager, type BudgetAllocation, type BudgetConfig, type BudgetResult } from "./token_budget_manager.js";
+export { TiktokenCounter, FallbackCounter, createTokenCounter, type TiktokenEncodingName, type TokenCounterResult, type BatchTokenResult, type TokenStats, type TokenBudget } from "./token-counter.js";
+export { DriftDetector, TopicModel, DEFAULT_DRIFT_CONFIG, type Topic, type DriftAlert, type Action, type DriftConfig, type DriftReport } from "./drift-detector.js";
+export { SmartBudgetAllocator, TaskTypeDetector, QualityBasedAdjuster, DEFAULT_BUDGET_CONFIG, TASK_BUDGET_PROFILES, type TaskType, type BudgetConfig as SmartBudgetAllocatorConfig, type BudgetAllocation as SmartBudgetAllocation, type AllocationHistory, type TaskBudgetProfile } from "./smart-budget-allocator.js";
+export { SessionStateExtractor, type SessionState, type Entity, type Decision, type TopicTag } from "./session-state-extractor.js";
+export { DriftBudgetLinker, DEFAULT_DRIFT_BUDGET_CONFIG, type DriftBudgetConfig, type BudgetAllocation as DriftBudgetAllocation } from "./drift-budget-linker.js";
+export { LongTermDependencyTracker, type EntityMention, type DependencyChain, type GraphNode, type GraphEdge, type Graph } from "./long-term-dependency-tracker.js";
 
 const plugin = {
   id: "claw-ctx",
