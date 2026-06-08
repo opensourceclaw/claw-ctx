@@ -302,20 +302,8 @@ limitations under the License.
 
 ## 📞 Support
 
-- **Documentation**: [docs.openclaw.ai](https://docs.openclaw.ai)
 - **Issue Tracker**: [github.com/opensourceclaw/claw-ctx/issues](https://github.com/opensourceclaw/claw-ctx/issues)
 - **Discussions**: [github.com/opensourceclaw/claw-ctx/discussions](https://github.com/opensourceclaw/claw-ctx/discussions)
-
----
-
-## 🔗 Related Projects
-
-| Project | Description |
-|---------|-------------|
-| [OpenClaw](https://github.com/opensourceclaw/openclaw) | AI Agent Framework |
-| [claw-mem](https://github.com/opensourceclaw/claw-mem) | Intelligent Memory System |
-| [claw-gov](https://github.com/opensourceclaw/claw-gov) | Governance Framework |
-| [claw-rl](https://github.com/opensourceclaw/claw-rl) | Reinforcement Learning |
 
 ---
 
