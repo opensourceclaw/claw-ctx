@@ -33,6 +33,7 @@
   "author": "Peter Cheng",
   "license": "Apache-2.0",
   "dependencies": {
-    "js-tiktoken": "^1.0.21"
+    "js-tiktoken": "^1.0.21",
+    "@opensourceclaw/claw-mem": "*"
   }
 }
