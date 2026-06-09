@@ -95,7 +95,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "5.1.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.17.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -126,7 +126,7 @@ export class ClawContextEngine {
   private _depTracker: LongTermDependencyTracker | null = null;
   // v4.11.0: RL memory strategy selector
   private _strategySelector: MemoryStrategySelector;
-  // v5.1.0: Self-refiner and prompt strategy controller
+  // v4.16.0: Self-refiner and prompt strategy controller
   private _refiner: SelfRefiner;
   private _promptStrategy: PromptStrategyController;
   // v4.17.0: Position optimizer and structured context handler
@@ -143,7 +143,7 @@ export class ClawContextEngine {
     this._smartBudgetAllocator.setDriftDetector(this.driftDetector);
     // v4.11.0: RL strategy selector
     this._strategySelector = new MemoryStrategySelector();
-    // v5.1.0: Self-refinement and prompt strategy
+    // v4.16.0: Self-refinement and prompt strategy
     this._refiner = new SelfRefiner();
     this._promptStrategy = new PromptStrategyController();
     // v4.17.0: Position optimization and structured context
@@ -310,7 +310,7 @@ export class ClawContextEngine {
         : `[Drift Monitor]\n${driftBlock}`;
     }
 
-    // v5.1.0: Prompt strategy injection
+    // v4.16.0: Prompt strategy injection
     let finalSys = driftAwareSys;
     try {
       const lastUserMsg = [...p.messages].reverse().find((m: any) => m.role === "user");
@@ -601,7 +601,7 @@ export class ClawContextEngine {
     this._session(p.sessionId);
     if (p.autoCompactionSummary) { try { this.manager.store(p.autoCompactionSummary, "episodic", ["compaction"]); } catch { /* ok */ } }
 
-    // v5.1.0: Self-refinement evaluation of last assistant message
+    // v4.16.0: Self-refinement evaluation of last assistant message
     try {
       const msgs = p.messages || [];
       const lastAssistant = [...msgs].reverse().find((m: any) => m.role === "assistant");
