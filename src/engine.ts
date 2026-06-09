@@ -55,8 +55,10 @@ const tokenCache = new Map<string, number>();
 const MAX_TOKEN_CACHE = 5000;
 
 function estimateTokens(text: string): number {
-  // Use fast key for all text lengths: short text uses full text, long text uses hash
-  const cacheKey = text.length < 500 ? text : text.slice(0, 50) + "|" + text.length + "|" + text.slice(-50);
+  // Use compound cache key: length is the primary differentiator
+  const cacheKey = text.length < 500
+    ? text
+    : `L${text.length}|${text.slice(0, 30)}|${text.slice(-30)}|${text.length}`;
   const cached = tokenCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
@@ -70,9 +72,14 @@ function estimateTokens(text: string): number {
   } else {
     result = FallbackCounter.estimate(text);
   }
+  // Cache eviction: batch-clean expired entries when full
   if (tokenCache.size >= MAX_TOKEN_CACHE) {
-    const firstKey = tokenCache.keys().next().value;
-    if (firstKey !== undefined) tokenCache.delete(firstKey);
+    const toDelete = Math.ceil(MAX_TOKEN_CACHE * 0.1);
+    for (let i = 0; i < toDelete; i++) {
+      const firstKey = tokenCache.keys().next().value;
+      if (firstKey !== undefined) tokenCache.delete(firstKey);
+      else break;
+    }
   }
   tokenCache.set(cacheKey, result);
   return result;
@@ -96,7 +103,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.18.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.19.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -373,6 +380,13 @@ export class ClawContextEngine {
       }
     } catch {
       // position optimization failure is non-blocking
+    }
+
+    // v4.19.0: Overflow detection — warn if approaching budget limit
+    const budgetLimit = p.tokenBudget ?? 8000;
+    if (tokens > budgetLimit * 0.85) {
+      const overflowWarn = `[Token Budget Warning: ${tokens}/${budgetLimit} tokens used (${Math.round(tokens / budgetLimit * 100)}%) — consider compaction]`;
+      finalSys = finalSys ? `${finalSys}\n\n${overflowWarn}` : overflowWarn;
     }
 
     return { messages: resultMessages, estimatedTokens: tokens, systemPromptAddition: finalSys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report };
