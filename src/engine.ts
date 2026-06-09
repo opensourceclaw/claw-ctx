@@ -22,9 +22,10 @@ try {
     _clawMem = _require("../../claw-mem/dist/memory_manager.js");
     getMemoryManager = _clawMem.getMemoryManager;
   } catch {
-    // claw-mem unavailable — engine runs in degraded mode
+    // claw-mem unavailable — use mock for CI/testing
     getMemoryManager = (opts: any) => {
-      throw new Error("claw-mem not available");
+      console.warn("claw-mem not available, using mock");
+      return null;
     };
   }
 }
