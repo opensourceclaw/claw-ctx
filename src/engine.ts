@@ -6,8 +6,28 @@
  * v3.0.0 adds: cross-domain signal injection, token budget management.
  */
 import * as fs from "fs";
-import { getMemoryManager, type MemoryManager } from "../../claw-mem/dist/memory_manager.js";
+import { createRequire } from "module";
 import { ConfidenceGate, type ConfidenceMode, type ConfidenceReport } from "./confidence_gate.js";
+
+// Graceful claw-mem import — works locally (sibling dir) and in CI (npm package)
+const _require = createRequire(import.meta.url);
+let _clawMem: any = null;
+let getMemoryManager: any;
+type MemoryManager = any;
+try {
+  _clawMem = _require("claw-mem");
+  getMemoryManager = _clawMem.getMemoryManager;
+} catch {
+  try {
+    _clawMem = _require("../../claw-mem/dist/memory_manager.js");
+    getMemoryManager = _clawMem.getMemoryManager;
+  } catch {
+    // claw-mem unavailable — engine runs in degraded mode
+    getMemoryManager = (opts: any) => {
+      throw new Error("claw-mem not available");
+    };
+  }
+}
 import { RLInjector, type RLExperience, type RLProvider, MockRLProvider } from "./rl_injector.js";
 import { GovernanceInjector, type GovernanceSignal, type GovernanceProvider, type GovernanceLayer, MockGovernanceProvider } from "./governance_injector.js";
 import { CrossDomainInjector, type InjectedSignal, type CrossDomainProvider, MockCrossDomainProvider } from "./cross_domain_injector.js";

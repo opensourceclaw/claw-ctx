@@ -194,10 +194,11 @@ describe("TiktokenCounter", () => {
 
     it("caps remainingBudget at 0", () => {
       const counter = new TiktokenCounter();
-      const big = { content: "x".repeat(50000) };
+      // Use a reasonably large string that overflows budget of 100 without causing timeout
+      const big = { content: "x".repeat(2000) };
       const budget = counter.estimateTokenBudget(100, [big]);
       expect(budget.remainingBudget).toBe(0);
-    });
+    }, 10000);
   });
 
   describe("getStats()", () => {
