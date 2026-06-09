@@ -24,8 +24,13 @@ try {
   } catch {
     // claw-mem unavailable — use mock for CI/testing
     getMemoryManager = (opts: any) => {
-      console.warn("claw-mem not available, using mock");
-      return null;
+      return {
+        sessionId: "",
+        store: () => {},
+        retrieve: () => [],
+        search: () => [],
+        injectConstitution: () => {},
+      };
     };
   }
 }
