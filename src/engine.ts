@@ -18,6 +18,8 @@ import { SmartBudgetAllocator, type TaskType, type BudgetAllocation as SmartBudg
 import { SessionStateExtractor, type SessionState, type Entity } from "./session-state-extractor.js";
 import { CIInjector, type CISignal, type CIProvider, MockCIProvider } from "./ci_injector.js";
 import { LongTermDependencyTracker } from "./long-term-dependency-tracker.js";
+import { SelfRefiner } from "./self_refiner.js";
+import { PromptStrategyController } from "./prompt_strategy_controller.js";
 
 // v4.11.0: RL-driven memory strategy selection
 import {
@@ -91,7 +93,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.10.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "5.1.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -122,6 +124,9 @@ export class ClawContextEngine {
   private _depTracker: LongTermDependencyTracker | null = null;
   // v4.11.0: RL memory strategy selector
   private _strategySelector: MemoryStrategySelector;
+  // v5.1.0: Self-refiner and prompt strategy controller
+  private _refiner: SelfRefiner;
+  private _promptStrategy: PromptStrategyController;
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -133,6 +138,9 @@ export class ClawContextEngine {
     this._smartBudgetAllocator.setDriftDetector(this.driftDetector);
     // v4.11.0: RL strategy selector
     this._strategySelector = new MemoryStrategySelector();
+    // v5.1.0: Self-refinement and prompt strategy
+    this._refiner = new SelfRefiner();
+    this._promptStrategy = new PromptStrategyController();
   }
 
   private _session(id: string): void { if (this.sid !== id) { this.sid = id; this.manager.sessionId = id; } }
@@ -294,7 +302,24 @@ export class ClawContextEngine {
         : `[Drift Monitor]\n${driftBlock}`;
     }
 
-    return { messages: p.messages, estimatedTokens: tokens, systemPromptAddition: driftAwareSys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report };
+    // v5.1.0: Prompt strategy injection
+    let finalSys = driftAwareSys;
+    try {
+      const lastUserMsg = [...p.messages].reverse().find((m: any) => m.role === "user");
+      const taskContent = extractText(lastUserMsg || p.messages[p.messages.length - 1] || "");
+      const taskType = this._promptStrategy.detectTaskType(taskContent);
+      const strategy = this._promptStrategy.selectStrategy({ taskType, content: taskContent });
+      const strategyAddition = this._promptStrategy.getSystemPromptAddition(strategy);
+      if (strategyAddition) {
+        finalSys = finalSys
+          ? `${finalSys}\n\n${strategyAddition}`
+          : strategyAddition;
+      }
+    } catch {
+      // prompt strategy failure is non-blocking
+    }
+
+    return { messages: p.messages, estimatedTokens: tokens, systemPromptAddition: finalSys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report };
   }
 
   async compact(p: { sessionId: string; sessionKey?: string; sessionFile: string; tokenBudget?: number; force?: boolean; currentTokenCount?: number; compactionTarget?: string; customInstructions?: string; abortSignal?: AbortSignal; reserveForCrossDomain?: number; reserveForCI?: number; runtimeContext?: any }): Promise<{ ok: boolean; compacted: boolean; reason?: string; result?: { summary?: string; tokensBefore: number; tokensAfter?: number; details?: unknown } }> {
@@ -537,6 +562,26 @@ export class ClawContextEngine {
     if (p.isHeartbeat) return;
     this._session(p.sessionId);
     if (p.autoCompactionSummary) { try { this.manager.store(p.autoCompactionSummary, "episodic", ["compaction"]); } catch { /* ok */ } }
+
+    // v5.1.0: Self-refinement evaluation of last assistant message
+    try {
+      const msgs = p.messages || [];
+      const lastAssistant = [...msgs].reverse().find((m: any) => m.role === "assistant");
+      if (lastAssistant) {
+        const content = extractText(lastAssistant);
+        if (content && content.length > 20) {
+          const result = this._refiner.run(content, msgs.map((m: any) => ({
+            role: m.role || "unknown",
+            content: extractText(m),
+          })));
+          if (!result.accepted && result.loops > 0) {
+            this.logger.warn(`[claw-ctx] Self-refinement: output not accepted after ${result.loops} loops (score: ${result.evaluationScore})`);
+          }
+        }
+      }
+    } catch {
+      // self-refinement failure is non-blocking
+    }
 
     // v4.1.0: Store session summary for continuity
     try {
