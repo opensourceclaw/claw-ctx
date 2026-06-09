@@ -22,6 +22,7 @@ export { SelfRefiner, type SelfRefinerConfig, type EvaluationResult, type SelfRe
 export { PromptStrategyController, type ReasoningStrategy, type PromptStrategyConfig, DEFAULT_STRATEGY_CONFIG } from "./prompt_strategy_controller.js";
 export { PositionOptimizer, type PositionOptimizerConfig, type KeyInfo, DEFAULT_POSITION_CONFIG } from "./position_optimizer.js";
 export { StructuredContextHandler, type StructuredDataType, type StructuredDataConfig, type QueryResult, type Relation, DEFAULT_STRUCTURED_CONFIG } from "./structured_context_handler.js";
+export { MultimodalContextHandler, type MultimodalContent, type MultimodalConfig, type ModalType, DEFAULT_MULTIMODAL_CONFIG } from "./multimodal_context_handler.js";
 
 const plugin = {
   id: "claw-ctx",

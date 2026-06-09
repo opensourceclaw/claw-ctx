@@ -22,6 +22,7 @@ import { SelfRefiner } from "./self_refiner.js";
 import { PromptStrategyController } from "./prompt_strategy_controller.js";
 import { PositionOptimizer } from "./position_optimizer.js";
 import { StructuredContextHandler } from "./structured_context_handler.js";
+import { MultimodalContextHandler } from "./multimodal_context_handler.js";
 
 // v4.11.0: RL-driven memory strategy selection
 import {
@@ -95,7 +96,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.17.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.18.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -132,6 +133,7 @@ export class ClawContextEngine {
   // v4.17.0: Position optimizer and structured context handler
   private _positionOptimizer: PositionOptimizer;
   private _structuredHandler: StructuredContextHandler;
+  private _multimodalHandler: MultimodalContextHandler;
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -149,6 +151,7 @@ export class ClawContextEngine {
     // v4.17.0: Position optimization and structured context
     this._positionOptimizer = new PositionOptimizer();
     this._structuredHandler = new StructuredContextHandler();
+    this._multimodalHandler = new MultimodalContextHandler();
   }
 
   private _session(id: string): void { if (this.sid !== id) { this.sid = id; this.manager.sessionId = id; } }
@@ -325,6 +328,21 @@ export class ClawContextEngine {
       }
     } catch {
       // prompt strategy failure is non-blocking
+    }
+
+    // v4.18.0: Multimodal content detection
+    try {
+      const multimodalItems = this._multimodalHandler.prioritize(p.messages);
+      for (const item of multimodalItems.slice(0, 5)) {
+        const text = this._multimodalHandler.modalityToText(item);
+        if (text) {
+          finalSys = finalSys
+            ? `${finalSys}\n${text}`
+            : text;
+        }
+      }
+    } catch {
+      // multimodal failure is non-blocking
     }
 
     // v4.17.0: Structured context detection and position optimization
