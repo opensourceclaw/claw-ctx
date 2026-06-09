@@ -254,7 +254,7 @@ describe('ClawContextEngine', () => {
 
     it('info shows v2.0.0', () => {
       const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
-      expect(engine.info.version).toBe('4.10.0');
+      expect(engine.info.version).toBe('4.19.0');
     });
   });
 
@@ -433,7 +433,7 @@ describe('ClawContextEngine', () => {
 
     it('info shows v4.0.0', () => {
       const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
-      expect(engine.info.version).toBe('4.10.0');
+      expect(engine.info.version).toBe('4.19.0');
     });
   });
 
@@ -531,9 +531,9 @@ describe('ClawContextEngine', () => {
     });
   });
 
-  // ── v4.10.0: Health Check ────────────────────────────────────────
+  // ── v4.19.0: Health Check ────────────────────────────────────────
 
-  describe('v4.10.0 health check', () => {
+  describe('v4.19.0 health check', () => {
     it('healthCheck returns healthy status with valid checks', () => {
       const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
       const result = engine.healthCheck();
