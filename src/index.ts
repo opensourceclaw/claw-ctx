@@ -20,6 +20,8 @@ export { DriftBudgetLinker, DEFAULT_DRIFT_BUDGET_CONFIG, type DriftBudgetConfig,
 export { LongTermDependencyTracker, type EntityMention, type DependencyChain, type GraphNode, type GraphEdge, type Graph } from "./long-term-dependency-tracker.js";
 export { SelfRefiner, type SelfRefinerConfig, type EvaluationResult, type SelfRefinementResult, DEFAULT_SELF_REFINER_CONFIG } from "./self_refiner.js";
 export { PromptStrategyController, type ReasoningStrategy, type PromptStrategyConfig, DEFAULT_STRATEGY_CONFIG } from "./prompt_strategy_controller.js";
+export { PositionOptimizer, type PositionOptimizerConfig, type KeyInfo, DEFAULT_POSITION_CONFIG } from "./position_optimizer.js";
+export { StructuredContextHandler, type StructuredDataType, type StructuredDataConfig, type QueryResult, type Relation, DEFAULT_STRUCTURED_CONFIG } from "./structured_context_handler.js";
 
 const plugin = {
   id: "claw-ctx",

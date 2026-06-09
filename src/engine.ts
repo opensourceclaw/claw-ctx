@@ -20,6 +20,8 @@ import { CIInjector, type CISignal, type CIProvider, MockCIProvider } from "./ci
 import { LongTermDependencyTracker } from "./long-term-dependency-tracker.js";
 import { SelfRefiner } from "./self_refiner.js";
 import { PromptStrategyController } from "./prompt_strategy_controller.js";
+import { PositionOptimizer } from "./position_optimizer.js";
+import { StructuredContextHandler } from "./structured_context_handler.js";
 
 // v4.11.0: RL-driven memory strategy selection
 import {
@@ -127,6 +129,9 @@ export class ClawContextEngine {
   // v5.1.0: Self-refiner and prompt strategy controller
   private _refiner: SelfRefiner;
   private _promptStrategy: PromptStrategyController;
+  // v4.17.0: Position optimizer and structured context handler
+  private _positionOptimizer: PositionOptimizer;
+  private _structuredHandler: StructuredContextHandler;
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -141,6 +146,9 @@ export class ClawContextEngine {
     // v5.1.0: Self-refinement and prompt strategy
     this._refiner = new SelfRefiner();
     this._promptStrategy = new PromptStrategyController();
+    // v4.17.0: Position optimization and structured context
+    this._positionOptimizer = new PositionOptimizer();
+    this._structuredHandler = new StructuredContextHandler();
   }
 
   private _session(id: string): void { if (this.sid !== id) { this.sid = id; this.manager.sessionId = id; } }
@@ -319,7 +327,37 @@ export class ClawContextEngine {
       // prompt strategy failure is non-blocking
     }
 
-    return { messages: p.messages, estimatedTokens: tokens, systemPromptAddition: finalSys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report };
+    // v4.17.0: Structured context detection and position optimization
+    try {
+      // Detect and verbalize structured data in recent messages
+      const recentUserMsgs = p.messages.filter((m: any) => m.role === "user").slice(-2);
+      for (const msg of recentUserMsgs) {
+        const text = extractText(msg);
+        const dataType = this._structuredHandler.detect(text);
+        if (dataType && dataType !== "sql-result") {
+          const verbalized = this._structuredHandler.verbalize(text, dataType);
+          if (verbalized !== text) {
+            finalSys = finalSys
+              ? `${finalSys}\n\n${verbalized}`
+              : verbalized;
+          }
+        }
+      }
+    } catch {
+      // structured context failure is non-blocking
+    }
+
+    // v4.17.0: Position optimization for long sequences
+    let resultMessages = p.messages;
+    try {
+      if (resultMessages.length > 10) {
+        resultMessages = this._positionOptimizer.optimize(resultMessages);
+      }
+    } catch {
+      // position optimization failure is non-blocking
+    }
+
+    return { messages: resultMessages, estimatedTokens: tokens, systemPromptAddition: finalSys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report };
   }
 
   async compact(p: { sessionId: string; sessionKey?: string; sessionFile: string; tokenBudget?: number; force?: boolean; currentTokenCount?: number; compactionTarget?: string; customInstructions?: string; abortSignal?: AbortSignal; reserveForCrossDomain?: number; reserveForCI?: number; runtimeContext?: any }): Promise<{ ok: boolean; compacted: boolean; reason?: string; result?: { summary?: string; tokensBefore: number; tokensAfter?: number; details?: unknown } }> {
