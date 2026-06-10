@@ -151,8 +151,8 @@ export class CrossDomainInjector {
       lines.push(
         `  📡 [${sig.sourcePillar}] ${sig.sourceAgent} (${timeAgo}, ${confidence}% match)`
       );
-      lines.push(`     摘要: ${sig.summary}`);
-      lines.push(`     建议: ${sig.suggestion}`);
+      lines.push(`     Summary: ${sig.summary}`);
+      lines.push(`     Suggestion: ${sig.suggestion}`);
     }
 
     return lines.join("\n");
@@ -164,7 +164,7 @@ export class CrossDomainInjector {
   }
 }
 
-/** Format a relative time string like "~3h前" */
+/** Format a relative time string like "~3h ago" */
 function formatTimeAgo(date: Date): string {
   const diffMs = Date.now() - date.getTime();
   const diffMin = Math.floor(diffMs / 60000);

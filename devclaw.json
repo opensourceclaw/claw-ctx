@@ -25,19 +25,19 @@
   },
   "phases": {
     "v4.3.0": {
-      "name": "Token 精确计数",
+      "name": "Token Precise Counting",
       "status": "completed",
       "spec": "docs/v4.x/specs/v430-token-counter.md",
       "completedAt": "2026-06-05"
     },
     "v4.4.0": {
-      "name": "上下文漂移检测",
+      "name": "Context Drift Detection",
       "status": "completed",
       "spec": "docs/v4.x/specs/v440-drift-detector.md",
       "completedAt": "2026-06-05"
     },
     "v4.5.0": {
-      "name": "智能预算分配",
+      "name": "Smart Budget Allocation",
       "status": "completed",
       "spec": "docs/v4.x/specs/v450-smart-budget.md",
       "completedAt": "2026-06-05"

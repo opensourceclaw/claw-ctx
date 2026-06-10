@@ -6,7 +6,7 @@
  *
  * v4.3.0: Initial implementation with TiktokenCounter + FallbackCounter
  * v4.4.0: Added estimateTokenBudget() and getStats() for drift integration
- * v5.0.0 plan (从 phase1-summary-design) 已变更，新功能分布在 v4.3.0–v4.5.0
+ * v5.0.0 plan (from phase1-summary-design) has changed; new features distributed across v4.3.0–v4.5.0
  */
 
 import {
