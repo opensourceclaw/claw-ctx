@@ -7,7 +7,7 @@
 *Intelligent Context Assembly for AI Agents*
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Version](https://img.shields.io/badge/Version-4.21.0-blue.svg)](https://github.com/opensourceclaw/claw-ctx/releases/tag/v4.21.0)
+[![Version](https://img.shields.io/badge/Version-4.14.0-blue.svg)](https://github.com/opensourceclaw/claw-ctx/releases/tag/v4.14.0)
 [![CI](https://github.com/opensourceclaw/claw-ctx/actions/workflows/ci.yml/badge.svg)](https://github.com/opensourceclaw/claw-ctx/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/opensourceclaw/claw-ctx/branch/main/graph/badge.svg)](https://codecov.io/gh/opensourceclaw/claw-ctx)
 
@@ -21,12 +21,12 @@ claw-ctx is the **Context Engine** for OpenClaw. It intelligently assembles cont
 
 ### Core Features
 
-| Feature | Description |
-|---------|-------------|
-| **Token Budget Control** | Bisection-based selection with CJK-aware token estimation |
-| **Confidence Gating** | Filters low-confidence memories (configurable min score 0.3) |
-| **Memory Integration** | Uses claw-mem for semantic search and storage |
-| **Subagent Lifecycle** | Fork/isolate modes with memory merging on completion |
+| Feature                   | Description                                                   |
+| ------------------------- | ------------------------------------------------------------- |
+| **Token Budget Control**  | Bisection-based selection with CJK-aware token estimation     |
+| **Confidence Gating**     | Filters low-confidence memories (configurable min score 0.3)  |
+| **Memory Integration**    | Uses claw-mem for semantic search and storage                 |
+| **Subagent Lifecycle**    | Fork/isolate modes with memory merging on completion          |
 | **RL Strategy Selection** | Dynamic context strategy selection via reinforcement learning |
 
 ### Why claw-ctx?
@@ -42,22 +42,22 @@ Effective AI agents need more than just memory—they need **intelligent context
 
 ## 📈 Milestones & Progress
 
-| Version | Date | Theme | Status |
-|---------|------|-------|--------|
-| **v4.14.0** | 2026-06 | RL Strategy Integration Complete | ✅ Current |
-| **v4.10.0** | 2026-05 | Performance & Health Optimization | ✅ |
-| **v4.9.0** | 2026-05 | C4 Long-Horizon Enhancement | ✅ |
-| **v4.7.0** | 2026-04 | Phase 2 Complete | ✅ |
-| **v4.0.0** | 2026-03 | Context Engine Foundation | ✅ |
+| Version     | Date    | Theme                             | Status    |
+| ----------- | ------- | --------------------------------- | --------- |
+| **v4.14.0** | 2026-06 | RL Strategy Integration Complete  | ✅ Current |
+| **v4.10.0** | 2026-05 | Performance & Health Optimization | ✅         |
+| **v4.9.0**  | 2026-05 | C4 Long-Horizon Enhancement       | ✅         |
+| **v4.7.0**  | 2026-04 | Phase 2 Complete                  | ✅         |
+| **v4.0.0**  | 2026-03 | Context Engine Foundation         | ✅         |
 
 ### Key Capabilities Added
 
-| Version | Capabilities |
-|---------|--------------|
+| Version | Capabilities                                                 |
+| ------- | ------------------------------------------------------------ |
 | v4.14.0 | RL-based memory strategy selection, enhanced benchmark tests |
-| v4.10.0 | Performance optimization, health monitoring |
-| v4.9.0 | Long-horizon conversation context |
-| v4.7.0 | Subagent lifecycle management |
+| v4.10.0 | Performance optimization, health monitoring                  |
+| v4.9.0  | Long-horizon conversation context                            |
+| v4.7.0  | Subagent lifecycle management                                |
 
 ---
 
@@ -210,12 +210,12 @@ console.log(context.prompt);
 
 ### Context Strategies
 
-| Strategy | Description | Use Case |
-|----------|-------------|----------|
-| `retrieval` | Memory-first | Q&A, reference |
-| `recent` | Latest messages | Follow-up conversations |
-| `hybrid` | Balanced mix | General purpose |
-| `rl-enhanced` | ML-optimized | Adaptive (v4.14.0+) |
+| Strategy      | Description     | Use Case                |
+| ------------- | --------------- | ----------------------- |
+| `retrieval`   | Memory-first    | Q&A, reference          |
+| `recent`      | Latest messages | Follow-up conversations |
+| `hybrid`      | Balanced mix    | General purpose         |
+| `rl-enhanced` | ML-optimized    | Adaptive (v4.14.0+)     |
 
 ---
 

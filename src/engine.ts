@@ -1,5 +1,5 @@
 /**
- * claw-ctx v4.21.0 — Context Engine
+ * claw-ctx v4.22.0 — Context Engine
  *
  * Standalone Context Engine plugin. Uses claw-mem MemoryManager for storage/retrieval.
  * v2.0.0 adds: C2 confidence gating, RL experience injection, governance signal pass-through.
@@ -52,6 +52,7 @@ import { MultimodalContextHandler } from "./multimodal_context_handler.js";
 import { AutoCompactController, type AutoCompactConfig } from "./auto-compact.js";
 import { AutoSessionController, type AutoSessionConfig } from "./auto-session.js";
 import { RelevanceScorer, type RelevanceContext, type ScoredMemory } from "./relevance-scorer.js";
+import { SemanticCompressor, type CompressionResult } from "./semantic-compressor.js";
 
 // v4.11.0: RL-driven memory strategy selection
 import {
@@ -64,7 +65,7 @@ import {
 // v4.3.0: Global token counter instance for precise counting
 let globalTokenCounter = createTokenCounter("cl100k_base");
 
-interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean; compactThreshold?: number; reserveRatio?: number }
+interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean; compactThreshold?: number; reserveRatio?: number; compressionStrategy?: "semantic" | "legacy" }
 interface ClawCtxLogger { info: (...a: any[]) => void; error: (...a: any[]) => void; warn: (...a: any[]) => void; debug?: (...a: any[]) => void }
 
 function extractText(msg: any): string {
@@ -132,7 +133,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.21.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.22.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -174,6 +175,7 @@ export class ClawContextEngine {
   private _autoCompact: AutoCompactController;
   private _autoSession: AutoSessionController;
   private _relevanceScorer: RelevanceScorer;
+  private _semanticCompressor: SemanticCompressor;
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -196,6 +198,7 @@ export class ClawContextEngine {
     this._autoCompact = new AutoCompactController();
     this._autoSession = new AutoSessionController();
     this._relevanceScorer = new RelevanceScorer();
+    this._semanticCompressor = new SemanticCompressor();
   }
 
   private _session(id: string): void { if (this.sid !== id) { this.sid = id; this.manager.sessionId = id; } }
@@ -529,28 +532,44 @@ export class ClawContextEngine {
       return { compacted: false, reason: `already under target (${totalMsgTokens} <= ${targetTokens})`, summary: "", tokensBefore: totalMsgTokens };
     }
 
-    // Walk from newest to oldest, accumulating tokens until we hit target
-    let acc = 0;
-    let keepFrom = msgEntries.length;
-    for (let i = msgEntries.length - 1; i >= 0; i--) {
-      acc += msgTokens[i];
-      if (acc > targetTokens) {
-        keepFrom = Math.min(msgEntries.length, Math.max(20, i + 1));
-        break;
+    const useSemantic = this.config.compressionStrategy === "semantic";
+
+    let keptMsgs: Array<{ line: string; type: string; message?: any }>;
+    let summaryBlock: string;
+    let removedCount: number;
+
+    if (useSemantic) {
+      // v4.22.0: Semantic compression — preserve important messages
+      const result: CompressionResult = this._semanticCompressor.compress(
+        msgEntries, msgTokens, targetTokens
+      );
+      keptMsgs = result.keptIndices.map(i => msgEntries[i]);
+      removedCount = result.removedIndices.length;
+      if (removedCount <= 10) {
+        return { compacted: false, reason: `too few messages to remove (${removedCount})`, summary: "", tokensBefore: totalMsgTokens };
       }
+      summaryBlock = result.summary;
+    } else {
+      // Legacy: walk from newest to oldest
+      let acc = 0;
+      let keepFrom = msgEntries.length;
+      for (let i = msgEntries.length - 1; i >= 0; i--) {
+        acc += msgTokens[i];
+        if (acc > targetTokens) {
+          keepFrom = Math.min(msgEntries.length, Math.max(20, i + 1));
+          break;
+        }
+      }
+
+      removedCount = keepFrom;
+      if (removedCount <= 10) {
+        return { compacted: false, reason: `too few messages to remove (${removedCount})`, summary: "", tokensBefore: totalMsgTokens };
+      }
+
+      const oldMsgs = msgEntries.slice(0, removedCount);
+      summaryBlock = this._buildSummary(oldMsgs, removedCount);
+      keptMsgs = msgEntries.slice(removedCount);
     }
-
-    const removedCount = keepFrom;
-    if (removedCount <= 10) {
-      return { compacted: false, reason: `too few messages to remove (${removedCount})`, summary: "", tokensBefore: totalMsgTokens };
-    }
-
-    // Build summary of removed messages
-    const oldMsgs = msgEntries.slice(0, removedCount);
-    const summaryBlock = this._buildSummary(oldMsgs, removedCount);
-
-    // Rewrite session file: headers + summary + kept messages
-    const keptMsgs = msgEntries.slice(removedCount);
     const lastHeader = headers.length > 0 ? headers[headers.length - 1] : entries[0];
     let lastHeaderId = "root";
     try { lastHeaderId = JSON.parse(lastHeader.line).id ?? "root"; } catch { /* ok */ }

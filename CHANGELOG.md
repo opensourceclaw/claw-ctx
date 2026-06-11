@@ -1,5 +1,19 @@
 # Changelog
 
+## v4.22.0 (2026-06-11)
+
+### Added
+- **SemanticCompressor**: Importance-aware message compression preserving key context
+  - `MessageImportance` scoring: code (+30), entities (+20), decisions (+25), questions (+15), duplicates (-20)
+  - Entity extraction via regex patterns (project names, versions, URLs, PascalCase, filenames)
+  - Decision extraction from sentences containing decision markers
+  - Jaccard similarity-based duplicate detection
+  - `compress()` method: keeps high-importance messages within token budget, always preserves newest 20
+
+### Changed
+- engine.ts: integrated SemanticCompressor, added `compressionStrategy` config ("semantic" | "legacy", default "legacy")
+- `_executeCompaction()` supports semantic mode for importance-aware message selection
+
 ## v4.21.0 (2026-06-11)
 
 ### Added
