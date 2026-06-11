@@ -1,5 +1,22 @@
 # Changelog
 
+## v4.21.0 (2026-06-11)
+
+### Added
+- **Gateway Integration Verification**: Debug logging for assemble(), afterTurn(), ingest(), ingestBatch()
+  - assemble() confirmed called with correct sessionId, messages count, tokenBudget
+  - afterTurn() confirmed called by Gateway (preferred over ingest() when implemented)
+  - Gateway successfully routes context engine calls through plugin slot system
+
+### Verified
+- Gateway loads claw-ctx as context engine via `plugins.slots.contextEngine: "claw-ctx"`
+- Hook coexistence: 5 internal hook handlers loaded, no conflicts with claw-ctx
+- Gateway auto-discovers context engine methods: assemble → afterTurn → ingestBatch → ingest (priority order)
+
+### Changed
+- engine.ts: v4.10.0 → v4.21.0, added template-string debug logs
+- Version: 4.20.0 → 4.21.0 (package.json, index.ts, engine.ts)
+
 ## v4.20.0 (2026-06-11)
 
 ### Added

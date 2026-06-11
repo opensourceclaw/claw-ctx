@@ -1,5 +1,5 @@
 /**
- * claw-ctx v4.10.0 — Context Engine
+ * claw-ctx v4.21.0 — Context Engine
  *
  * Standalone Context Engine plugin. Uses claw-mem MemoryManager for storage/retrieval.
  * v2.0.0 adds: C2 confidence gating, RL experience injection, governance signal pass-through.
@@ -132,7 +132,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.20.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.21.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -226,6 +226,7 @@ export class ClawContextEngine {
   }
 
   async ingest(p: { sessionId: string; sessionKey?: string; message: any; isHeartbeat?: boolean }): Promise<{ ingested: boolean }> {
+    if (this.config.debug) this.logger.info(`[claw-ctx] ingest() called, sessionId=${p.sessionId}, role=${p.message?.role}`);
     if (p.isHeartbeat) return { ingested: false };
     this._session(p.sessionId);
     const c = extractText(p.message);
@@ -252,6 +253,7 @@ export class ClawContextEngine {
   }
 
   async ingestBatch(p: { sessionId: string; sessionKey?: string; messages: any[]; isHeartbeat?: boolean }): Promise<{ ingestedCount: number }> {
+    if (this.config.debug) this.logger.info(`[claw-ctx] ingestBatch() called, sessionId=${p.sessionId}, messages=${p.messages?.length ?? 0}`);
     if (p.isHeartbeat) return { ingestedCount: 0 };
     this._session(p.sessionId);
     let n = 0;
@@ -260,6 +262,7 @@ export class ClawContextEngine {
   }
 
   async assemble(p: { sessionId: string; sessionKey?: string; messages: any[]; tokenBudget?: number; availableTools?: Set<string>; citationsMode?: string; model?: string; prompt?: string; confidenceThreshold?: number; confidenceMode?: ConfidenceMode; crossDomain?: { enabled: boolean; currentPillar?: string; currentIntent?: string; timeRange?: string; maxSignals?: number }; ci?: { enabled: boolean; project?: string; includeBuildStatus?: boolean; includeTestResults?: boolean; includeDeployStatus?: boolean; maxSignals?: number } }): Promise<{ messages: any[]; estimatedTokens: number; systemPromptAddition?: string; promptAuthority?: string; confidenceReport?: ConfidenceReport; crossDomainReport?: { signalsInjected: number; totalTokens: number; correlations: InjectedSignal[] }; ciReport?: { signalsInjected: number; totalTokens: number; signals: CISignal[] }; driftScore?: number; autoCompact?: boolean; newSessionSuggestion?: string }> {
+    if (this.config.debug) this.logger.info(`[claw-ctx] assemble() called, sessionId=${p.sessionId}, messages=${p.messages?.length ?? 0}, tokenBudget=${p.tokenBudget ?? 0}`);
     this._session(p.sessionId);
 
     // Apply confidence mode if specified
@@ -678,6 +681,7 @@ export class ClawContextEngine {
   }
 
   async afterTurn(p: { sessionId: string; sessionKey?: string; sessionFile: string; messages: any[]; prePromptMessageCount: number; autoCompactionSummary?: string; isHeartbeat?: boolean; tokenBudget?: number }): Promise<void> {
+    if (this.config.debug) this.logger.info(`[claw-ctx] afterTurn() called, sessionId=${p.sessionId}, messages=${p.messages?.length ?? 0}`);
     if (p.isHeartbeat) return;
     this._session(p.sessionId);
     if (p.autoCompactionSummary) { try { this.manager.store(p.autoCompactionSummary, "episodic", ["compaction"]); } catch { /* ok */ } }
