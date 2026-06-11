@@ -1,5 +1,28 @@
 # Changelog
 
+## v4.20.0 (2026-06-11)
+
+### Added
+- **AutoCompactController**: Automatic compaction triggering when drift score ≥ 0.7
+  - Configurable threshold, cooldown (default 5min), max compacts per session (default 3)
+  - `shouldCompact(driftScore)` / `recordCompact()` / `reset()` / `getStats()`
+- **AutoSessionController**: New session suggestion when drift score ≥ 0.9
+  - Configurable threshold, suggestion cooldown (default 10min)
+  - `shouldSuggestNewSession(driftScore)` / `generateSuggestion()` / `reset()`
+- **RelevanceScorer**: Cross-session memory relevance scoring
+  - 4-dimension scoring: entity overlap (40%), topic similarity (35%), recency (15%), confidence (10%)
+  - `score()` / `rank()` / `buildContext()` — static context builder
+- `assemble()` now returns `driftScore`, `autoCompact`, `newSessionSuggestion` fields
+
+### Changed
+- engine.ts: integrated AutoCompactController, AutoSessionController, RelevanceScorer
+- index.ts: version 5.1.0 → 4.20.0, plugin registration updated
+- Fixed version consistency: package.json, engine INFO, plugin version all aligned
+
+### Tests
+- 22/22 new tests passing (auto-compact: 7, auto-session: 7, relevance-scorer: 8)
+- Full suite: 516/516 passing
+
 ## v4.9.0 (2026-06-05)
 
 ### Added

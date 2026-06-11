@@ -49,6 +49,9 @@ import { PromptStrategyController } from "./prompt_strategy_controller.js";
 import { PositionOptimizer } from "./position_optimizer.js";
 import { StructuredContextHandler } from "./structured_context_handler.js";
 import { MultimodalContextHandler } from "./multimodal_context_handler.js";
+import { AutoCompactController, type AutoCompactConfig } from "./auto-compact.js";
+import { AutoSessionController, type AutoSessionConfig } from "./auto-session.js";
+import { RelevanceScorer, type RelevanceContext, type ScoredMemory } from "./relevance-scorer.js";
 
 // v4.11.0: RL-driven memory strategy selection
 import {
@@ -129,7 +132,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.19.1", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.20.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -167,6 +170,10 @@ export class ClawContextEngine {
   private _positionOptimizer: PositionOptimizer;
   private _structuredHandler: StructuredContextHandler;
   private _multimodalHandler: MultimodalContextHandler;
+  // v4.20.0: Auto-compact, auto-session, relevance scoring
+  private _autoCompact: AutoCompactController;
+  private _autoSession: AutoSessionController;
+  private _relevanceScorer: RelevanceScorer;
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -185,6 +192,10 @@ export class ClawContextEngine {
     this._positionOptimizer = new PositionOptimizer();
     this._structuredHandler = new StructuredContextHandler();
     this._multimodalHandler = new MultimodalContextHandler();
+    // v4.20.0
+    this._autoCompact = new AutoCompactController();
+    this._autoSession = new AutoSessionController();
+    this._relevanceScorer = new RelevanceScorer();
   }
 
   private _session(id: string): void { if (this.sid !== id) { this.sid = id; this.manager.sessionId = id; } }
@@ -248,7 +259,7 @@ export class ClawContextEngine {
     return { ingestedCount: n };
   }
 
-  async assemble(p: { sessionId: string; sessionKey?: string; messages: any[]; tokenBudget?: number; availableTools?: Set<string>; citationsMode?: string; model?: string; prompt?: string; confidenceThreshold?: number; confidenceMode?: ConfidenceMode; crossDomain?: { enabled: boolean; currentPillar?: string; currentIntent?: string; timeRange?: string; maxSignals?: number }; ci?: { enabled: boolean; project?: string; includeBuildStatus?: boolean; includeTestResults?: boolean; includeDeployStatus?: boolean; maxSignals?: number } }): Promise<{ messages: any[]; estimatedTokens: number; systemPromptAddition?: string; promptAuthority?: string; confidenceReport?: ConfidenceReport; crossDomainReport?: { signalsInjected: number; totalTokens: number; correlations: InjectedSignal[] }; ciReport?: { signalsInjected: number; totalTokens: number; signals: CISignal[] } }> {
+  async assemble(p: { sessionId: string; sessionKey?: string; messages: any[]; tokenBudget?: number; availableTools?: Set<string>; citationsMode?: string; model?: string; prompt?: string; confidenceThreshold?: number; confidenceMode?: ConfidenceMode; crossDomain?: { enabled: boolean; currentPillar?: string; currentIntent?: string; timeRange?: string; maxSignals?: number }; ci?: { enabled: boolean; project?: string; includeBuildStatus?: boolean; includeTestResults?: boolean; includeDeployStatus?: boolean; maxSignals?: number } }): Promise<{ messages: any[]; estimatedTokens: number; systemPromptAddition?: string; promptAuthority?: string; confidenceReport?: ConfidenceReport; crossDomainReport?: { signalsInjected: number; totalTokens: number; correlations: InjectedSignal[] }; ciReport?: { signalsInjected: number; totalTokens: number; signals: CISignal[] }; driftScore?: number; autoCompact?: boolean; newSessionSuggestion?: string }> {
     this._session(p.sessionId);
 
     // Apply confidence mode if specified
@@ -415,7 +426,19 @@ export class ClawContextEngine {
       finalSys = finalSys ? `${finalSys}\n\n${overflowWarn}` : overflowWarn;
     }
 
-    return { messages: resultMessages, estimatedTokens: tokens, systemPromptAddition: finalSys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report };
+    // v4.20.0: Drift auto-response signals
+    const driftScore = this.driftDetector.getDriftScore();
+    const autoCompact = this._autoCompact.shouldCompact(driftScore);
+    let newSessionSuggestion: string | undefined;
+    if (this._autoSession.shouldSuggestNewSession(driftScore)) {
+      newSessionSuggestion = this._autoSession.generateSuggestion();
+      // Append suggestion to system prompt as well
+      finalSys = finalSys
+        ? `${finalSys}\n\n[Auto-Session] ${newSessionSuggestion}`
+        : `[Auto-Session] ${newSessionSuggestion}`;
+    }
+
+    return { messages: resultMessages, estimatedTokens: tokens, systemPromptAddition: finalSys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report, driftScore, autoCompact, newSessionSuggestion };
   }
 
   async compact(p: { sessionId: string; sessionKey?: string; sessionFile: string; tokenBudget?: number; force?: boolean; currentTokenCount?: number; compactionTarget?: string; customInstructions?: string; abortSignal?: AbortSignal; reserveForCrossDomain?: number; reserveForCI?: number; runtimeContext?: any }): Promise<{ ok: boolean; compacted: boolean; reason?: string; result?: { summary?: string; tokensBefore: number; tokensAfter?: number; details?: unknown } }> {
