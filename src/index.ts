@@ -28,12 +28,17 @@ export { AutoSessionController, DEFAULT_AUTO_SESSION_CONFIG, type AutoSessionCon
 export { RelevanceScorer, type ScoredMemory, type RelevanceContext } from "./relevance-scorer.js";
 export { SemanticCompressor, type MessageImportance, type CompressionResult } from "./semantic-compressor.js";
 export { SessionResumeManager, SummaryGenerator, HistoryLoader, DEFAULT_SESSION_RESUME_CONFIG, type SessionSummary, type SessionResumeConfig, type HistoryLoadResult } from "./session-resume/mod.js";
+export { QualityEvaluator, type QualityEvaluationResult, type QualityDimensionResult, type QualityEvaluatorConfig, DEFAULT_QUALITY_EVALUATOR_CONFIG } from "./self-refinement/mod.js";
+export type { ReasoningStrategy as ReasoningStrategyInterface } from "./self-refinement/reasoning-strategies/base.js";
+export { ChainOfThoughtStrategy } from "./self-refinement/reasoning-strategies/chain-of-thought.js";
+export { TreeOfThoughtsStrategy } from "./self-refinement/reasoning-strategies/tree-of-thoughts.js";
+export { GraphOfThoughtsStrategy } from "./self-refinement/reasoning-strategies/graph-of-thoughts.js";
 
 const plugin = {
   id: "claw-ctx",
   name: "Claw Context Engine",
   description: "Context Engine with C2 gating, RL injection, governance signals, cross-domain injection, CI/CD signals, and self-refinement for OpenClaw agents",
-  version: "4.23.0",
+  version: "4.24.0",
   kind: "context-engine",
 
   register(api: any) {
@@ -47,7 +52,7 @@ const plugin = {
       (api as any).registerContextEngine("claw-ctx", (_ctx: any) => {
         return createClawContextEngine(config, api.logger);
       });
-      api.logger.info("[claw-ctx] v4.22.0 registered");
+      api.logger.info("[claw-ctx] v4.24.0 registered");
     } catch (e) {
       api.logger.warn("[claw-ctx] registration failed:", e);
     }

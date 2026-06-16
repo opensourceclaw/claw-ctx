@@ -4,7 +4,14 @@
  * Dynamically selects reasoning strategies (CoT/ToT/GoT/Self-Consistency)
  * based on task type and complexity, then injects prompt templates into
  * the system prompt during context assembly.
+ *
+ * v4.24.0: Uses ReasoningStrategy instances from self-refinement module.
  */
+
+import type { ReasoningStrategy as ReasoningStrategyInterface } from "./self-refinement/reasoning-strategies/base.js";
+import { ChainOfThoughtStrategy } from "./self-refinement/reasoning-strategies/chain-of-thought.js";
+import { TreeOfThoughtsStrategy } from "./self-refinement/reasoning-strategies/tree-of-thoughts.js";
+import { GraphOfThoughtsStrategy } from "./self-refinement/reasoning-strategies/graph-of-thoughts.js";
 
 export type ReasoningStrategy =
   | "direct"
@@ -50,14 +57,12 @@ export const DEFAULT_STRATEGY_CONFIG: PromptStrategyConfig = {
   selfConsistencySamples: 3,
 };
 
-// ── Strategy prompt templates ────────────────────────────────────────
+// ── Strategy instances ────────────────────────────────────────────────
 
-const STRATEGY_PROMPTS: Record<ReasoningStrategy, string> = {
-  direct: "",
-  "chain-of-thought": "Let's think step by step. Break down the problem and reason through each step carefully before arriving at a conclusion.",
-  "tree-of-thoughts": "Explore multiple solution paths. Consider at least 2-3 alternative approaches, evaluate their trade-offs, then select and execute the best one.",
-  "graph-of-thoughts": "Build a network of ideas. Map relationships between concepts, identify dependencies, trace logical connections, and synthesize the most coherent solution.",
-  "self-consistency": "Generate multiple independent reasoning paths. Sample diverse approaches, compare results, and select the most consistent answer across samples.",
+const STRATEGY_INSTANCES: Record<string, ReasoningStrategyInterface> = {
+  "chain-of-thought": new ChainOfThoughtStrategy(),
+  "tree-of-thoughts": new TreeOfThoughtsStrategy(),
+  "graph-of-thoughts": new GraphOfThoughtsStrategy(),
 };
 
 // ── Task type detection ──────────────────────────────────────────────
@@ -171,33 +176,27 @@ export class PromptStrategyController {
     strategy: ReasoningStrategy,
     options?: { enableNShot?: number; includeExamples?: boolean },
   ): string {
-    const strategyPrompt = STRATEGY_PROMPTS[strategy];
-    if (!strategyPrompt && strategy === "direct") return prompt;
+    // Delegate to strategy instance if available
+    const instance = STRATEGY_INSTANCES[strategy];
+    if (instance) {
+      return instance.apply(prompt, options);
+    }
 
+    // "direct" strategy — no modification
+    if (strategy === "direct") return prompt;
+
+    // "self-consistency" — inline handling
     const parts: string[] = [prompt];
-
-    if (strategyPrompt) {
-      parts.push(`\n[Reasoning Strategy: ${strategy}]`);
-      parts.push(strategyPrompt);
-    }
-
-    // N-shot examples (simplified)
-    if (options?.enableNShot && options.enableNShot > 0) {
-      parts.push(`\nUse ${options.enableNShot} example${options.enableNShot > 1 ? "s" : ""} as reference patterns.`);
-    }
-
-    // Self-consistency
-    if (strategy === "self-consistency" && this.config.selfConsistency) {
+    if (this.config.selfConsistency) {
       parts.push(`\nGenerate ${this.config.selfConsistencySamples} independent solutions and select the most consistent result.`);
     }
-
     return parts.join("\n");
   }
 
   /** Get the strategy prompt template for use in system prompt. */
   getSystemPromptAddition(strategy: ReasoningStrategy): string {
-    const template = STRATEGY_PROMPTS[strategy];
-    if (!template) return "";
-    return `[Strategy: ${strategy}] ${template}`;
+    const instance = STRATEGY_INSTANCES[strategy];
+    if (instance) return instance.getSystemPromptAddition();
+    return "";
   }
 }

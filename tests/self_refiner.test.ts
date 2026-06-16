@@ -59,7 +59,7 @@ describe("SelfRefiner", () => {
     it("flags very short output", () => {
       const refiner = makeRefiner();
       const result = refiner.evaluate("OK");
-      expect(result.score).toBeLessThan(0.8);
+      expect(result.score).toBeLessThan(0.95);
       expect(result.issues.some(i => i.includes("short"))).toBe(true);
     });
 

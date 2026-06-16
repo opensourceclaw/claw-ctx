@@ -134,7 +134,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.23.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.24.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();

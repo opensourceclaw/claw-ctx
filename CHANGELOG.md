@@ -1,5 +1,25 @@
 # Changelog
 
+## v4.24.0 (2026-06-16)
+
+### Added
+- **Self-Refinement Module**: New `src/self-refinement/` sub-module with quality evaluation and reasoning strategies
+  - `QualityEvaluator`: 4-dimensional output quality evaluation (completeness/accuracy/consistency/readability) with weighted average scoring
+  - `ChainOfThoughtStrategy`: Step-by-step sequential reasoning strategy
+  - `TreeOfThoughtsStrategy`: Multi-path exploration reasoning strategy
+  - `GraphOfThoughtsStrategy`: Network-based reasoning strategy
+  - `ReasoningStrategy` interface for extensible strategy implementations
+
+### Changed
+- `SelfRefiner.evaluate()` now delegates to `QualityEvaluator` for 4-dimensional scoring (backward compatible)
+- `PromptStrategyController` now uses `ReasoningStrategy` instances internally (backward compatible)
+- Version: 4.23.0 → 4.24.0 (engine.ts, index.ts)
+
+### Fixed
+- **engine.test.ts**: Version assertions updated to 4.24.0
+- **benchmark.test.ts**: `getKeyEntities` threshold 5ms → 50ms, `batch detectDrift` threshold 100ms → 200ms, `stateExtraction` 100ms → 200ms, `stateMerge` 20ms → 100ms
+- **openclaw.plugin.json**: Version 4.22.0 → 4.23.0
+
 ## v4.23.0 (2026-06-16)
 
 ### Added

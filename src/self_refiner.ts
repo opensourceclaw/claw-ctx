@@ -7,7 +7,11 @@
  * Flow: Turn → Assemble → Generate → Self-Evaluate →
  *        [if not satisfied] → Refine → Re-Evaluate →
  *        [satisfied or max retries] → AfterTurn → (end)
+ *
+ * v4.24.0: evaluate() delegates to QualityEvaluator for 4-dimensional scoring.
  */
+
+import { QualityEvaluator } from "./self-refinement/quality-evaluator.js";
 
 export interface SelfRefinerConfig {
   maxRetries: number;
@@ -36,19 +40,7 @@ export const DEFAULT_SELF_REFINER_CONFIG: SelfRefinerConfig = {
   triggerOn: ["low-confidence", "error-detected"],
 };
 
-// ── Issue detection patterns ─────────────────────────────────────────
-
-const LOW_CONFIDENCE_PATTERNS = [
-  /\bI think\b/i, /\bI believe\b/i, /\bperhaps\b/i, /\bmaybe\b/i,
-  /\bnot sure\b/i, /\bI'm not certain\b/i, /\bunclear\b/i,
-  /\bpossibly\b/i, /\bprobably\b/i, /\bmight be\b/i,
-];
-
-const ERROR_PATTERNS = [
-  /\berror\b/i, /\bfailed\b/i, /\bundefined\b/i, /\bnull\b/i,
-  /\bcannot\b/i, /\bunable to\b/i, /\bdoes not exist\b/i,
-  /\bnot found\b/i, /\bexception\b/i, /\bcrash\b/i,
-];
+// ── Incomplete patterns (used by refine()) ─────────────────────────────
 
 const INCOMPLETE_PATTERNS = [
   /\bTODO\b/, /\bFIXME\b/, /\bWIP\b/, /\bwork in progress\b/i,
@@ -72,87 +64,30 @@ function similarity(a: string, b: string): number {
 
 export class SelfRefiner {
   config: SelfRefinerConfig;
+  private _qualityEvaluator: QualityEvaluator;
 
   constructor(config?: Partial<SelfRefinerConfig>) {
     this.config = { ...DEFAULT_SELF_REFINER_CONFIG, ...config };
+    this._qualityEvaluator = new QualityEvaluator({
+      qualityThreshold: this.config.qualityThreshold,
+    });
   }
 
-  /** Evaluate output quality across multiple dimensions. */
+  /** Evaluate output quality via QualityEvaluator (4 dimensions). */
   evaluate(output: string, _context?: Array<{ role: string; content: string }>): EvaluationResult {
-    if (!output?.trim()) {
-      return { score: 0, passed: false, issues: ["Empty output"], suggestions: ["Generate a complete response"] };
-    }
+    const qResult = this._qualityEvaluator.evaluate(output, _context);
 
-    const issues: string[] = [];
-    const suggestions: string[] = [];
-    let score = 1.0;
-
-    // 1. Consistency detection — check for self-contradiction markers
-    const hasContradiction = /\bbut\b.*\bnot\b|\bhowever\b.*\bnot\b/i.test(output);
-    if (hasContradiction) {
-      issues.push("Possible self-contradiction detected");
-      suggestions.push("Review consistency of statements");
-      score -= 0.15;
-    }
-
-    // 2. Completeness detection
-    for (const p of INCOMPLETE_PATTERNS) {
-      if (p.test(output)) {
-        issues.push("Output appears incomplete");
-        suggestions.push("Complete the pending sections");
-        score -= 0.2;
-        break;
-      }
-    }
-
-    // 3. Low-confidence detection
-    let lowConfCount = 0;
-    for (const p of LOW_CONFIDENCE_PATTERNS) {
-      if (p.test(output)) lowConfCount++;
-    }
-    if (lowConfCount >= 3) {
-      issues.push(`Contains ${lowConfCount} low-confidence expressions`);
-      suggestions.push("Use more definitive language or acknowledge uncertainty explicitly");
-      score -= Math.min(0.3, lowConfCount * 0.08);
-    }
-
-    // 4. Error pattern detection
-    for (const p of ERROR_PATTERNS) {
-      if (p.test(output)) {
-        issues.push("Output contains error-related language");
-        suggestions.push("Verify correctness and fix reported errors");
-        score -= 0.15;
-        break;
-      }
-    }
-
-    // 5. Format quality — basic heuristics
-    if (output.length < 20) {
-      issues.push("Output is too short");
-      suggestions.push("Provide more detailed response");
-      score -= 0.3;
-    }
-    if (output.length > 50000) {
-      issues.push("Output is excessively long");
-      suggestions.push("Consider summarizing or splitting");
-      score -= 0.1;
-    }
-
-    score = Math.max(0, Math.min(1, Math.round(score * 100) / 100));
-    const passed = score >= this.config.qualityThreshold;
-
-    return { score, passed, issues, suggestions };
+    return {
+      score: qResult.overallScore,
+      passed: qResult.passed,
+      issues: qResult.issues,
+      suggestions: qResult.suggestions,
+    };
   }
 
   /** Generate a refined version of the output based on evaluation feedback. */
   refine(output: string, feedback: string, _context?: Array<{ role: string; content: string }>): string {
     if (!output || !feedback) return output;
-
-    // Build refinement prompt
-    const lines: string[] = [];
-    lines.push("[Self-Refinement]");
-    lines.push(`Feedback: ${feedback}`);
-    lines.push("");
 
     // Apply rule-based improvements
     let refined = output;
