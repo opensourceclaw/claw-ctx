@@ -2,5 +2,6 @@ node_modules/
 dist/
 coverage/
 cov-merged/
+docs/api/
 *.log
 .DS_Store

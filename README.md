@@ -42,9 +42,13 @@ Effective AI agents need more than just memory—they need **intelligent context
 
 ## 📈 Milestones & Progress
 
-| Version     | Date    | Theme                             | Status    |
-| ----------- | ------- | --------------------------------- | --------- |
-| **v4.14.0** | 2026-06 | RL Strategy Integration Complete  | ✅ Current |
+| Version     | Date    | Theme                             | Status       |
+| ----------- | ------- | --------------------------------- | ------------ |
+| **v4.25.0** | 2026-06 | Repository Hygiene & Security     | ✅ Current   |
+| **v4.24.0** | 2026-06 | Self-Refinement Module            | ✅           |
+| **v4.23.0** | 2026-06 | Session-Resume + CJK Support      | ✅           |
+| **v4.22.0** | 2026-06 | Semantic Compression              | ✅           |
+| **v4.14.0** | 2026-06 | RL Strategy Integration Complete  | ✅           |
 | **v4.10.0** | 2026-05 | Performance & Health Optimization | ✅         |
 | **v4.9.0**  | 2026-05 | C4 Long-Horizon Enhancement       | ✅         |
 | **v4.7.0**  | 2026-04 | Phase 2 Complete                  | ✅         |
@@ -120,32 +124,42 @@ cat package.json | grep version
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      claw-ctx                               │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌─────────────────┐    ┌─────────────────┐                │
-│  │  Token Budget   │    │  Confidence     │                │
-│  │    Controller   │    │     Gating      │                │
-│  └────────┬────────┘    └────────┬────────┘                │
-│           │                      │                          │
-│           └──────────┬───────────┘                          │
-│                      ↓                                       │
-│           ┌─────────────────────┐                          │
-│           │   Context Assembler │                          │
-│           │  - Priority Queue   │                          │
-│           │  - Selection Logic  │                          │
-│           └──────────┬──────────┘                          │
-│                      ↓                                      │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │              Integrations                            │   │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌───────────┐  │   │
-│  │  │   claw-mem   │  │   Hooks      │  │   other   │  │   │
-│  │  │  (Memory)    │  │  (Events)    │  │ (Custom)  │  │   │
-│  │  └──────────────┘  └──────────────┘  └───────────┘  │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                       claw-ctx v4.25.0                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌──────────┐ ┌──────────┐ ┌─────────────┐ ┌────────────────┐  │
+│  │  Token   │ │Confidence│ │   Drift     │ │     Smart      │  │
+│  │ Budget   │ │  Gate    │ │  Detection  │ │Budget Allocator│  │
+│  └────┬─────┘ └────┬─────┘ └──────┬──────┘ └───────┬────────┘  │
+│       │            │              │                │            │
+│       └────────────┴──────┬───────┴────────────────┘            │
+│                           ↓                                     │
+│                ┌──────────────────────┐                        │
+│                │   Context Assembler   │                        │
+│                │  (ClawContextEngine)  │                        │
+│                └──────────┬───────────┘                        │
+│                           ↓                                     │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │                    Injectors / Enhancers                   │  │
+│  │  ┌──────────┐ ┌─────────┐ ┌───────┐ ┌───────────────┐  │  │
+│  │  │   RL     │ │Governance│ │ CI/CD │ │ Cross-Domain  │  │  │
+│  │  └──────────┘ └─────────┘ └───────┘ └───────────────┘  │  │
+│  │  ┌──────────┐ ┌─────────┐ ┌──────────────────────┐    │  │
+│  │  │ Session  │ │  Self-  │ │ Long-Term Dependency │    │  │
+│  │  │  Resume  │ │Refinement│ │      Tracker         │    │  │
+│  │  └──────────┘ └─────────┘ └──────────────────────┘    │  │
+│  │  ┌──────────┐ ┌─────────┐ ┌──────────────────────┐    │  │
+│  │  │ Semantic │ │ Position│ │   Structured/Multimodal│   │  │
+│  │  │Compressor│ │Optimizer│ │   Context Handler     │   │  │
+│  │  └──────────┘ └─────────┘ └──────────────────────┘    │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                           ↓                                     │
+│                    ┌──────────────┐                             │
+│                    │  claw-mem    │                             │
+│                    │  (Memory)    │                             │
+│                    └──────────────┘                             │
+└─────────────────────────────────────────────────────────────────┘
                            ↓
               ┌─────────────────────────┐
               │   OpenClaw Agent        │
@@ -155,12 +169,15 @@ cat package.json | grep version
 
 ### Context Flow
 
-1. **Request**: Agent requests context assembly
-2. **Budget Check**: Calculate token budget available
-3. **Gating**: Filter memories below confidence threshold
-4. **Selection**: Prioritize and select context items
-5. **Assembly**: Combine into final context payload
-6. **Injection**: Deliver to OpenClaw agent
+1. **Bootstrap**: Load session history from claw-mem (via SessionResumeManager)
+2. **Request**: Agent requests context assembly
+3. **Budget Check**: Calculate token budget with drift-aware allocation (SmartBudgetAllocator)
+4. **Drift Detection**: Analyze topic drift from conversation history
+5. **Gating**: Filter memories below confidence threshold (ConfidenceGate)
+6. **Selection**: Prioritize and select context items within budget
+7. **Injection**: Apply injectors (RL/Governance/CI/CD/Cross-Domain) + reasoning strategy (CoT/ToT/GoT)
+8. **Assembly**: Combine into final context payload
+9. **AfterTurn**: Store session summary, run self-refinement evaluation, detect auto-compact triggers
 
 ---
 
@@ -266,14 +283,6 @@ npm run build
 ```
 
 ### Community Channels
-
-- **GitHub Issues**: Report bugs and request features
-- **Discussions**: Ask questions and share ideas
-- **Discord**: Join our community (link in main README)
-
----
-
-## 📄 License
 
 - **GitHub Issues**: Report bugs and request features
 - **Discussions**: Ask questions and share ideas
