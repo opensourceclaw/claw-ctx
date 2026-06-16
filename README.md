@@ -7,7 +7,7 @@
 *Intelligent Context Assembly for AI Agents*
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Version](https://img.shields.io/badge/Version-4.24.0-blue.svg)](https://github.com/opensourceclaw/claw-ctx/releases/tag/v4.24.0)
+[![Version](https://img.shields.io/badge/Version-4.25.0-blue.svg)](https://github.com/opensourceclaw/claw-ctx/releases/tag/v4.25.0)
 [![CI](https://github.com/opensourceclaw/claw-ctx/actions/workflows/ci.yml/badge.svg)](https://github.com/opensourceclaw/claw-ctx/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/opensourceclaw/claw-ctx/branch/main/graph/badge.svg)](https://codecov.io/gh/opensourceclaw/claw-ctx)
 
