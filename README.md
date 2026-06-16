@@ -7,7 +7,7 @@
 *Intelligent Context Assembly for AI Agents*
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Version](https://img.shields.io/badge/Version-4.22.0-blue.svg)](https://github.com/opensourceclaw/claw-ctx/releases/tag/v4.22.0)
+[![Version](https://img.shields.io/badge/Version-4.24.0-blue.svg)](https://github.com/opensourceclaw/claw-ctx/releases/tag/v4.24.0)
 [![CI](https://github.com/opensourceclaw/claw-ctx/actions/workflows/ci.yml/badge.svg)](https://github.com/opensourceclaw/claw-ctx/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/opensourceclaw/claw-ctx/branch/main/graph/badge.svg)](https://codecov.io/gh/opensourceclaw/claw-ctx)
 
@@ -232,6 +232,8 @@ npm run test:coverage
 npm run typecheck
 ```
 
+> **Note**: Coverage reports are generated as HTML files in `cov-merged/`. These are build artifacts, not source files, and are excluded from version control via `.gitignore`.
+
 ---
 
 ## 🤝 Contributing
@@ -264,6 +266,14 @@ npm run build
 ```
 
 ### Community Channels
+
+- **GitHub Issues**: Report bugs and request features
+- **Discussions**: Ask questions and share ideas
+- **Discord**: Join our community (link in main README)
+
+---
+
+## 📄 License
 
 - **GitHub Issues**: Report bugs and request features
 - **Discussions**: Ask questions and share ideas

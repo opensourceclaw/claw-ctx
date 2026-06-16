@@ -1,5 +1,16 @@
 # Changelog
 
+## v4.25.0 (2026-06-16)
+
+### Added
+- **SECURITY.md**: Security vulnerability reporting process, response timeline, supported versions
+- **CONTRIBUTING.md**: Development setup guide, code style, PR process, testing requirements
+
+### Changed
+- **.gitignore**: Added `coverage/` and `cov-merged/` to exclude build artifacts from version control
+- **README.md**: Version badge updated to v4.24.0; added note clarifying coverage HTML files as build artifacts
+- **Git tracking**: Removed `dist/`, `coverage/`, `cov-merged/` from version control (now properly gitignored)
+
 ## v4.24.0 (2026-06-16)
 
 ### Added
