@@ -27,12 +27,13 @@ export { AutoCompactController, DEFAULT_AUTO_COMPACT_CONFIG, type AutoCompactCon
 export { AutoSessionController, DEFAULT_AUTO_SESSION_CONFIG, type AutoSessionConfig } from "./auto-session.js";
 export { RelevanceScorer, type ScoredMemory, type RelevanceContext } from "./relevance-scorer.js";
 export { SemanticCompressor, type MessageImportance, type CompressionResult } from "./semantic-compressor.js";
+export { SessionResumeManager, SummaryGenerator, HistoryLoader, DEFAULT_SESSION_RESUME_CONFIG, type SessionSummary, type SessionResumeConfig, type HistoryLoadResult } from "./session-resume/mod.js";
 
 const plugin = {
   id: "claw-ctx",
   name: "Claw Context Engine",
   description: "Context Engine with C2 gating, RL injection, governance signals, cross-domain injection, CI/CD signals, and self-refinement for OpenClaw agents",
-  version: "4.22.0",
+  version: "4.23.0",
   kind: "context-engine",
 
   register(api: any) {

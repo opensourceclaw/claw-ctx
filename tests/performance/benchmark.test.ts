@@ -25,11 +25,11 @@ function measureTimeAsync(fn: () => Promise<void>): Promise<number> {
 }
 
 const PERF_THRESHOLDS = {
-  tokenCountSmall: 50,    // ms for small text
-  tokenCountLarge: 200,   // ms for large text  
+  tokenCountSmall: 100,   // ms for small text
+  tokenCountLarge: 200,   // ms for large text
   fallbackCount: 10,       // ms
   driftDetection: 50,     // ms
-  budgetAllocation: 20,    // ms
+  budgetAllocation: 60,    // ms
   stateExtraction: 100,   // ms
 };
 

@@ -1,5 +1,25 @@
 # Changelog
 
+## v4.23.0 (2026-06-16)
+
+### Added
+- **SessionResume**: Session continuity module with structured history loading and summary generation
+  - `SessionResumeManager`: Three-phase lifecycle (bootstrap → assemble → afterTurn)
+  - `SummaryGenerator`: Pure rule-based keyword/task/key-point extraction from messages
+  - `HistoryLoader`: claw-mem backed multi-session history loading with dedup/filter/format
+  - CJK/Unicode support: Bigram-based keyword extraction, CJK regex patterns for tasks/key-points
+
+### Fixed
+- **engine.ts**: Added missing `await` on `manager.search()` calls (P0 bug — memory search was returning Promise instead of results)
+- **engine.ts**: Session resume history injection now works in both early-return and main paths
+- **onSubagentEnded**: Added missing `await` on `manager.search()` call
+
+### Changed
+- engine.ts: Replaced private `_loadPreviousSessionContext()` / `_storeSessionSummary()` with SessionResumeManager
+- engine.ts: Added `getSessionResumeManager()` accessor
+- index.ts: Added session-resume exports
+- Performance thresholds adjusted for local environment
+
 ## v4.22.0 (2026-06-11)
 
 ### Added

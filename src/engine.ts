@@ -53,6 +53,7 @@ import { AutoCompactController, type AutoCompactConfig } from "./auto-compact.js
 import { AutoSessionController, type AutoSessionConfig } from "./auto-session.js";
 import { RelevanceScorer, type RelevanceContext, type ScoredMemory } from "./relevance-scorer.js";
 import { SemanticCompressor, type CompressionResult } from "./semantic-compressor.js";
+import { SessionResumeManager, type SessionResumeConfig, DEFAULT_SESSION_RESUME_CONFIG } from "./session-resume/mod.js";
 
 // v4.11.0: RL-driven memory strategy selection
 import {
@@ -65,7 +66,7 @@ import {
 // v4.3.0: Global token counter instance for precise counting
 let globalTokenCounter = createTokenCounter("cl100k_base");
 
-interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean; compactThreshold?: number; reserveRatio?: number; compressionStrategy?: "semantic" | "legacy" }
+interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean; compactThreshold?: number; reserveRatio?: number; compressionStrategy?: "semantic" | "legacy"; sessionResume?: Partial<SessionResumeConfig> | false }
 interface ClawCtxLogger { info: (...a: any[]) => void; error: (...a: any[]) => void; warn: (...a: any[]) => void; debug?: (...a: any[]) => void }
 
 function extractText(msg: any): string {
@@ -133,7 +134,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.22.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.23.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -176,6 +177,8 @@ export class ClawContextEngine {
   private _autoSession: AutoSessionController;
   private _relevanceScorer: RelevanceScorer;
   private _semanticCompressor: SemanticCompressor;
+  // v5.0.0: Session resume manager
+  private _sessionResume: SessionResumeManager | null = null;
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -199,6 +202,15 @@ export class ClawContextEngine {
     this._autoSession = new AutoSessionController();
     this._relevanceScorer = new RelevanceScorer();
     this._semanticCompressor = new SemanticCompressor();
+    // v5.0.0: Session resume
+    if (config.sessionResume !== false) {
+      this._sessionResume = new SessionResumeManager(
+        this.manager,
+        config.sessionResume !== undefined
+          ? { ...DEFAULT_SESSION_RESUME_CONFIG, ...config.sessionResume }
+          : DEFAULT_SESSION_RESUME_CONFIG
+      );
+    }
   }
 
   private _session(id: string): void { if (this.sid !== id) { this.sid = id; this.manager.sessionId = id; } }
@@ -208,21 +220,18 @@ export class ClawContextEngine {
     try { this.manager.injectConstitution?.(); } catch { this.logger.warn("[claw-ctx] constitution skip"); }
 
     // v4.1.0: Session continuity — inject previous session context
+    // v5.0.0: Replaced by SessionResumeManager
     let importedMessages = 0;
-    try {
-      const prevSummary = this._loadPreviousSessionContext();
-      if (prevSummary) {
-        this.manager.store(
-          `[Previous Session Context] ${prevSummary}`,
-          "episodic",
-          ["session_summary", "continuity"],
-          { sessionId: p.sessionId, isPreviousSession: true }
-        );
-        importedMessages = 1;
-        this.logger.info("[claw-ctx] Injected previous session context");
+    if (this._sessionResume) {
+      try {
+        const resumeResult = await this._sessionResume.bootstrap(p.sessionId);
+        if (resumeResult.historyLoaded) {
+          importedMessages = resumeResult.sessionCount;
+          this.logger.info(`[claw-ctx] Loaded ${resumeResult.sessionCount} previous session(s)`);
+        }
+      } catch (e) {
+        this.logger.warn("[claw-ctx] session resume bootstrap failed:", e);
       }
-    } catch (e) {
-      this.logger.warn("[claw-ctx] session continuity injection failed:", e);
     }
 
     return { bootstrapped: true, importedMessages, reason: "Claw Context bootstrapped" };
@@ -290,7 +299,7 @@ export class ClawContextEngine {
     const q = p.prompt || extractText(p.messages[p.messages.length - 1]) || "";
     const budget = p.tokenBudget ?? 4000;
     let mems: any[] = this.cache.get(q) ?? [];
-    if (!mems.length) { try { const r = this.manager.search(q, undefined, this.config.topK ?? 10); mems = (r as any)?.memories ?? r ?? []; if (Array.isArray(mems)) this.cache.set(q, mems); } catch (e) { this.logger.warn("[claw-ctx] search fail:", e); } }
+    if (!mems.length) { try { const r = await this.manager.search(q, undefined, this.config.topK ?? 10); mems = (r as any)?.memories ?? r ?? []; if (Array.isArray(mems)) this.cache.set(q, mems); } catch (e) { this.logger.warn("[claw-ctx] search fail:", e); } }
     if (!Array.isArray(mems) || mems.length === 0) {
       // Still inject RL/governance/cross-domain/CI even without memories
       const additions = await this.injectExternalContext(p.sessionId);
@@ -298,7 +307,8 @@ export class ClawContextEngine {
       if (crossDomainResult) additions.push(crossDomainResult.block);
       const ciResult = await this.injectCIContext(p);
       if (ciResult) additions.push(ciResult.block);
-      const sys = additions.length ? additions.join("\n\n") : undefined;
+      let sys = additions.length ? additions.join("\n\n") : undefined;
+      sys = this._injectSessionResume(sys);
       return {
         messages: p.messages,
         estimatedTokens: 0,
@@ -443,6 +453,9 @@ export class ClawContextEngine {
         ? `${finalSys}\n\n[Auto-Session] ${newSessionSuggestion}`
         : `[Auto-Session] ${newSessionSuggestion}`;
     }
+
+    // v5.0.0: Session resume history injection
+    finalSys = this._injectSessionResume(finalSys);
 
     return { messages: resultMessages, estimatedTokens: tokens, systemPromptAddition: finalSys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report, driftScore, autoCompact, newSessionSuggestion };
   }
@@ -726,9 +739,12 @@ export class ClawContextEngine {
     }
 
     // v4.1.0: Store session summary for continuity
-    try {
-      this._storeSessionSummary(p.sessionId, p.messages);
-    } catch { /* best effort */ }
+    // v5.0.0: Replaced by SessionResumeManager
+    if (this._sessionResume) {
+      try {
+        await this._sessionResume.afterTurn(p.sessionId, p.messages, this._sessionState);
+      } catch { /* best effort */ }
+    }
   }
 
   async prepareSubagentSpawn(p: { parentSessionKey: string; childSessionKey: string; contextMode?: "isolated" | "fork"; parentSessionId?: string; parentSessionFile?: string; childSessionId?: string; childSessionFile?: string; ttlMs?: number }): Promise<{ rollback: () => void } | undefined> {
@@ -739,7 +755,7 @@ export class ClawContextEngine {
   }
 
   async onSubagentEnded(p: { childSessionKey: string; reason: "deleted" | "completed" | "swept" | "released" }): Promise<void> {
-    if (p.reason === "completed") { try { const r = this.manager.search("important", undefined, 5); if (Array.isArray(r)) for (const m of r) this.manager.store(`[subagent] ${(m.content as any)?.slice?.(0,200) ?? ""}`, "episodic", ["subagent"]); } catch { /* ok */ } }
+    if (p.reason === "completed") { try { const r = await this.manager.search("important", undefined, 5); if (Array.isArray(r)) for (const m of r) this.manager.store(`[subagent] ${(m.content as any)?.slice?.(0,200) ?? ""}`, "episodic", ["subagent"]); } catch { /* ok */ } }
   }
 
   /**
@@ -807,6 +823,11 @@ export class ClawContextEngine {
   getDependencyTracker(): LongTermDependencyTracker {
     if (!this._depTracker) this._depTracker = new LongTermDependencyTracker();
     return this._depTracker;
+  }
+
+  /** v5.0.0: Get session resume manager */
+  getSessionResumeManager(): SessionResumeManager | null {
+    return this._sessionResume;
   }
 
   /** v4.9.0: Set a custom dependency tracker */
@@ -993,72 +1014,18 @@ export class ClawContextEngine {
     };
   }
 
-  /**
-   * v4.1.0: Load previous session context from claw-mem.
-   * Searches for stored session summaries and returns a formatted block.
-   */
-  private _loadPreviousSessionContext(): string | null {
+  /** v5.0.0: Inject session resume history into system prompt. */
+  private _injectSessionResume(sys: string | undefined): string | undefined {
+    if (!this._sessionResume) return sys;
     try {
-      // Search for session summaries in claw-mem
-      const summaries = this.manager.search("session_summary", undefined, 5) as any[];
-      if (!summaries || summaries.length === 0) return null;
-
-      // Filter to entries with session_summary tag
-      const sessionSummaries = summaries.filter(
-        (m: any) => m.tags?.includes?.("session_summary")
-      );
-      if (sessionSummaries.length === 0) return null;
-
-      // Get the most recent session summary
-      const latest = sessionSummaries[0];
-      const content = typeof latest.content === "string" ? latest.content : "";
-
-      return `[Previous Session (${latest.timestamp || "unknown"})]\n${content}\n\nContinue from where you left off.`;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * v4.1.0: Store session summary after each turn for continuity.
-   * Aggregates recent messages into a concise summary stored in claw-mem.
-   */
-  private _storeSessionSummary(sessionId: string, messages: any[]): void {
-    if (!messages || messages.length < 3) return;
-
-    // Extract key info from recent messages
-    const recentMsgs = messages.slice(-10);
-    const topics: string[] = [];
-    const keywordSet = new Set([
-      "code", "bug", "fix", "deploy", "test", "refactor",
-      "config", "error", "performance", "api", "database",
-      "task", "version", "release", "review", "build"
-    ]);
-
-    const text = recentMsgs.map((m: any) => {
-      const c = typeof m.content === "string" ? m.content : "";
-      // Extract keywords
-      for (const kw of keywordSet) {
-        if (c.toLowerCase().includes(kw) && !topics.includes(kw)) {
-          topics.push(kw);
-        }
+      const historySection = this._sessionResume.assemble();
+      if (historySection) {
+        return sys ? `${sys}\n\n${historySection}` : historySection;
       }
-      return c;
-    }).join(" ");
-
-    const lastMsg = recentMsgs[recentMsgs.length - 1];
-    const lastContent = typeof lastMsg?.content === "string" ? lastMsg.content.slice(0, 200) : "";
-
-    const summary = topics.length > 0
-      ? `Working on: ${topics.slice(0, 8).join(", ")}. Last action: ${lastContent}`
-      : `Last action: ${lastContent}`;
-
-    this.manager.store(
-      summary,
-      "episodic",
-      ["session_summary", "continuity"],
-      { sessionId, isSessionSummary: true, messageCount: messages.length }
-    );
+    } catch {
+      // session resume assembly is non-blocking
+    }
+    return sys;
   }
 
   async dispose(): Promise<void> { this.sid = null; this.cache = new SearchCache(30000); }
