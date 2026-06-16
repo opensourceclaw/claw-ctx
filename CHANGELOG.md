@@ -1,5 +1,22 @@
 # Changelog
 
+## v4.26.0 (2026-06-16)
+
+### Added
+- **ESLint**: Flat config with @typescript-eslint, configured in `eslint.config.js`
+- **TypeDoc**: API documentation generation via `npm run docs` → `docs/api/`
+- **ADR**: `docs/adr/README.md` with ADR-001 (module structure), ADR-002 (no-LLM rule), ADR-003 (claw-mem integration)
+- **License Header**: Apache 2.0 header on all 37 .ts source files
+
+### Changed
+- **tsconfig.json**: `moduleResolution: NodeNext`, `module: NodeNext`
+- **package.json**: Added `engines`, `exports`, `files` fields; `lint` and `docs` scripts
+- **README.md**: Updated architecture diagram (v4.26.0) and Context Flow (9 steps)
+- **.gitignore**: Added `docs/api/` to exclude TypeDoc output from version control
+
+### Fixed
+- **engine.ts:85**: prefer-const (let → const for globalTokenCounter)
+
 ## v4.25.0 (2026-06-16)
 
 ### Added

@@ -7,7 +7,7 @@
 *Intelligent Context Assembly for AI Agents*
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Version](https://img.shields.io/badge/Version-4.25.0-blue.svg)](https://github.com/opensourceclaw/claw-ctx/releases/tag/v4.25.0)
+[![Version](https://img.shields.io/badge/Version-4.26.0-blue.svg)](https://github.com/opensourceclaw/claw-ctx/releases/tag/v4.26.0)
 [![CI](https://github.com/opensourceclaw/claw-ctx/actions/workflows/ci.yml/badge.svg)](https://github.com/opensourceclaw/claw-ctx/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/opensourceclaw/claw-ctx/branch/main/graph/badge.svg)](https://codecov.io/gh/opensourceclaw/claw-ctx)
 
@@ -44,7 +44,7 @@ Effective AI agents need more than just memory—they need **intelligent context
 
 | Version     | Date    | Theme                             | Status       |
 | ----------- | ------- | --------------------------------- | ------------ |
-| **v4.25.0** | 2026-06 | Repository Hygiene & Security     | ✅ Current   |
+| **v4.26.0** | 2026-06 | Engineering Quality & Docs  | ✅ Current   |
 | **v4.24.0** | 2026-06 | Self-Refinement Module            | ✅           |
 | **v4.23.0** | 2026-06 | Session-Resume + CJK Support      | ✅           |
 | **v4.22.0** | 2026-06 | Semantic Compression              | ✅           |
@@ -125,7 +125,7 @@ cat package.json | grep version
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                       claw-ctx v4.25.0                          │
+│                       claw-ctx v4.26.0                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  ┌──────────┐ ┌──────────┐ ┌─────────────┐ ┌────────────────┐  │

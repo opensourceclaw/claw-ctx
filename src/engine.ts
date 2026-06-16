@@ -82,7 +82,7 @@ import {
 } from "./memory_strategy_selector.js";
 
 // v4.3.0: Global token counter instance for precise counting
-let globalTokenCounter = createTokenCounter("cl100k_base");
+const globalTokenCounter = createTokenCounter("cl100k_base");
 
 interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean; compactThreshold?: number; reserveRatio?: number; compressionStrategy?: "semantic" | "legacy"; sessionResume?: Partial<SessionResumeConfig> | false }
 interface ClawCtxLogger { info: (...a: any[]) => void; error: (...a: any[]) => void; warn: (...a: any[]) => void; debug?: (...a: any[]) => void }
@@ -152,7 +152,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.25.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.26.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
