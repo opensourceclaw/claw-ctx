@@ -34,7 +34,6 @@ export { TiktokenCounter, FallbackCounter, createTokenCounter, type TiktokenEnco
 export { DriftDetector, TopicModel, DEFAULT_DRIFT_CONFIG, type Topic, type DriftAlert, type Action, type DriftConfig, type DriftReport } from "./drift-detector.js";
 export { SmartBudgetAllocator, TaskTypeDetector, QualityBasedAdjuster, DEFAULT_BUDGET_CONFIG, TASK_BUDGET_PROFILES, type TaskType, type BudgetConfig as SmartBudgetAllocatorConfig, type BudgetAllocation as SmartBudgetAllocation, type AllocationHistory, type TaskBudgetProfile } from "./smart-budget-allocator.js";
 export { SessionStateExtractor, type SessionState, type Entity, type Decision, type TopicTag } from "./session-state-extractor.js";
-export { DriftBudgetLinker, DEFAULT_DRIFT_BUDGET_CONFIG, type DriftBudgetConfig, type BudgetAllocation as DriftBudgetAllocation } from "./drift-budget-linker.js";
 export { LongTermDependencyTracker, type EntityMention, type DependencyChain, type GraphNode, type GraphEdge, type Graph } from "./long-term-dependency-tracker.js";
 export { SelfRefiner, type SelfRefinerConfig, type EvaluationResult, type SelfRefinementResult, DEFAULT_SELF_REFINER_CONFIG } from "./self_refiner.js";
 export { PromptStrategyController, type ReasoningStrategy, type PromptStrategyConfig, DEFAULT_STRATEGY_CONFIG } from "./prompt_strategy_controller.js";
@@ -43,7 +42,6 @@ export { StructuredContextHandler, type StructuredDataType, type StructuredDataC
 export { MultimodalContextHandler, type MultimodalContent, type MultimodalConfig, type ModalType, DEFAULT_MULTIMODAL_CONFIG } from "./multimodal_context_handler.js";
 export { AutoCompactController, DEFAULT_AUTO_COMPACT_CONFIG, type AutoCompactConfig } from "./auto-compact.js";
 export { AutoSessionController, DEFAULT_AUTO_SESSION_CONFIG, type AutoSessionConfig } from "./auto-session.js";
-export { RelevanceScorer, type ScoredMemory, type RelevanceContext } from "./relevance-scorer.js";
 export { SemanticCompressor, type MessageImportance, type CompressionResult } from "./semantic-compressor.js";
 export { SessionResumeManager, SummaryGenerator, HistoryLoader, DEFAULT_SESSION_RESUME_CONFIG, type SessionSummary, type SessionResumeConfig, type HistoryLoadResult } from "./session-resume/mod.js";
 export { QualityEvaluator, type QualityEvaluationResult, type QualityDimensionResult, type QualityEvaluatorConfig, DEFAULT_QUALITY_EVALUATOR_CONFIG } from "./self-refinement/mod.js";

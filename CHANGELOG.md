@@ -2,6 +2,11 @@
 
 ## v4.26.0 (2026-06-16)
 
+### Removed
+- **engine.ts**: Cleaned 7 dead imports (`MockRLProvider`, `MockGovernanceProvider`, `MockCrossDomainProvider`, `MockCIProvider`, `TopicModel`, `DEFAULT_DRIFT_CONFIG`, `RelevanceScorer`) — unused in production code
+- **RelevanceScorer**: Deleted `src/relevance-scorer.ts` — exported but never used by any module
+- **DriftBudgetLinker**: Deleted `src/drift-budget-linker.ts` — exported but never used by any module
+
 ### Added
 - **ESLint**: Flat config with @typescript-eslint, configured in `eslint.config.js`
 - **TypeDoc**: API documentation generation via `npm run docs` → `docs/api/`

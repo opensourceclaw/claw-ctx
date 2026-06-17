@@ -52,15 +52,15 @@ try {
     };
   }
 }
-import { RLInjector, type RLExperience, type RLProvider, MockRLProvider } from "./rl_injector.js";
-import { GovernanceInjector, type GovernanceSignal, type GovernanceProvider, type GovernanceLayer, MockGovernanceProvider } from "./governance_injector.js";
-import { CrossDomainInjector, type InjectedSignal, type CrossDomainProvider, MockCrossDomainProvider } from "./cross_domain_injector.js";
+import { RLInjector, type RLExperience, type RLProvider } from "./rl_injector.js";
+import { GovernanceInjector, type GovernanceSignal, type GovernanceProvider, type GovernanceLayer } from "./governance_injector.js";
+import { CrossDomainInjector, type InjectedSignal, type CrossDomainProvider } from "./cross_domain_injector.js";
 import { TokenBudgetManager, type BudgetResult } from "./token_budget_manager.js";
 import { TiktokenCounter, FallbackCounter, createTokenCounter, type TokenCounterResult } from "./token-counter.js";
-import { DriftDetector, TopicModel, type DriftAlert, type DriftReport, type DriftConfig, DEFAULT_DRIFT_CONFIG } from "./drift-detector.js";
+import { DriftDetector, type DriftAlert, type DriftReport, type DriftConfig } from "./drift-detector.js";
 import { SmartBudgetAllocator, type TaskType, type BudgetAllocation as SmartBudgetAllocation, type AllocationHistory } from "./smart-budget-allocator.js";
 import { SessionStateExtractor, type SessionState, type Entity } from "./session-state-extractor.js";
-import { CIInjector, type CISignal, type CIProvider, MockCIProvider } from "./ci_injector.js";
+import { CIInjector, type CISignal, type CIProvider } from "./ci_injector.js";
 import { LongTermDependencyTracker } from "./long-term-dependency-tracker.js";
 import { SelfRefiner } from "./self_refiner.js";
 import { PromptStrategyController } from "./prompt_strategy_controller.js";
@@ -69,7 +69,6 @@ import { StructuredContextHandler } from "./structured_context_handler.js";
 import { MultimodalContextHandler } from "./multimodal_context_handler.js";
 import { AutoCompactController, type AutoCompactConfig } from "./auto-compact.js";
 import { AutoSessionController, type AutoSessionConfig } from "./auto-session.js";
-import { RelevanceScorer, type RelevanceContext, type ScoredMemory } from "./relevance-scorer.js";
 import { SemanticCompressor, type CompressionResult } from "./semantic-compressor.js";
 import { SessionResumeManager, type SessionResumeConfig, DEFAULT_SESSION_RESUME_CONFIG } from "./session-resume/mod.js";
 
@@ -190,10 +189,9 @@ export class ClawContextEngine {
   private _positionOptimizer: PositionOptimizer;
   private _structuredHandler: StructuredContextHandler;
   private _multimodalHandler: MultimodalContextHandler;
-  // v4.20.0: Auto-compact, auto-session, relevance scoring
+  // v4.20.0: Auto-compact, auto-session
   private _autoCompact: AutoCompactController;
   private _autoSession: AutoSessionController;
-  private _relevanceScorer: RelevanceScorer;
   private _semanticCompressor: SemanticCompressor;
   // v5.0.0: Session resume manager
   private _sessionResume: SessionResumeManager | null = null;
@@ -218,7 +216,6 @@ export class ClawContextEngine {
     // v4.20.0
     this._autoCompact = new AutoCompactController();
     this._autoSession = new AutoSessionController();
-    this._relevanceScorer = new RelevanceScorer();
     this._semanticCompressor = new SemanticCompressor();
     // v5.0.0: Session resume
     if (config.sessionResume !== false) {
