@@ -199,6 +199,27 @@ npm install
 npm run build
 ```
 
+### As OpenClaw Plugin
+
+Install via ClawHub:
+
+```bash
+openclaw plugins install clawhub:opensourceclaw-claw-ctx
+```
+
+Or add to your OpenClaw configuration:
+
+```json
+{
+  "plugins": {
+    "allow": ["opensourceclaw-claw-ctx"],
+    "slots": {
+      "contextEngine": "claw-ctx"
+    }
+  }
+}
+```
+
 ### Verify Installation
 
 ```bash
@@ -294,6 +315,25 @@ const context = await ctx.assemble({
 
 console.log(context.prompt);
 // Combined prompt with relevant context
+```
+
+### OpenClaw Plugin Mode
+
+```json
+{
+  "plugins": {
+    "slots": {
+      "contextEngine": "claw-ctx"
+    },
+    "config": {
+      "claw-ctx": {
+        "maxTokens": 80000,
+        "minConfidence": 0.3,
+        "strategy": "rl-enhanced"
+      }
+    }
+  }
+}
 ```
 
 ### Context Strategies
