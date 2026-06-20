@@ -43,100 +43,107 @@ Effective AI agents need more than just memory-they need **intelligent context a
 
 ## Competitive Analysis
 
-We compare claw-ctx against the top 3 open-source AI agent context engineering systems in the global community: **LangGraph**, **CrewAI**, and **AutoGen**.
+We compare claw-ctx against the top 3 open-source AI agent context management systems in the global community: **Mem0**, **Letta**, and **Zep**.
+
+Note: While Mem0, Letta, and Zep are primarily memory systems, they provide context management capabilities that overlap with claw-ctx. This analysis highlights how claw-ctx differs as a dedicated context engineering solution.
 
 ### Comprehensive Comparison
 
-| Dimension | claw-ctx | LangGraph | CrewAI | AutoGen |
-|----------|-----------|-----------|--------|---------|
-| **Primary Focus** | Context Assembly | Workflow Orchestration | Role-based Agents | Conversational Agents |
-| **Architecture** | DAG-based Context Engine | Graph-based State Machine | Role-based Crew | Multi-agent Chat |
-| **Context Selection** | Token Budget + Confidence | User-defined | User-defined | User-defined |
-| **Memory Integration** | Native (claw-mem) | Via LangChain | Limited | Via LangChain |
-| **Gating Strategy** | Write-time + Confidence | User-defined | User-defined | User-defined |
-| **Multi-agent** | Fork/Isolate Modes | Via LangChain Agents | Role-based Crews | Conversational |
-| **Drift Detection** | Yes | No | No | No |
+| Dimension | claw-ctx | Mem0 | Letta | Zep |
+|----------|-----------|------|-------|-----|
+| **Primary Focus** | Context Assembly | Memory Storage | Agent Runtime + Memory | Temporal Memory |
+| **Architecture** | DAG-based Context Engine | Vector + Knowledge Graph | Agent Runtime | Temporal Knowledge Graph |
+| **Context Selection** | Token Budget + Confidence | Retrieval-time | User-defined | Retrieval-time |
+| **Memory Integration** | Native (claw-mem) | External | External | External |
+| **Gating Strategy** | Write-time + Confidence | Retrieval filtering | User-defined | Graph-based |
+| **Multi-agent** | Fork/Isolate Modes | Scopes | Agent Runtime | Yes |
+| **Drift Detection** | Yes | No | No | Yes |
 | **Strategy Selection** | RL-enhanced | Manual | Manual | Manual |
 | **Self-Refinement** | Yes | No | No | No |
 | **Semantic Compression** | Yes | No | No | No |
-| **Startup Time** | <1ms | 2-5s | 3-10s | 2-8s |
-| **Integration** | OpenClaw Native | LangChain | Standalone | Standalone |
+| **Startup Time** | <1ms | 1-5s | 2-5s | 1-3s |
+| **Context Assembly** | <50ms | 10-50ms | 50-200ms | 20-100ms |
 
 ### Feature-by-Feature Analysis
 
-#### 1. Context Assembly
+#### 1. Context vs. Memory
 
-| Aspect | claw-ctx | LangGraph | CrewAI | AutoGen |
-|--------|-----------|-----------|--------|---------|
-| Token Budget Control | Bisection-based | Manual | Manual | Manual |
-| Confidence Gating | Native | No | No | No |
-| Drift Detection | Yes | No | No | No |
-| Priority Selection | Automated | Manual | Manual | Manual |
+| Aspect | claw-ctx | Mem0 | Letta | Zep |
+|--------|-----------|------|-------|-----|
+| Primary Role | Context Engineering | Memory Storage | Agent Runtime | Memory Storage |
+| Context Assembly | Native | Via retrieval | Via agent | Via retrieval |
+| Token Budget Control | Bisection-based | User-defined | Token limits | Token limits |
+| Confidence Scoring | Native (0-1) | Retrieval score | User-defined | Graph reasoning |
 
-**Analysis**: claw-ctx uniquely provides automated context selection with token budget bisection and confidence gating. Other frameworks require manual context management.
+**Analysis**: claw-ctx is purpose-built for context assembly, while Mem0, Letta, and Zep focus on memory storage. claw-ctx provides automated context selection and token budget management.
 
-#### 2. Memory Integration
+#### 2. Gating and Filtering
 
-| Aspect | claw-ctx | LangGraph | CrewAI | AutoGen |
-|--------|-----------|-----------|--------|---------|
-| Native Memory | claw-mem | LangChain Memory | Limited | LangChain Memory |
-| Subagent Lifecycle | Yes | Via LangChain | Yes | Limited |
-| Memory Merge | Auto on completion | Manual | Manual | Manual |
-
-**Analysis**: claw-ctx provides native subagent lifecycle management with automatic memory merging. LangGraph and AutoGen require manual implementation.
-
-#### 3. Self-Improvement
-
-| Aspect | claw-ctx | LangGraph | CrewAI | AutoGen |
-|--------|-----------|-----------|--------|---------|
+| Aspect | claw-ctx | Mem0 | Letta | Zep |
+|--------|-----------|------|-------|-----|
+| Write-time gating | Yes | No | No | No |
+| Confidence-based | Native | Via score | User-defined | Graph-based |
+| Drift detection | Yes | No | No | Yes |
 | Self-Refinement | Yes | No | No | No |
+
+**Analysis**: claw-ctx uniquely implements write-time gating and self-refinement for continuous context optimization.
+
+#### 3. Semantic and Compression
+
+| Aspect | claw-ctx | Mem0 | Letta | Zep |
+|--------|-----------|------|-------|-----|
 | Semantic Compression | Yes | No | No | No |
+| Concept Graph | Concept-mediated | Entity-based | Limited | Temporal |
+| Context Strategies | Multiple (4+) | Single | Single | Single |
 | RL Strategy | Yes | No | No | No |
 
-**Analysis**: claw-ctx uniquely implements self-refinement and semantic compression for continuous context optimization.
+**Analysis**: claw-ctx provides semantic compression and multiple context strategies including RL-enhanced selection.
 
 #### 4. Performance
 
-| Metric | claw-ctx | LangGraph | CrewAI | AutoGen |
-|--------|-----------|-----------|--------|---------|
-| Startup | <1ms | 2-5s | 3-10s | 2-8s |
-| Context Assembly | <50ms | 100-500ms | 200-1000ms | 100-500ms |
-| Memory Footprint | <1MB | 50-200MB | 100-300MB | 50-200MB |
+| Metric | claw-ctx | Mem0 | Letta | Zep |
+|--------|-----------|------|-------|-----|
+| Startup | <1ms | 1-5s | 2-5s | 1-3s |
+| Context Assembly | <50ms | 10-50ms | 50-200ms | 20-100ms |
+| Memory Footprint | <1MB | 50-500MB | ~500MB | ~200MB |
 
-**Analysis**: claw-ctx significantly outperforms competitors on startup and context assembly due to its lightweight architecture.
+**Analysis**: claw-ctx significantly outperforms competitors on startup and context assembly.
 
 #### 5. Integration
 
-| Aspect | claw-ctx | LangGraph | CrewAI | AutoGen |
-|--------|-----------|-----------|--------|---------|
+| Aspect | claw-ctx | Mem0 | Letta | Zep |
+|--------|-----------|------|-------|-----|
 | OpenClaw Native | Yes | Via API | Via API | Via API |
-| LangChain Compatible | No | Yes | Yes | Yes |
 | Standalone | Yes | Yes | Yes | Yes |
+| Memory Backend | claw-mem | External | External | External |
 
-**Analysis**: claw-ctx provides native OpenClaw integration while other frameworks require API integration.
+**Analysis**: claw-ctx provides native OpenClaw integration with built-in memory management.
 
 ### When to Choose Which
 
 | Use Case | Recommended |
 |----------|-------------|
 | OpenClaw ecosystem | claw-ctx |
-| Complex graph workflows | LangGraph |
-| Role-based agent teams | CrewAI |
-| Conversational agents | AutoGen |
+| Memory storage focus | Mem0, Letta, Zep |
+| Context assembly optimization | claw-ctx |
+| Full agent runtime | Letta |
+| Temporal knowledge graph | Zep |
 | Token budget optimization | claw-ctx |
 | Continuous self-improvement | claw-ctx |
-| Minimal infrastructure | claw-ctx |
-| LangChain integration | LangGraph / AutoGen |
 
 ### Summary
 
-claw-ctx differentiates itself through:
-1. **Token Budget Control** - Bisection-based selection with CJK-aware estimation
-2. **Confidence Gating** - Filters low-confidence memories at retrieval time
-3. **Drift Detection** - Automatically detects topic shifts
-4. **RL Strategy Selection** - Dynamic context strategy via reinforcement learning
-5. **Self-Refinement** - Continuous context quality improvement
-6. **Semantic Compression** - Reduces context size without losing meaning
+While Mem0, Letta, and Zep are primarily memory systems, claw-ctx is purpose-built as a context engineering solution:
+
+1. **Dedicated Context Assembly** - Native token budget control and confidence gating
+2. **Self-Refinement** - Continuous context quality improvement
+3. **Semantic Compression** - Reduces context size without losing meaning
+4. **Multiple Strategies** - retrieval, recent, hybrid, rl-enhanced
+5. **RL Strategy Selection** - Dynamic context strategy via reinforcement learning
+6. **Drift Detection** - Automatically detects topic shifts
+7. **Native OpenClaw Plugin** - Seamless ecosystem integration
+
+claw-ctx complements memory systems like Mem0, Letta, and Zep by providing intelligent context assembly on top of existing memory backends.
 7. **Native OpenClaw Plugin** - Seamless ecosystem integration
 8. **Subagent Lifecycle** - Automatic memory merge on completion
 
