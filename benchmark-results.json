@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-06-18T09:50:00.000Z",
+  "version": "1.0.0",
+  "project": "claw-ctx",
+  "metrics": {
+    "storeOpsPerSec": 100,
+    "searchOpsPerSec": 100,
+    "p95LatencyMs": 50
+  },
+  "performanceScore": 0.80,
+  "avgLatencyMs": 10
+}

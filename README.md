@@ -15,7 +15,7 @@
 
 ---
 
-## 🎯 Project Overview
+## Project Overview
 
 claw-ctx is the **Context Engine** for OpenClaw. It intelligently assembles context from multiple sources including memory, conversation history, and external signals to provide AI agents with the right information at the right time.
 
@@ -26,12 +26,12 @@ claw-ctx is the **Context Engine** for OpenClaw. It intelligently assembles cont
 | **Token Budget Control**  | Bisection-based selection with CJK-aware token estimation     |
 | **Confidence Gating**     | Filters low-confidence memories (configurable min score 0.3)  |
 | **Memory Integration**    | Uses claw-mem for semantic search and storage                 |
-| **Subagent Lifecycle**    | Fork/isolate modes with memory merging on completion          |
+| **Subagent Lifecycle**    | Fork/isolate modes with memory merging on completion           |
 | **RL Strategy Selection** | Dynamic context strategy selection via reinforcement learning |
 
 ### Why claw-ctx?
 
-Effective AI agents need more than just memory—they need **intelligent context assembly**. claw-ctx provides:
+Effective AI agents need more than just memory-they need **intelligent context assembly**. claw-ctx provides:
 
 - **Optimization**: Maximizes utility within token budget constraints
 - **Quality**: Filters irrelevant information via confidence scoring
@@ -40,32 +40,32 @@ Effective AI agents need more than just memory—they need **intelligent context
 
 ---
 
-## 📈 Milestones & Progress
+## Milestones and Progress
 
 | Version     | Date    | Theme                             | Status       |
 | ----------- | ------- | --------------------------------- | ------------ |
-| **v4.26.0** | 2026-06 | Engineering Quality & Docs  | ✅ Current   |
-| **v4.24.0** | 2026-06 | Self-Refinement Module            | ✅           |
-| **v4.23.0** | 2026-06 | Session-Resume + CJK Support      | ✅           |
-| **v4.22.0** | 2026-06 | Semantic Compression              | ✅           |
-| **v4.14.0** | 2026-06 | RL Strategy Integration Complete  | ✅           |
-| **v4.10.0** | 2026-05 | Performance & Health Optimization | ✅         |
-| **v4.9.0**  | 2026-05 | C4 Long-Horizon Enhancement       | ✅         |
-| **v4.7.0**  | 2026-04 | Phase 2 Complete                  | ✅         |
-| **v4.0.0**  | 2026-03 | Context Engine Foundation         | ✅         |
+| **v4.26.0** | 2026-06 | Engineering Quality and Docs       | Current      |
+| **v4.24.0** | 2026-06 | Self-Refinement Module            |              |
+| **v4.23.0** | 2026-06 | Session-Resume plus CJK Support   |              |
+| **v4.22.0** | 2026-06 | Semantic Compression              |              |
+| **v4.14.0** | 2026-06 | RL Strategy Integration Complete  |              |
+| **v4.10.0** | 2026-05 | Performance and Health Optimization |            |
+| **v4.9.0**  | 2026-05 | C4 Long-Horizon Enhancement     |              |
+| **v4.7.0**  | 2026-04 | Phase 2 Complete                 |              |
+| **v4.0.0**  | 2026-03 | Context Engine Foundation        |              |
 
 ### Key Capabilities Added
 
 | Version | Capabilities                                                 |
 | ------- | ------------------------------------------------------------ |
-| v4.14.0 | RL-based memory strategy selection, enhanced benchmark tests |
-| v4.10.0 | Performance optimization, health monitoring                  |
+| v4.14.0 | RL-based memory strategy selection, enhanced benchmark tests   |
+| v4.10.0 | Performance optimization, health monitoring                   |
 | v4.9.0  | Long-horizon conversation context                            |
 | v4.7.0  | Subagent lifecycle management                                |
 
 ---
 
-## 🚀 Installation
+## Installation
 
 ### Prerequisites
 
@@ -89,19 +89,18 @@ npm run build
 
 ### As OpenClaw Plugin
 
+Install via ClawHub:
+
 ```bash
-# Install via OpenClaw
-npx clawhub@latest install opensourceclaw-claw-ctx
+openclaw plugins install clawhub:opensourceclaw-claw-ctx
 ```
 
-Or manually configure in your OpenClaw settings:
+Or add to your OpenClaw configuration:
 
 ```json
 {
   "plugins": {
-    "load": {
-      "paths": ["/path/to/claw-ctx/dist"]
-    },
+    "allow": ["opensourceclaw-claw-ctx"],
     "slots": {
       "contextEngine": "claw-ctx"
     }
@@ -121,50 +120,50 @@ cat package.json | grep version
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                       claw-ctx v4.26.0                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ┌──────────┐ ┌──────────┐ ┌─────────────┐ ┌────────────────┐  │
-│  │  Token   │ │Confidence│ │   Drift     │ │     Smart      │  │
-│  │ Budget   │ │  Gate    │ │  Detection  │ │Budget Allocator│  │
-│  └────┬─────┘ └────┬─────┘ └──────┬──────┘ └───────┬────────┘  │
-│       │            │              │                │            │
-│       └────────────┴──────┬───────┴────────────────┘            │
-│                           ↓                                     │
-│                ┌──────────────────────┐                        │
-│                │   Context Assembler   │                        │
-│                │  (ClawContextEngine)  │                        │
-│                └──────────┬───────────┘                        │
-│                           ↓                                     │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                    Injectors / Enhancers                   │  │
-│  │  ┌──────────┐ ┌─────────┐ ┌───────┐ ┌───────────────┐  │  │
-│  │  │   RL     │ │Governance│ │ CI/CD │ │ Cross-Domain  │  │  │
-│  │  └──────────┘ └─────────┘ └───────┘ └───────────────┘  │  │
-│  │  ┌──────────┐ ┌─────────┐ ┌──────────────────────┐    │  │
-│  │  │ Session  │ │  Self-  │ │ Long-Term Dependency │    │  │
-│  │  │  Resume  │ │Refinement│ │      Tracker         │    │  │
-│  │  └──────────┘ └─────────┘ └──────────────────────┘    │  │
-│  │  ┌──────────┐ ┌─────────┐ ┌──────────────────────┐    │  │
-│  │  │ Semantic │ │ Position│ │   Structured/Multimodal│   │  │
-│  │  │Compressor│ │Optimizer│ │   Context Handler     │   │  │
-│  │  └──────────┘ └─────────┘ └──────────────────────┘    │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                           ↓                                     │
-│                    ┌──────────────┐                             │
-│                    │  claw-mem    │                             │
-│                    │  (Memory)    │                             │
-│                    └──────────────┘                             │
-└─────────────────────────────────────────────────────────────────┘
-                           ↓
-              ┌─────────────────────────┐
-              │   OpenClaw Agent        │
-              │   (Prompt Injection)    │
-              └─────────────────────────┘
++-------------------------------------------------------------+
+|                       claw-ctx v4.26.0                      |
++-------------------------------------------------------------+
+|                                                                   |
+|  +----------+ +----------+ +-------------+ +----------------+  |
+|  |  Token   | |Confidence| |   Drift     | |     Smart      |  |
+|  | Budget   | |  Gate    | |  Detection  | |Budget Allocator|  |
+|  +----+-----+ +----+-----+ +------+------+ +-------+--------+  |
+|       |            |              |                |            |
+|       +------------+------+-------+----------------+            |
+|                           +                                     |
+|                +----------------------+                        |
+|                |   Context Assembler   |                        |
+|                |  (ClawContextEngine)  |                        |
+|                +----------+-----------+                        |
+|                           +                                     |
+|  +----------------------------------------------------------+  |
+|  |                    Injectors / Enhancers                   |  |
+|  |  +----------+ +---------+ +-------+ +---------------+  |  |
+|  |  |   RL     | |Governance| | CI/CD | | Cross-Domain  |  |  |
+|  |  +----------+ +---------+ +-------+ +---------------+  |  |
+|  |  +----------+ +---------+ +-----------------------+    |  |
+|  |  | Session  | |  Self-  | | Long-Term Dependency |    |  |
+|  |  |  Resume  | |Refinement| |      Tracker         |    |  |
+|  |  +----------+ +---------+ +-----------------------+    |  |
+|  |  +----------+ +---------+ +-----------------------+    |  |
+|  |  | Semantic | | Position| |   Structured/Multimodal|   |  |
+|  |  |Compressor| |Optimizer| |   Context Handler     |    |  |
+|  |  +----------+ +---------+ +-----------------------+    |  |
+|  +----------------------------------------------------------+  |
+|                           +                                     |
+|                    +--------------+                             |
+|                    |  claw-mem    |                             |
+|                    |  (Memory)    |                             |
+|                    +--------------+                             |
++-------------------------------------------------------------+
+                           +
+              +-------------------------+
+              |   OpenClaw Agent        |
+              |   (Prompt Injection)    |
+              +-------------------------+
 ```
 
 ### Context Flow
@@ -175,13 +174,13 @@ cat package.json | grep version
 4. **Drift Detection**: Analyze topic drift from conversation history
 5. **Gating**: Filter memories below confidence threshold (ConfidenceGate)
 6. **Selection**: Prioritize and select context items within budget
-7. **Injection**: Apply injectors (RL/Governance/CI/CD/Cross-Domain) + reasoning strategy (CoT/ToT/GoT)
+7. **Injection**: Apply injectors (RL/Governance/CI/CD/Cross-Domain) plus reasoning strategy (CoT/ToT/GoT)
 8. **Assembly**: Combine into final context payload
 9. **AfterTurn**: Store session summary, run self-refinement evaluation, detect auto-compact triggers
 
 ---
 
-## 📖 Usage
+## Usage
 
 ### Basic API
 
@@ -229,14 +228,14 @@ console.log(context.prompt);
 
 | Strategy      | Description     | Use Case                |
 | ------------- | --------------- | ----------------------- |
-| `retrieval`   | Memory-first    | Q&A, reference          |
+| `retrieval`   | Memory-first    | Q and A, reference      |
 | `recent`      | Latest messages | Follow-up conversations |
 | `hybrid`      | Balanced mix    | General purpose         |
-| `rl-enhanced` | ML-optimized    | Adaptive (v4.14.0+)     |
+| `rl-enhanced` | ML-optimized    | Adaptive (v4.14.0 plus) |
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Run all tests
@@ -253,7 +252,7 @@ npm run typecheck
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 We welcome contributions from the community!
 
@@ -290,7 +289,7 @@ npm run build
 
 ---
 
-## 📄 License
+## License
 
 claw-ctx is licensed under the **Apache License 2.0**.
 
@@ -319,7 +318,7 @@ limitations under the License.
 
 ---
 
-## 📞 Support
+## Support
 
 - **Issue Tracker**: [github.com/opensourceclaw/claw-ctx/issues](https://github.com/opensourceclaw/claw-ctx/issues)
 - **Discussions**: [github.com/opensourceclaw/claw-ctx/discussions](https://github.com/opensourceclaw/claw-ctx/discussions)
@@ -328,6 +327,6 @@ limitations under the License.
 
 <div align="center">
 
-Made with ❤️ by the OpenSourceClaw Community
+Made with love by the OpenSourceClaw Community
 
 </div>
