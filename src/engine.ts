@@ -83,6 +83,9 @@ import {
 import { PromptStyleEngine } from "./prompt-style/engine.js";
 import { resolveStyle } from "./prompt-style/config.js";
 import type { PromptStyle } from "./prompt-style/types.js";
+// v5.0.0-rc.2: Predictive context
+import { ContextPredictor } from "./predictive/context-predictor.js";
+import { PreloadManager } from "./predictive/preload-manager.js";
 
 // v4.3.0: Global token counter instance for precise counting
 const globalTokenCounter = createTokenCounter("cl100k_base");
@@ -102,6 +105,40 @@ function extractText(msg: any): string {
  * Estimate tokens using tiktoken (v4.3.0) or fallback.
  * Replaces the old char/3.5 heuristic with precise token counting.
  */
+
+// v5.0.0-rc.2: Map PromptStrategyController task types → adaptive TaskType
+function mapTaskType(strategyType: string): import("./adaptive/task-type-detector.js").TaskType {
+  const map: Record<string, import("./adaptive/task-type-detector.js").TaskType> = {
+    "code-generation": "coding",
+    "code-debugging": "debugging",
+    "code-review": "review",
+    "architecture-design": "planning",
+    "refactoring": "coding",
+    testing: "coding",
+    deployment: "coding",
+    "security-audit": "review",
+    "data-analysis": "planning",
+    documentation: "planning",
+    "quick-answer": "question",
+    "creative-writing": "conversation",
+  };
+  return map[strategyType] ?? "unknown";
+}
+
+// v5.0.0-rc.2: Extract context keywords from text
+function extractKeywords(text: string): string[] {
+  const keywords = new Set<string>();
+  const lower = text.toLowerCase();
+  for (const kw of [
+    "typescript", "compile", "build", "deploy", "test", "refactor",
+    "error", "bug", "fix", "security", "performance", "api", "database",
+    "memory", "session", "token", "context", "config",
+  ]) {
+    if (lower.includes(kw)) keywords.add(kw);
+  }
+  return [...keywords];
+}
+
 // v4.10.0: Token count cache to avoid repeated tiktoken lookups
 const tokenCache = new Map<string, number>();
 const MAX_TOKEN_CACHE = 5000;
@@ -155,7 +192,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "5.0.0-rc.1", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "5.0.0-rc.2", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -191,6 +228,9 @@ export class ClawContextEngine {
   private _promptStrategy: PromptStrategyController;
   // v5.0.0-rc.1: Multi-style prompt engine
   private _promptStyleEngine: PromptStyleEngine;
+  // v5.0.0-rc.2: Predictive context
+  private _contextPredictor: ContextPredictor;
+  private _preloadManager: PreloadManager;
   // v4.17.0: Position optimizer and structured context handler
   private _positionOptimizer: PositionOptimizer;
   private _structuredHandler: StructuredContextHandler;
@@ -217,6 +257,9 @@ export class ClawContextEngine {
     this._promptStrategy = new PromptStrategyController();
     // v5.0.0-rc.1: Multi-style prompt engine
     this._promptStyleEngine = new PromptStyleEngine();
+    // v5.0.0-rc.2: Predictive context
+    this._contextPredictor = new ContextPredictor();
+    this._preloadManager = new PreloadManager();
     // v4.17.0: Position optimization and structured context
     this._positionOptimizer = new PositionOptimizer();
     this._structuredHandler = new StructuredContextHandler();
@@ -761,6 +804,27 @@ export class ClawContextEngine {
       // self-refinement failure is non-blocking
     }
 
+    // v5.0.0-rc.2: Feed predictive context model
+    try {
+      const recentMsgs = (p.messages || []).slice(-5);
+      const userTexts = recentMsgs
+        .filter((m: any) => m.role === "user")
+        .map((m: any) => extractText(m));
+      if (userTexts.length > 0) {
+        // ponytail: detect task type from last user message, extract keywords as context
+        const taskTypeStr = this._promptStrategy.detectTaskType(userTexts[userTexts.length - 1] || "");
+        const adaptiveTaskType = mapTaskType(taskTypeStr);
+        const keywords = extractKeywords(userTexts.join(" "));
+        this._contextPredictor.update([{
+          taskType: adaptiveTaskType,
+          contextUsed: keywords,
+          timestamp: Date.now(),
+        }]);
+      }
+    } catch {
+      // predictive context training is non-blocking
+    }
+
     // v4.1.0: Store session summary for continuity
     // v5.0.0: Replaced by SessionResumeManager
     if (this._sessionResume) {
@@ -866,6 +930,16 @@ export class ClawContextEngine {
   /** v5.0.0-rc.1: Get the prompt style engine. */
   getPromptStyleEngine(): PromptStyleEngine {
     return this._promptStyleEngine;
+  }
+
+  /** v5.0.0-rc.2: Get the context predictor. */
+  getContextPredictor(): ContextPredictor {
+    return this._contextPredictor;
+  }
+
+  /** v5.0.0-rc.2: Get the preload manager. */
+  getPreloadManager(): PreloadManager {
+    return this._preloadManager;
   }
 
   // ── v4.11.0: RL Memory Strategy Selection ──────────────────────────
