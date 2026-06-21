@@ -49,12 +49,13 @@ export type { ReasoningStrategy as ReasoningStrategyInterface } from "./self-ref
 export { ChainOfThoughtStrategy } from "./self-refinement/reasoning-strategies/chain-of-thought.js";
 export { TreeOfThoughtsStrategy } from "./self-refinement/reasoning-strategies/tree-of-thoughts.js";
 export { GraphOfThoughtsStrategy } from "./self-refinement/reasoning-strategies/graph-of-thoughts.js";
+export { PromptStyleEngine, type PromptStyle, type StyleConfig, type StyleApplication, DEFAULT_STYLE_TEMPLATES, TASK_STYLE_MAP, resolveStyle } from "./prompt-style/index.js";
 
 const plugin = {
   id: "claw-ctx",
   name: "Claw Context Engine",
   description: "Context Engine with C2 gating, RL injection, governance signals, cross-domain injection, CI/CD signals, and self-refinement for OpenClaw agents",
-  version: "4.26.0",
+  version: "5.0.0-rc.1",
   kind: "context-engine",
 
   register(api: any) {

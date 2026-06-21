@@ -79,6 +79,10 @@ import {
   type StrategyContext,
   type StrategyResult,
 } from "./memory_strategy_selector.js";
+// v5.0.0-rc.1: Multi-style prompt engine
+import { PromptStyleEngine } from "./prompt-style/engine.js";
+import { resolveStyle } from "./prompt-style/config.js";
+import type { PromptStyle } from "./prompt-style/types.js";
 
 // v4.3.0: Global token counter instance for precise counting
 const globalTokenCounter = createTokenCounter("cl100k_base");
@@ -151,7 +155,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "4.26.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "5.0.0-rc.1", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -185,6 +189,8 @@ export class ClawContextEngine {
   // v4.16.0: Self-refiner and prompt strategy controller
   private _refiner: SelfRefiner;
   private _promptStrategy: PromptStrategyController;
+  // v5.0.0-rc.1: Multi-style prompt engine
+  private _promptStyleEngine: PromptStyleEngine;
   // v4.17.0: Position optimizer and structured context handler
   private _positionOptimizer: PositionOptimizer;
   private _structuredHandler: StructuredContextHandler;
@@ -206,9 +212,11 @@ export class ClawContextEngine {
     this._smartBudgetAllocator.setDriftDetector(this.driftDetector);
     // v4.11.0: RL strategy selector
     this._strategySelector = new MemoryStrategySelector();
-    // v4.16.0: Self-refinement and prompt strategy
+      // v4.16.0: Self-refinement and prompt strategy
     this._refiner = new SelfRefiner();
     this._promptStrategy = new PromptStrategyController();
+    // v5.0.0-rc.1: Multi-style prompt engine
+    this._promptStyleEngine = new PromptStyleEngine();
     // v4.17.0: Position optimization and structured context
     this._positionOptimizer = new PositionOptimizer();
     this._structuredHandler = new StructuredContextHandler();
@@ -356,10 +364,10 @@ export class ClawContextEngine {
     // Build system prompt additions
     const additions: string[] = [];
 
-    // Core context from memories
-    const lines = sel.map((m) => `- ${m.content}`);
-    if (lines.length) {
-      additions.push(`[Context] Relevant memories:\n${lines.join("\n")}`);
+    // v5.0.0-rc.1: Use PromptStyleEngine for context formatting
+    if (sel.length > 0) {
+      const styleResult = this._promptStyleEngine.applyStyle(sel.map((m) => ({ content: m.content, score: 0 })));
+      additions.push(styleResult.block);
     }
 
     // RL experience + governance signal injection
@@ -848,6 +856,16 @@ export class ClawContextEngine {
   /** v4.9.0: Set a custom dependency tracker */
   setDependencyTracker(tracker: LongTermDependencyTracker): void {
     this._depTracker = tracker;
+  }
+
+  /** v5.0.0-rc.1: Set the prompt style for context formatting. */
+  setPromptStyle(style: PromptStyle): void {
+    this._promptStyleEngine.setStyle(style);
+  }
+
+  /** v5.0.0-rc.1: Get the prompt style engine. */
+  getPromptStyleEngine(): PromptStyleEngine {
+    return this._promptStyleEngine;
   }
 
   // ── v4.11.0: RL Memory Strategy Selection ──────────────────────────
