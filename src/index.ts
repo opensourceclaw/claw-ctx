@@ -51,12 +51,13 @@ export { TreeOfThoughtsStrategy } from "./self-refinement/reasoning-strategies/t
 export { GraphOfThoughtsStrategy } from "./self-refinement/reasoning-strategies/graph-of-thoughts.js";
 export { PromptStyleEngine, type PromptStyle, type StyleConfig, type StyleApplication, DEFAULT_STYLE_TEMPLATES, TASK_STYLE_MAP, resolveStyle } from "./prompt-style/index.js";
 export { ContextPredictor, PredictionEngine, PreloadManager, type PredictedItem, type PredictionResult, type ContextHistory } from "./predictive/index.js";
+export { VersionHistory, ChangePatternAnalyzer, type ContextItem, type ContextStrategy, type ContextSnapshot, type ModifiedItem, type ChangeReport } from "./evolution/index.js";
 
 const plugin = {
   id: "claw-ctx",
   name: "Claw Context Engine",
   description: "Context Engine with C2 gating, RL injection, governance signals, cross-domain injection, CI/CD signals, and self-refinement for OpenClaw agents",
-  version: "5.0.0-rc.2",
+  version: "5.0.0-rc.3",
   kind: "context-engine",
 
   register(api: any) {
