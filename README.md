@@ -28,6 +28,14 @@ claw-ctx is the **Context Engine** for OpenClaw. It intelligently assembles cont
 | **Memory Integration**    | Uses claw-mem for semantic search and storage                 |
 | **Subagent Lifecycle**    | Fork/isolate modes with memory merging on completion           |
 | **RL Strategy Selection** | Dynamic context strategy selection via reinforcement learning |
+| **Cross-Domain Fusion**  | Aggregate signals from memory, governance, CI, cross-domain   |
+| **Adaptive Injection**    | Dynamic injection based on task type (coding/review/debug)    |
+| **Multi-Style Prompts**  | 5 styles: descriptive, prescriptive, prohibitive, explanatory  |
+| **Predictive Context**   | Predict future context needs with 70%+ hit rate              |
+| **Version Evolution**    | Track context strategy changes over time                      |
+| **Self-Refinement**      | Continuous context quality improvement                         |
+| **Semantic Compression** | Reduces context size without losing meaning                  |
+| **Drift Detection**      | Automatically detects topic shifts                           |
 
 ### Why claw-ctx?
 
@@ -156,7 +164,8 @@ These characteristics make claw-ctx ideal for OpenClaw ecosystem users, token-co
 
 | Version     | Date    | Theme                             | Status       |
 | ----------- | ------- | --------------------------------- | ------------ |
-| **v4.26.0** | 2026-06 | Engineering Quality and Docs       | Current      |
+| **v5.0.0** | 2026-06 | Context Engineering v2             | Current      |
+| **v4.26.0** | 2026-06 | Engineering Quality and Docs       |              |
 | **v4.24.0** | 2026-06 | Self-Refinement Module            |              |
 | **v4.23.0** | 2026-06 | Session-Resume plus CJK Support   |              |
 | **v4.22.0** | 2026-06 | Semantic Compression              |              |
@@ -170,6 +179,7 @@ These characteristics make claw-ctx ideal for OpenClaw ecosystem users, token-co
 
 | Version | Capabilities                                                 |
 | ------- | ------------------------------------------------------------ |
+| v5.0.0  | Cross-Domain Signal Fusion, Adaptive Injection, Multi-Style Prompts, Predictive Context, Version Evolution |
 | v4.14.0 | RL-based memory strategy selection, enhanced benchmark tests   |
 | v4.10.0 | Performance optimization, health monitoring                   |
 | v4.9.0  | Long-horizon conversation context                            |
@@ -181,7 +191,7 @@ These characteristics make claw-ctx ideal for OpenClaw ecosystem users, token-co
 
 ### Prerequisites
 
-- **Node.js**: 18 or higher
+- **Node.js**: 20 or higher
 - **npm**: Latest version
 - **OpenClaw**: v2026.3.28 or higher (optional, for plugin mode)
 
@@ -344,6 +354,16 @@ console.log(context.prompt);
 | `recent`      | Latest messages | Follow-up conversations |
 | `hybrid`      | Balanced mix    | General purpose         |
 | `rl-enhanced` | ML-optimized    | Adaptive (v4.14.0 plus) |
+
+### Prompt Styles (v5.0.0+)
+
+| Style | Description | Example |
+| ----- | ----------- | --------|
+| `descriptive` | Describe context state | "Current context contains 3 memories..." |
+| `prescriptive` | Specify selection rules | "Use retrieval when query contains..." |
+| `prohibitive` | Exclusion rules | "Exclude memories with confidence < 0.3" |
+| `explanatory` | Explain selection rationale | "Selected because score > 0.7" |
+| `conditional` | Conditional inclusion | "If task involves code, include..." |
 
 ---
 
