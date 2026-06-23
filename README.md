@@ -211,13 +211,7 @@ npm run build
 
 ### As OpenClaw Plugin
 
-Install via ClawHub:
-
-```bash
-openclaw plugins install clawhub:opensourceclaw-claw-ctx
-```
-
-Or add to your OpenClaw configuration:
+add to your OpenClaw configuration:
 
 ```json
 {
