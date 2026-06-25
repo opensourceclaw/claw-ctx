@@ -36,6 +36,11 @@ import { HistoryLoader } from "./history-loader.js";
 interface MemoryManager {
   search(query: string, opts?: any, topK?: number): Promise<Array<{ content: string; score: number; tags?: string[]; id?: string; timestamp?: number }>>;
   store(content: string, type: string, tags?: string[], metadata?: Record<string, any>): Promise<any>;
+  // v5.1.0: Checkpoint/snapshot methods (claw-mem >= v6.27.0)
+  sessionSnapshot?(params: { snapshot: unknown }): Promise<{ stored: boolean; id: string }>;
+  sessionGetLatest?(params?: { sessionId?: string }): Promise<unknown>;
+  sessionClose?(params: { sessionId: string }): Promise<{ closed: boolean }>;
+  sessionGetUnclosed?(params?: Record<string, never>): Promise<{ sessions: unknown[] }>;
 }
 
 export class SessionResumeManager {

@@ -71,6 +71,8 @@ export interface Action {
 export interface SessionState {
   /** Session identifier */
   sessionId: string;
+  /** Session start timestamp (set on first extract) */
+  startedAt: number;
   /** Extracted entities */
   entities: Entity[];
   /** Key decisions made */
@@ -128,6 +130,7 @@ export class SessionStateExtractor {
 
     return {
       sessionId: sid,
+      startedAt: now,
       entities: SessionStateExtractor.extractEntities(messages),
       decisions: SessionStateExtractor.extractDecisions(text),
       topics: SessionStateExtractor.extractTopics(text, now),
@@ -313,6 +316,7 @@ export class SessionStateExtractor {
 
     return {
       sessionId: previous.sessionId,
+      startedAt: previous.startedAt,
       entities: [...entityMap.values()].sort((a, b) => b.mentions - a.mentions),
       decisions: mergedDecisions,
       topics: [...topicMap.entries()]

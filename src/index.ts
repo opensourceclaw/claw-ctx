@@ -17,7 +17,7 @@
  */
 
 /**
- * claw-ctx v4.22.0 Plugin for OpenClaw
+ * claw-ctx v5.1.0 Plugin for OpenClaw
  * Standalone Context Engine with claw-mem integration,
  * C2 confidence gating, RL experience injection, governance signal pass-through,
  * and cross-domain signal injection.
@@ -57,7 +57,7 @@ const plugin = {
   id: "claw-ctx",
   name: "Claw Context Engine",
   description: "Context Engine with C2 gating, RL injection, governance signals, cross-domain injection, CI/CD signals, and self-refinement for OpenClaw agents",
-  version: "5.0.0-rc.3",
+  version: "5.1.0",
   kind: "context-engine",
 
   register(api: any) {

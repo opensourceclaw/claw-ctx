@@ -17,7 +17,7 @@
  */
 
 /**
- * claw-ctx v4.22.0 — Context Engine
+ * claw-ctx v5.1.0 — Context Engine
  *
  * Standalone Context Engine plugin. Uses claw-mem MemoryManager for storage/retrieval.
  * v2.0.0 adds: C2 confidence gating, RL experience injection, governance signal pass-through.
@@ -71,6 +71,7 @@ import { AutoCompactController, type AutoCompactConfig } from "./auto-compact.js
 import { AutoSessionController, type AutoSessionConfig } from "./auto-session.js";
 import { SemanticCompressor, type CompressionResult } from "./semantic-compressor.js";
 import { SessionResumeManager, type SessionResumeConfig, DEFAULT_SESSION_RESUME_CONFIG } from "./session-resume/mod.js";
+import { CheckpointManager } from "./session-resume/checkpoint.js";
 
 // v4.11.0: RL-driven memory strategy selection
 import {
@@ -192,7 +193,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "5.0.0-rc.2", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "5.1.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -241,6 +242,8 @@ export class ClawContextEngine {
   private _semanticCompressor: SemanticCompressor;
   // v5.0.0: Session resume manager
   private _sessionResume: SessionResumeManager | null = null;
+  // v5.1.0: Checkpoint manager
+  private _checkpointManager: CheckpointManager | null = null;
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -277,6 +280,12 @@ export class ClawContextEngine {
           : DEFAULT_SESSION_RESUME_CONFIG
       );
     }
+    // v5.1.0: Checkpoint manager (feature detection — no-op if claw-mem < v6.27.0)
+    this._checkpointManager = new CheckpointManager(
+      this.manager as any,
+      { mode: "every_turn", maxRecoveryAgeHours: 48 },
+      () => this._sessionState,
+    );
   }
 
   private _session(id: string): void { if (this.sid !== id) { this.sid = id; this.manager.sessionId = id; } }
@@ -284,6 +293,13 @@ export class ClawContextEngine {
   async bootstrap(p: { sessionId: string; sessionKey?: string; sessionFile: string }): Promise<{ bootstrapped: boolean; importedMessages?: number; reason?: string }> {
     this._session(p.sessionId);
     try { this.manager.injectConstitution?.(); } catch { this.logger.warn("[claw-ctx] constitution skip"); }
+
+    // v5.1.0: Checkpoint recovery — pre-fetch before session resume
+    if (this._checkpointManager) {
+      try {
+        await this._checkpointManager.bootstrap(p.sessionId);
+      } catch { /* best effort */ }
+    }
 
     // v4.1.0: Session continuity — inject previous session context
     // v5.0.0: Replaced by SessionResumeManager
@@ -832,6 +848,13 @@ export class ClawContextEngine {
         await this._sessionResume.afterTurn(p.sessionId, p.messages, this._sessionState);
       } catch { /* best effort */ }
     }
+
+    // v5.1.0: Checkpoint session state for recovery
+    if (this._checkpointManager) {
+      try {
+        this._checkpointManager.checkpoint(this._sessionState ?? undefined);
+      } catch { /* best effort */ }
+    }
   }
 
   async prepareSubagentSpawn(p: { parentSessionKey: string; childSessionKey: string; contextMode?: "isolated" | "fork"; parentSessionId?: string; parentSessionFile?: string; childSessionId?: string; childSessionFile?: string; ttlMs?: number }): Promise<{ rollback: () => void } | undefined> {
@@ -1123,6 +1146,14 @@ export class ClawContextEngine {
 
   /** v5.0.0: Inject session resume history into system prompt. */
   private _injectSessionResume(sys: string | undefined): string | undefined {
+    // v5.1.0: Inject recovery context before session history
+    if (this._checkpointManager) {
+      const recovery = this._checkpointManager.consumeRecovery();
+      if (recovery) {
+        sys = sys ? `${sys}\n\n${recovery}` : recovery;
+      }
+    }
+
     if (!this._sessionResume) return sys;
     try {
       const historySection = this._sessionResume.assemble();
@@ -1135,7 +1166,13 @@ export class ClawContextEngine {
     return sys;
   }
 
-  async dispose(): Promise<void> { this.sid = null; this.cache = new SearchCache(30000); }
+  async dispose(): Promise<void> {
+    if (this.sid && this._checkpointManager) {
+      await this._checkpointManager.closeSession(this.sid);
+    }
+    this.sid = null;
+    this.cache = new SearchCache(30000);
+  }
 
   // ── v5.0.0: Drift Detection API ──────────────────────────────────
 

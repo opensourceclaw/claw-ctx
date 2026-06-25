@@ -254,7 +254,7 @@ describe('ClawContextEngine', () => {
 
     it('info shows v2.0.0', () => {
       const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
-      expect(engine.info.version).toBe('5.0.0-rc.2');
+      expect(engine.info.version).toBe('5.1.0');
     });
   });
 
@@ -433,7 +433,7 @@ describe('ClawContextEngine', () => {
 
     it('info shows v4.0.0', () => {
       const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
-      expect(engine.info.version).toBe('5.0.0-rc.2');
+      expect(engine.info.version).toBe('5.1.0');
     });
   });
 

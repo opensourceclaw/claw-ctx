@@ -68,6 +68,27 @@ export interface HistoryEntry {
   storedAt: number;
 }
 
+/** v5.1.0: Session Snapshot for checkpoint/recovery. Mirrors claw-mem SessionSnapshot. */
+export interface SessionSnapshot {
+  sessionId: string;
+  startedAt: number;
+  lastActiveAt: number;
+  turnCount: number;
+  currentTopic: string;
+  activeTask?: { description: string; progress: string };
+  recentDecisions: string[];
+  pendingItems: string[];
+  keyEntities: string[];
+  isClosed: boolean;
+}
+
+/** v5.1.0: CheckpointManager configuration. */
+export interface CheckpointConfig {
+  mode: "every_turn" | "every_n_turns" | "disabled";
+  interval: number;
+  maxRecoveryAgeHours: number;
+}
+
 export interface HistoryLoadResult {
   entries: HistoryEntry[];
   /** Pre-formatted context string for injection */
