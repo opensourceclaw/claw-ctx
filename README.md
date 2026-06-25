@@ -4,7 +4,7 @@
 
 **Context Engine for OpenClaw**
 
-*Intelligent Context Assembly for AI Agents*
+*Intelligent Context Assembly for OpenClaw*
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Version](https://img.shields.io/badge/Version-5.0.0-blue.svg)](https://github.com/opensourceclaw/claw-ctx/releases/tag/v5.0.0)
@@ -211,13 +211,7 @@ npm run build
 
 ### As OpenClaw Plugin
 
-Install via ClawHub:
-
-```bash
-openclaw plugins install clawhub:opensourceclaw-claw-ctx
-```
-
-Or add to your OpenClaw configuration:
+add to your OpenClaw configuration:
 
 ```json
 {
