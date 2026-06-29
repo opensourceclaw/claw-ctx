@@ -193,7 +193,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "5.1.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "5.1.1", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -242,8 +242,13 @@ export class ClawContextEngine {
   private _semanticCompressor: SemanticCompressor;
   // v5.0.0: Session resume manager
   private _sessionResume: SessionResumeManager | null = null;
-  // v5.1.0: Checkpoint manager
+  // v5.0.0: Checkpoint manager
   private _checkpointManager: CheckpointManager | null = null;
+  // v5.1.1: Drift batching + token warning dedup
+  private _driftBatchCounter: number = 0;
+  private _pendingDriftAlerts: DriftAlert[] = [];
+  private _lastDriftScore: number = 0;
+  private _tokenWarningEmitted: boolean = false;
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -369,14 +374,29 @@ export class ClawContextEngine {
     }
 
     // v5.0.0: Feed messages to drift detector
+    // v5.1.1: Batch drift alerts for cache stability
     const recentMsgs = p.messages.slice(-2).map((m: any) => ({
       content: extractText(m),
       role: m.role,
     }));
     const newDriftAlerts = this.driftDetector.feedTurn(recentMsgs);
     if (newDriftAlerts.length > 0) {
-      this.driftAlerts.push(...newDriftAlerts);
+      this._pendingDriftAlerts.push(...newDriftAlerts);
     }
+
+    // v5.1.1: Check for sudden drift change (immediate injection)
+    const currentDriftScore = this.driftDetector.getDriftScore();
+    const scoreGap = Math.abs(currentDriftScore - this._lastDriftScore);
+    const suddenChange = scoreGap > 0.3;
+
+    // v5.1.1: Batch injection every 5 turns OR on sudden change
+    this._driftBatchCounter++;
+    if (this._driftBatchCounter >= 5 || suddenChange) {
+      this.driftAlerts = [...this._pendingDriftAlerts];
+      this._pendingDriftAlerts = [];
+      this._driftBatchCounter = 0;
+    }
+    this._lastDriftScore = currentDriftScore;
 
     const q = p.prompt || extractText(p.messages[p.messages.length - 1]) || "";
     const budget = p.tokenBudget ?? 4000;
@@ -518,10 +538,12 @@ export class ClawContextEngine {
     }
 
     // v4.19.0: Overflow detection — warn if approaching budget limit
+    // v5.1.1: Deduplicate token warning (emit only once until compact)
     const budgetLimit = p.tokenBudget ?? 8000;
-    if (tokens > budgetLimit * 0.85) {
+    if (tokens > budgetLimit * 0.85 && !this._tokenWarningEmitted) {
       const overflowWarn = `[Token Budget Warning: ${tokens}/${budgetLimit} tokens used (${Math.round(tokens / budgetLimit * 100)}%) — consider compaction]`;
       finalSys = finalSys ? `${finalSys}\n\n${overflowWarn}` : overflowWarn;
+      this._tokenWarningEmitted = true;
     }
 
     // v4.20.0: Drift auto-response signals
@@ -569,6 +591,8 @@ export class ClawContextEngine {
       if (!result.compacted) {
         return { ok: true, compacted: false, reason: result.reason, result: { tokensBefore: result.tokensBefore ?? 0, tokensAfter: result.tokensBefore ?? 0 } };
       }
+      // v5.1.1: Reset token warning flag after successful compaction
+      this._tokenWarningEmitted = false;
       return {
         ok: true,
         compacted: true,
