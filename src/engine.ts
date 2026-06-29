@@ -193,7 +193,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "5.1.1", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "5.2.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -249,6 +249,8 @@ export class ClawContextEngine {
   private _pendingDriftAlerts: DriftAlert[] = [];
   private _lastDriftScore: number = 0;
   private _tokenWarningEmitted: boolean = false;
+  // v5.2.0: Memory search cache for stable prefix
+  private _memorySearchCache: Map<string, { query: string; block: string; ts: number }> = new Map();
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -440,43 +442,56 @@ export class ClawContextEngine {
     const sel = selectByBudget(items, budget);
     const tokens = sel.reduce((s, m) => s + estimateTokens(m.content), 0);
 
-    // Build system prompt additions
-    const additions: string[] = [];
+    // v5.2.0: Separate stable prefix from dynamic suffix for cache optimization
+    const stableAdditions: string[] = [];
+    const dynamicAdditions: string[] = [];
 
-    // v5.0.0-rc.1: Use PromptStyleEngine for context formatting
-    if (sel.length > 0) {
-      const styleResult = this._promptStyleEngine.applyStyle(sel.map((m) => ({ content: m.content, score: 0 })));
-      additions.push(styleResult.block);
+    // === STABLE PREFIX (cached by DeepSeek) ===
+
+    // v5.2.0: Session resume first (fixed format)
+    const sessionResumeBlock = this._buildStableSessionResume(p.sessionId);
+    if (sessionResumeBlock) {
+      stableAdditions.push(sessionResumeBlock);
     }
+
+    // v5.2.0: Memory search (cached)
+    const memoryBlock = this._cachedMemorySearch(q, budget, sel);
+    if (memoryBlock) {
+      stableAdditions.push(memoryBlock);
+    }
+
+    // === DYNAMIC SUFFIX (changes each turn) ===
 
     // RL experience + governance signal injection
     const externalAdditions = await this.injectExternalContext(p.sessionId);
-    additions.push(...externalAdditions);
+    dynamicAdditions.push(...externalAdditions);
 
     // Cross-domain signal injection (v3.0.0)
     const crossDomainResult = await this.injectCrossDomainContext(p);
-    if (crossDomainResult) additions.push(crossDomainResult.block);
+    if (crossDomainResult) dynamicAdditions.push(crossDomainResult.block);
 
     // CI/CD signal injection (v4.0.0)
     const ciResult = await this.injectCIContext(p);
-    if (ciResult) additions.push(ciResult.block);
+    if (ciResult) dynamicAdditions.push(ciResult.block);
 
-    const sys = additions.length ? additions.join("\n\n") : undefined;
+    // Build stable prefix
+    const stablePrefix = stableAdditions.length ? stableAdditions.join("\n\n") : undefined;
+
+    // Build dynamic suffix with drift, strategy, warnings
+    let dynamicSuffix = dynamicAdditions.length ? dynamicAdditions.join("\n\n") : undefined;
 
     // v5.0.0: Include drift alerts in system prompt
-    let driftAwareSys = sys;
     if (this.driftAlerts.length > 0) {
       const recent = this.driftAlerts.slice(-2);
       const driftBlock = recent
         .map((a) => `[Drift ${a.level.toUpperCase()}] Score: ${a.driftScore.toFixed(2)} — ${a.suggestedActions.map((act) => act.description).join("; ")}`)
         .join("\n");
-      driftAwareSys = sys
-        ? `${sys}\n\n[Drift Monitor]\n${driftBlock}`
+      dynamicSuffix = dynamicSuffix
+        ? `${dynamicSuffix}\n\n[Drift Monitor]\n${driftBlock}`
         : `[Drift Monitor]\n${driftBlock}`;
     }
 
     // v4.16.0: Prompt strategy injection
-    let finalSys = driftAwareSys;
     try {
       const lastUserMsg = [...p.messages].reverse().find((m: any) => m.role === "user");
       const taskContent = extractText(lastUserMsg || p.messages[p.messages.length - 1] || "");
@@ -484,8 +499,8 @@ export class ClawContextEngine {
       const strategy = this._promptStrategy.selectStrategy({ taskType, content: taskContent });
       const strategyAddition = this._promptStrategy.getSystemPromptAddition(strategy);
       if (strategyAddition) {
-        finalSys = finalSys
-          ? `${finalSys}\n\n${strategyAddition}`
+        dynamicSuffix = dynamicSuffix
+          ? `${dynamicSuffix}\n\n${strategyAddition}`
           : strategyAddition;
       }
     } catch {
@@ -498,8 +513,8 @@ export class ClawContextEngine {
       for (const item of multimodalItems.slice(0, 5)) {
         const text = this._multimodalHandler.modalityToText(item);
         if (text) {
-          finalSys = finalSys
-            ? `${finalSys}\n${text}`
+          dynamicSuffix = dynamicSuffix
+            ? `${dynamicSuffix}\n${text}`
             : text;
         }
       }
@@ -517,8 +532,8 @@ export class ClawContextEngine {
         if (dataType && dataType !== "sql-result") {
           const verbalized = this._structuredHandler.verbalize(text, dataType);
           if (verbalized !== text) {
-            finalSys = finalSys
-              ? `${finalSys}\n\n${verbalized}`
+            dynamicSuffix = dynamicSuffix
+              ? `${dynamicSuffix}\n\n${verbalized}`
               : verbalized;
           }
         }
@@ -542,7 +557,7 @@ export class ClawContextEngine {
     const budgetLimit = p.tokenBudget ?? 8000;
     if (tokens > budgetLimit * 0.85 && !this._tokenWarningEmitted) {
       const overflowWarn = `[Token Budget Warning: ${tokens}/${budgetLimit} tokens used (${Math.round(tokens / budgetLimit * 100)}%) — consider compaction]`;
-      finalSys = finalSys ? `${finalSys}\n\n${overflowWarn}` : overflowWarn;
+      dynamicSuffix = dynamicSuffix ? `${dynamicSuffix}\n\n${overflowWarn}` : overflowWarn;
       this._tokenWarningEmitted = true;
     }
 
@@ -553,13 +568,19 @@ export class ClawContextEngine {
     if (this._autoSession.shouldSuggestNewSession(driftScore)) {
       newSessionSuggestion = this._autoSession.generateSuggestion();
       // Append suggestion to system prompt as well
-      finalSys = finalSys
-        ? `${finalSys}\n\n[Auto-Session] ${newSessionSuggestion}`
+      dynamicSuffix = dynamicSuffix
+        ? `${dynamicSuffix}\n\n[Auto-Session] ${newSessionSuggestion}`
         : `[Auto-Session] ${newSessionSuggestion}`;
     }
 
-    // v5.0.0: Session resume history injection
-    finalSys = this._injectSessionResume(finalSys);
+    // v5.2.0: Combine stable prefix + dynamic suffix
+    // DeepSeek will cache the stable prefix portion
+    let finalSys: string | undefined;
+    if (stablePrefix && dynamicSuffix) {
+      finalSys = `${stablePrefix}\n\n${dynamicSuffix}`;
+    } else {
+      finalSys = stablePrefix ?? dynamicSuffix;
+    }
 
     return { messages: resultMessages, estimatedTokens: tokens, systemPromptAddition: finalSys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report, driftScore, autoCompact, newSessionSuggestion };
   }
@@ -1188,6 +1209,92 @@ export class ClawContextEngine {
       // session resume assembly is non-blocking
     }
     return sys;
+  }
+
+  // ── v5.2.0: Stable Prefix Methods ───────────────────────────────────────
+
+  /**
+   * v5.2.0: Build stable session resume with deterministic format.
+   * Uses session hash to create cacheable prefix.
+   */
+  private _buildStableSessionResume(sessionId: string): string | undefined {
+    const sessionHash = this._computeSessionHash(sessionId);
+    const parts: string[] = [];
+
+    // Recovery context (checkpoint)
+    if (this._checkpointManager) {
+      const recovery = this._checkpointManager.consumeRecovery();
+      if (recovery) {
+        parts.push(`[Recovery Context]\n${this._sanitizeDynamicContent(recovery)}`);
+      }
+    }
+
+    // Session resume history
+    if (this._sessionResume) {
+      try {
+        const historySection = this._sessionResume.assemble();
+        if (historySection) {
+          parts.push(`[Session History — hash:${sessionHash}]\n${this._sanitizeDynamicContent(historySection)}`);
+        }
+      } catch {
+        // session resume assembly is non-blocking
+      }
+    }
+
+    return parts.length > 0 ? parts.join("\n\n") : undefined;
+  }
+
+  /**
+   * v5.2.0: Cached memory search for stable prefix.
+   * Same session + same query returns cached result (30s TTL).
+   */
+  private _cachedMemorySearch(
+    query: string,
+    budget: number,
+    items: ScoredItem[],
+  ): string | undefined {
+    const cacheKey = this.sid ?? "default";
+    const cached = this._memorySearchCache.get(cacheKey);
+
+    // Return cached result if query unchanged and TTL valid
+    if (cached && cached.query === query && Date.now() - cached.ts < 30000) {
+      return cached.block;
+    }
+
+    // Build new memory block
+    const sel = selectByBudget(items, budget);
+    let block: string | undefined;
+    if (sel.length > 0) {
+      const styleResult = this._promptStyleEngine.applyStyle(sel.map((m) => ({ content: m.content, score: 0 })));
+      block = styleResult.block;
+    }
+
+    // Cache result
+    if (block) {
+      this._memorySearchCache.set(cacheKey, { query, block, ts: Date.now() });
+    }
+
+    return block;
+  }
+
+  /**
+   * v5.2.0: Compute stable hash from session ID.
+   */
+  private _computeSessionHash(sessionId: string): string {
+    // Simple hash: first 8 chars of sessionId
+    return sessionId.length >= 8 ? sessionId.slice(0, 8) : sessionId.padEnd(8, "0");
+  }
+
+  /**
+   * v5.2.0: Sanitize dynamic content to create stable output.
+   * Removes timestamps, counters, and random IDs.
+   */
+  private _sanitizeDynamicContent(content: string): string {
+    return content
+      .replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, "[timestamp]")
+      .replace(/msg-\d+/g, "[msg-id]")
+      .replace(/turn \d+/gi, "[turn]")
+      .replace(/\d{13,}/g, "[ts]");  // Unix timestamps
   }
 
   async dispose(): Promise<void> {
