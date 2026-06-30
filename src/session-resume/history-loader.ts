@@ -23,27 +23,107 @@
  * sorts by recency, and formats for system prompt injection.
  *
  * v1.0.0: Initial implementation
+ * v5.3.0: Added hybrid_search support with completeness gate and adaptive expansion
  */
 
 import type { SessionResumeConfig, HistoryEntry, HistoryLoadResult, SessionSummary } from "./types.js";
 import { DEFAULT_SESSION_RESUME_CONFIG } from "./types.js";
+import { CompletenessGate, type CompletenessAssessment, type CompletenessBreakdown } from "./completeness-gate.js";
+import { AdaptiveExpansion, type ExpansionParams } from "./adaptive-expansion.js";
 
-// Minimal MemoryManager interface (duck-typed to match claw-mem)
+// Duck-typed MemoryManager interface
+interface HybridSearchResult {
+  results: Array<{
+    content: string;
+    score: number;
+    tags?: string[];
+    id?: string;
+    timestamp?: number;
+  }>;
+  completeness_score?: number;
+  metadata?: {
+    semanticCount?: number;
+    keywordCount?: number;
+    afterFilterCount?: number;
+    latencyMs?: number;
+    breakdown?: CompletenessBreakdown;
+  };
+}
+
+interface HybridSearchOptions {
+  topK?: number;
+  filters?: {
+    tags?: string[];
+    type?: string;
+    timeRange?: { start?: string; end?: string };
+  };
+  includeCompleteness?: boolean;
+}
+
 interface MemoryManager {
   search(query: string, opts?: any, topK?: number): Promise<Array<{ content: string; score: number; tags?: string[]; id?: string; timestamp?: number }>>;
+  // v5.3.0: Optional hybrid_search from claw-mem >= v6.29.0
+  hybridSearch?(query: string, options?: HybridSearchOptions): Promise<HybridSearchResult>;
 }
 
 export class HistoryLoader {
   private _manager: MemoryManager;
   private _config: SessionResumeConfig;
+  // v5.3.0: Completeness gate and adaptive expansion
+  private _completenessGate: CompletenessGate;
+  private _adaptiveExpansion: AdaptiveExpansion;
 
   constructor(manager: MemoryManager, config?: Partial<SessionResumeConfig>) {
     this._manager = manager;
     this._config = { ...DEFAULT_SESSION_RESUME_CONFIG, ...config };
+    // v5.3.0: Initialize completeness components
+    this._completenessGate = new CompletenessGate({
+      threshold: config?.completenessThreshold ?? 0.4,
+    });
+    this._adaptiveExpansion = new AdaptiveExpansion();
+  }
+
+  /**
+   * v5.3.0: Unified search with hybrid_search fallback.
+   * Prefers hybrid_search when available (claw-mem >= v6.29.0).
+   */
+  private async _performSearch(params: ExpansionParams): Promise<{
+    results: Array<{ content: string; score: number; tags?: string[]; id?: string; timestamp?: number }>;
+    completenessScore?: number;
+    breakdown?: CompletenessBreakdown;
+    usedHybridSearch: boolean;
+  }> {
+    // Try hybrid_search if available
+    if (typeof this._manager.hybridSearch === "function") {
+      try {
+        const result = await this._manager.hybridSearch("session_summary", {
+          topK: params.topK,
+          filters: {
+            tags: ["session_summary"],
+            type: "episodic",
+          },
+          includeCompleteness: true,
+        });
+
+        return {
+          results: result.results,
+          completenessScore: result.completeness_score,
+          breakdown: result.metadata?.breakdown,
+          usedHybridSearch: true,
+        };
+      } catch {
+        // Fall through to legacy search
+      }
+    }
+
+    // Legacy search fallback
+    const results = await this._manager.search("session_summary", undefined, params.topK);
+    return { results, usedHybridSearch: false };
   }
 
   /**
    * Load and process session history from claw-mem.
+   * v5.3.0: Uses hybrid_search when available, with adaptive expansion.
    */
   async load(sessionId: string, config?: SessionResumeConfig): Promise<HistoryLoadResult> {
     const cfg = config ?? this._config;
@@ -53,13 +133,78 @@ export class HistoryLoader {
       return { entries: [], formatted: "", totalSessions: 0, filteredByAge: 0 };
     }
 
-    // Search for session_summary tagged memories (use multiplier for margin)
-    const results = await this._manager.search("session_summary", undefined, cfg.maxHistorySessions * 5);
+    // v5.3.0: Reset expansion state for new load cycle
+    this._adaptiveExpansion.reset();
+
+    // Initial search parameters
+    const initialParams: ExpansionParams = {
+      topK: cfg.maxHistorySessions * 5,
+      maxAgeHours: cfg.maxAgeHours,
+    };
+
+    // v5.3.0: Perform initial search
+    let searchResult = await this._performSearch(initialParams);
+
+    // v5.3.0: Assess completeness
+    const assessment = this._completenessGate.assess(
+      searchResult.completenessScore,
+      searchResult.breakdown
+    );
+
+    let expansionRounds = 0;
+    const allResults = [...searchResult.results];
+    const seenIds = new Set(searchResult.results.map(r => r.id).filter(Boolean));
+
+    // v5.3.0: Adaptive expansion if enabled and needed
+    if (cfg.adaptiveExpansion !== false && !assessment.isSufficient) {
+      while (!this._adaptiveExpansion.isExhausted()) {
+        const expanded = this._adaptiveExpansion.expand(
+          initialParams.topK,
+          initialParams.maxAgeHours,
+          assessment
+        );
+
+        expansionRounds = expanded.round;
+
+        // Perform expanded search
+        const expandedResult = await this._performSearch(expanded.params);
+
+        // Merge and dedup by ID
+        for (const r of expandedResult.results) {
+          if (r.id && !seenIds.has(r.id)) {
+            seenIds.add(r.id);
+            allResults.push(r);
+          }
+        }
+
+        // Re-assess with combined results
+        if (expandedResult.completenessScore !== undefined) {
+          const newAssessment = this._completenessGate.assess(expandedResult.completenessScore);
+          if (newAssessment.isSufficient) {
+            break;
+          }
+        }
+
+        if (expanded.isExhausted) {
+          break;
+        }
+      }
+    }
 
     // Filter by tag
-    const tagged = results.filter((r) => r.tags?.includes?.("session_summary"));
+    const tagged = allResults.filter((r) => r.tags?.includes?.("session_summary"));
     if (tagged.length === 0) {
-      return { entries: [], formatted: "", totalSessions: 0, filteredByAge: 0 };
+      return {
+        entries: [],
+        formatted: "",
+        totalSessions: 0,
+        filteredByAge: 0,
+        completeness: {
+          score: searchResult.completenessScore,
+          assessment: assessment.recommendation,
+          expansionRounds,
+        },
+      };
     }
 
     // Parse summaries
@@ -103,6 +248,13 @@ export class HistoryLoader {
       formatted,
       totalSessions: raw.length,
       filteredByAge: tagged.length - raw.length,
+      // v5.3.0: Completeness metadata
+      completeness: {
+        score: searchResult.completenessScore,
+        assessment: assessment.recommendation,
+        expansionRounds,
+        breakdown: searchResult.breakdown,
+      },
     };
   }
 

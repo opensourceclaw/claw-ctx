@@ -50,6 +50,11 @@ export interface SessionResumeConfig {
   injectMode: "full" | "compact" | "disabled";
   /** Store summary every afterTurn (default: true) */
   storeOnEveryTurn: boolean;
+  // v5.3.0: Completeness configuration
+  /** Minimum completeness score threshold (default: 0.4) */
+  completenessThreshold?: number;
+  /** Enable adaptive expansion when completeness is low (default: true) */
+  adaptiveExpansion?: boolean;
 }
 
 export const DEFAULT_SESSION_RESUME_CONFIG: SessionResumeConfig = {
@@ -95,4 +100,23 @@ export interface HistoryLoadResult {
   formatted: string;
   totalSessions: number;
   filteredByAge: number;
+  // v5.3.0: Completeness metadata
+  completeness?: CompletenessReport;
+}
+
+// v5.3.0: Completeness reporting
+
+export interface CompletenessReport {
+  /** Overall completeness score (0-1), undefined if unavailable */
+  score?: number;
+  /** Assessment recommendation */
+  assessment: "use" | "expand" | "max_expand" | "unavailable";
+  /** Number of expansion rounds performed (0-2) */
+  expansionRounds: number;
+  /** Optional breakdown from hybrid_search */
+  breakdown?: {
+    coverage: number;
+    diversity: number;
+    confidence: number;
+  };
 }

@@ -1,5 +1,25 @@
 # Changelog
 
+## v5.3.0 (2026-06-30)
+
+### Added
+- **CompletenessGate**: Evaluates completeness scores from hybrid_search and recommends actions (use/expand/max_expand)
+- **AdaptiveExpansion**: Computes expanded search parameters when completeness is insufficient (max 2 rounds)
+- **hybrid_search integration**: HistoryLoader uses hybrid_search from claw-mem >= v6.29.0 when available
+- **Completeness metadata**: `HistoryLoadResult` now includes optional `completeness` field
+- **New config options**: `completenessThreshold` (default 0.4) and `adaptiveExpansion` (default true)
+
+### Changed
+- `HistoryLoader.load()`: Now uses hybrid_search with completeness gate and adaptive expansion
+- `HistoryLoader`: Added `_performSearch()` with graceful fallback to legacy search
+- `SessionResumeConfig`: Extended with optional completeness fields (backward compatible)
+- `HistoryLoadResult`: Extended with optional `completeness` field (backward compatible)
+
+### Verified
+- Build: 0 errors
+- Tests: 718/718 passed (42 files)
+- Edith acceptance: Code PASS, pending release artifact fix
+
 ## v5.2.1 (2026-06-30)
 
 ### Added

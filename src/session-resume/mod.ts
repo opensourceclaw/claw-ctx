@@ -30,9 +30,23 @@ export type {
   CheckpointConfig,
   HistoryEntry,
   HistoryLoadResult,
+  CompletenessReport,
 } from "./types.js";
 export { DEFAULT_SESSION_RESUME_CONFIG } from "./types.js";
 export { SummaryGenerator } from "./summary-generator.js";
 export { HistoryLoader } from "./history-loader.js";
 export { SessionResumeManager } from "./bootstrap.js";
 export { CheckpointManager } from "./checkpoint.js";
+// v5.3.0: Completeness gate and adaptive expansion
+export {
+  CompletenessGate,
+  type CompletenessAssessment,
+  type CompletenessBreakdown,
+  type CompletenessGateConfig,
+} from "./completeness-gate.js";
+export {
+  AdaptiveExpansion,
+  type ExpansionParams,
+  type ExpansionResult,
+  type AdaptiveExpansionConfig,
+} from "./adaptive-expansion.js";
