@@ -55,6 +55,20 @@ export interface SessionResumeConfig {
   completenessThreshold?: number;
   /** Enable adaptive expansion when completeness is low (default: true) */
   adaptiveExpansion?: boolean;
+  // v5.4.0: History loading mode
+  /** History loading mode (default: "flat") */
+  historyMode?: "flat" | "hierarchical";
+  // v5.4.0: Hierarchical loader settings
+  hierarchicalLoader?: {
+    /** Number of most recent sessions for level 1 (default: 3) */
+    recentSessionCount?: number;
+    /** Days threshold for level 2 (default: 7) */
+    weekBoundaryDays?: number;
+    /** Maximum age in days for level 3 (default: 30) */
+    level3MaxAgeDays?: number;
+    /** Semantic similarity threshold for dedup (default: 0.7) */
+    dedupThreshold?: number;
+  };
 }
 
 export const DEFAULT_SESSION_RESUME_CONFIG: SessionResumeConfig = {
@@ -119,4 +133,16 @@ export interface CompletenessReport {
     diversity: number;
     confidence: number;
   };
+}
+
+// v5.4.0: Hierarchical history types
+
+export type BucketLevel = "recent" | "this_week" | "older";
+
+export interface HierarchicalHistory {
+  level1: SessionSummary[];
+  level2: SessionSummary[];
+  level3: SessionSummary[];
+  allPendingTasks: string[];
+  entities: Map<string, number>;
 }

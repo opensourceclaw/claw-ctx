@@ -1,5 +1,19 @@
 # Changelog
 
+## v5.4.0 (2026-07-01)
+
+### Added
+- **HierarchicalLoader**: Time-based 3-level history loading (Recent / This Week / Earlier)
+- **TimeBucket**: Pure utility for bucketing sessions by recency (recent / this_week / older)
+- **BucketConsolidator**: Conservative merge strategies per level with Jaccard similarity dedup
+- **New config**: `historyMode: "flat" | "hierarchical"` (default: "flat")
+- **New config**: `hierarchicalLoader.recentSessionCount`, `weekBoundaryDays`, `level3MaxAgeDays`, `dedupThreshold`
+
+### Changed
+- `HistoryLoader.load()`: Branches on `historyMode` — delegates to HierarchicalLoader when hierarchical
+- `SessionResumeConfig`: Extended with optional `historyMode` and `hierarchicalLoader` fields
+- Level 3 (Older) intentionally drops pendingTasks (likely completed)
+
 ## v5.3.0 (2026-06-30)
 
 ### Added

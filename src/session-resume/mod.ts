@@ -31,6 +31,8 @@ export type {
   HistoryEntry,
   HistoryLoadResult,
   CompletenessReport,
+  BucketLevel,
+  HierarchicalHistory,
 } from "./types.js";
 export { DEFAULT_SESSION_RESUME_CONFIG } from "./types.js";
 export { SummaryGenerator } from "./summary-generator.js";
@@ -50,3 +52,21 @@ export {
   type ExpansionResult,
   type AdaptiveExpansionConfig,
 } from "./adaptive-expansion.js";
+// v5.4.0: Hierarchical loader
+export {
+  TimeBucket,
+  type BucketResult,
+  type TimeBucketConfig,
+  DEFAULT_TIME_BUCKET_CONFIG,
+} from "./time-bucket.js";
+export {
+  BucketConsolidator,
+  type ConsolidatedLevel,
+  type ConsolidationResult,
+  type BucketConsolidatorConfig,
+  DEFAULT_CONSOLIDATOR_CONFIG,
+} from "./bucket-consolidator.js";
+export {
+  HierarchicalLoader,
+  type HierarchicalLoaderConfig,
+} from "./hierarchical-loader.js";

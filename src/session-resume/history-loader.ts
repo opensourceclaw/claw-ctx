@@ -24,12 +24,14 @@
  *
  * v1.0.0: Initial implementation
  * v5.3.0: Added hybrid_search support with completeness gate and adaptive expansion
+ * v5.4.0: Added hierarchical history loading mode
  */
 
 import type { SessionResumeConfig, HistoryEntry, HistoryLoadResult, SessionSummary } from "./types.js";
 import { DEFAULT_SESSION_RESUME_CONFIG } from "./types.js";
 import { CompletenessGate, type CompletenessAssessment, type CompletenessBreakdown } from "./completeness-gate.js";
 import { AdaptiveExpansion, type ExpansionParams } from "./adaptive-expansion.js";
+import { HierarchicalLoader } from "./hierarchical-loader.js";
 
 // Duck-typed MemoryManager interface
 interface HybridSearchResult {
@@ -124,6 +126,7 @@ export class HistoryLoader {
   /**
    * Load and process session history from claw-mem.
    * v5.3.0: Uses hybrid_search when available, with adaptive expansion.
+   * v5.4.0: Supports hierarchical mode for time-based bucketing.
    */
   async load(sessionId: string, config?: SessionResumeConfig): Promise<HistoryLoadResult> {
     const cfg = config ?? this._config;
@@ -132,6 +135,13 @@ export class HistoryLoader {
     if (cfg.injectMode === "disabled") {
       return { entries: [], formatted: "", totalSessions: 0, filteredByAge: 0 };
     }
+
+    // v5.4.0: Branch based on historyMode
+    if (cfg.historyMode === "hierarchical") {
+      return this._loadHierarchical(cfg, now);
+    }
+
+    // Existing flat mode logic (unchanged)
 
     // v5.3.0: Reset expansion state for new load cycle
     this._adaptiveExpansion.reset();
@@ -311,6 +321,77 @@ export class HistoryLoader {
       sessionId: memoryId || "legacy",
       messageCount: 0,
       entities: [],
+    };
+  }
+
+  /**
+   * v5.4.0: Load history in hierarchical mode.
+   * Uses time-based bucketing and conservative consolidation.
+   */
+  private async _loadHierarchical(cfg: SessionResumeConfig, now: number): Promise<HistoryLoadResult> {
+    // Query for wider range (topK * 3, longer age)
+    const widerTopK = cfg.maxHistorySessions * 3;
+    const widerMaxAgeDays = cfg.hierarchicalLoader?.level3MaxAgeDays ?? 30;
+    const widerMaxAgeHours = widerMaxAgeDays * 24;
+
+    // Use _performSearch with expanded params
+    const expandedParams: ExpansionParams = {
+      topK: widerTopK,
+      maxAgeHours: widerMaxAgeHours,
+    };
+
+    const searchResult = await this._performSearch(expandedParams);
+
+    // Extract summaries from results
+    const summaries: SessionSummary[] = [];
+    for (const result of searchResult.results) {
+      if (result.tags?.includes?.("session_summary")) {
+        try {
+          const summary = JSON.parse(result.content) as SessionSummary;
+          summaries.push(summary);
+        } catch {
+          // Skip unparseable
+        }
+      }
+    }
+
+    // Use HierarchicalLoader
+    const loader = new HierarchicalLoader({
+      timeBucket: {
+        recentSessionCount: cfg.hierarchicalLoader?.recentSessionCount ?? 3,
+        weekBoundaryDays: cfg.hierarchicalLoader?.weekBoundaryDays ?? 7,
+        maxAgeDays: widerMaxAgeDays,
+      },
+      consolidator: {
+        dedupThreshold: cfg.hierarchicalLoader?.dedupThreshold ?? 0.7,
+      },
+      injectMode: cfg.injectMode as "full" | "compact",
+    });
+
+    const history = loader.load(summaries, now);
+    const formatted = loader.format(history);
+
+    // Convert to HistoryEntry[] for compatibility
+    const entries: HistoryEntry[] = [
+      ...history.level1,
+      ...history.level2,
+      ...history.level3,
+    ].map(summary => ({
+      summary,
+      memoryId: summary.sessionId,
+      storedAt: summary.timestamp,
+    }));
+
+    return {
+      entries,
+      formatted,
+      totalSessions: summaries.length,
+      filteredByAge: 0,
+      completeness: {
+        score: searchResult.completenessScore,
+        assessment: searchResult.completenessScore !== undefined ? "use" : "unavailable",
+        expansionRounds: 0,
+      },
     };
   }
 }
