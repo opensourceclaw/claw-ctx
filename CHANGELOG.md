@@ -1,5 +1,109 @@
 # Changelog
 
+## v5.2.1 (2026-06-30)
+
+### Added
+- **Session-level cache stabilization**: RL/Governance signals cached per session with LRU eviction (10 entries max)
+- **Cross-domain change detection**: Cross-domain signals only re-injected on pillar/intent change
+- **Auto-session dedup**: Suggestion only triggers once per session (boolean flag)
+
+### Changed
+- **Drift session aggregation**: Removed 5-turn batch; alerts now sticky on sudden change only
+- **DeepSeek prefix cache hit rate**: ~95% → 96-97%
+- **Dynamic suffix changes**: Reduced by ~70% within session
+
+### Verified
+- Build: 0 errors
+- Tests: 690/690 passed (39 files)
+- Edith acceptance: Conditional Pass
+
+## v5.2.0 (2026-06-29)
+
+### Added
+- **systemPromptAddition internal reordering**: Stable prefix + dynamic suffix for DeepSeek prefix cache optimization
+- **Session resume**: Deterministic format with session hash
+- **Memory search caching**: Session+query key with 30s TTL
+
+### Changed
+- `assemble()`: Split into `stableAdditions` + `dynamicAdditions`
+- DeepSeek prefix cache hit rate: 93.3% → 94.8-95.3%
+
+### Verified
+- Build: 0 errors
+- Tests: 682/682 passed (39 files)
+- Edith acceptance: Approved
+
+## v5.1.1 (2026-06-29)
+
+### Added
+- **Drift Alert Batching**: Aggregate alerts every 5 turns (or immediate on >0.3 gap)
+- **Token Warning Dedup**: Emit once per threshold crossing, reset after compaction
+
+### Changed
+- DeepSeek prefix cache hit rate: 91.3% → 93.3%
+
+### Verified
+- Build: 0 errors
+- Tests: 678/678 passed
+- Edith acceptance: Approved
+
+## v5.1.0 (2026-06-25)
+
+### Added
+- **Checkpoint & Session Recovery**: Session checkpointing with automatic recovery on resume
+- `CheckpointManager`: Snapshot session state (token usage, drift, memory state, external context)
+- `SessionRecovery`: Three-phase recovery (restore checkpoint → reconcile with live state → inject recovery context)
+
+### Changed
+- `engine.ts`: Integrated checkpoint save/restore in bootstrap and afterTurn lifecycle
+- `session-resume`: Extended types with checkpoint interfaces
+
+### Verified
+- Build: 0 errors
+- Tests: 13 new checkpoint tests added
+
+## v5.0.0 (2026-06-21)
+
+### Added — Cross-Domain Signal Fusion
+- **CrossDomainFusion**: Aggregate signals from different domains (memory/governance/ci/cross-domain/session)
+- **SignalAggregator**: Multi-source signal weighted fusion
+- **DomainClassifier**: Signal domain classification
+
+### Added — Adaptive Injection Strategy
+- **AdaptiveInjector**: Dynamic injection based on task type (7 types)
+- **TaskTypeDetector**: Task type detection
+- **InjectionStrategy**: Dynamic strategy selection (aggressive/balanced/minimal/contextual)
+
+### Added — Multi-Style Prompt Engine
+- **Descriptive**: Describe current context state
+- **Prescriptive**: Specify selection rules
+- **Prohibitive**: Exclude rules
+- **Explanatory**: Explain selection rationale
+- **Conditional**: Conditional inclusion
+
+### Added — Predictive Context
+- **ContextPredictor**: Predict future context needs
+- **PreloadManager**: Context preloading with TTL
+- **PredictionEngine**: Frequency/co-occurrence/sequence analysis
+
+### Added — Context Version Evolution Tracking
+- **ContextSnapshot**: Record context assembly input/output
+- **VersionHistory**: Manage snapshot history
+- **ChangePatternAnalyzer**: Analyze add/modify/delete patterns
+
+### Added — Project Standardization
+- **AGENTS.md**: Project structure, build commands, test strategy, contribution guide
+- **Context Strategy Spec**: Documented 4+ strategies (retrieval/recent/hybrid/rl-enhanced)
+- **Standardized Prompt Template**: Defined I/O format for external reuse
+
+### Changed
+- Minimum Node.js: 20.0.0
+- OpenClaw Gateway: 2026.3.28+
+
+### Verified
+- Tests: 659/659 passed
+- Coverage: 90.93%
+
 ## v4.26.0 (2026-06-16)
 
 ### Removed
