@@ -1,5 +1,33 @@
 # Changelog
 
+## v5.5.0 (2026-07-01)
+
+### Added
+- **ContextStrategy**: 5 assembly strategy definitions (factual_recall, temporal_reasoning, procedural_execution, compositional_reasoning, balanced)
+- **StrategyRouter**: Maps TaskType → AssemblyStrategyType with fallback to "balanced"
+- **ContextAssembler**: Orchestrates strategy-based context assembly (route → load → sort → format)
+- **Format templates**: 5 strategy-specific templates (facts, timeline, procedural, evidence, default)
+- **TaskTypeDetector keywords**: Extended for better strategy routing
+
+### Changed
+- `types.ts`: Added `AssemblyStrategyType`, `AssemblyParams`, `AssemblyResult` types
+- `mod.ts`: Exported new ContextAssembler components
+
+### Strategy Mapping
+| TaskType | Strategy |
+|----------|----------|
+| coding | procedural_execution |
+| debugging | factual_recall |
+| planning | compositional_reasoning |
+| review | compositional_reasoning |
+| question | factual_recall |
+| conversation | balanced |
+| unknown | balanced |
+
+### Verified
+- Build: 0 errors
+- Tests: 813/813 passed (49 files)
+
 ## v5.4.0 (2026-07-01)
 
 ### Added

@@ -146,3 +146,37 @@ export interface HierarchicalHistory {
   allPendingTasks: string[];
   entities: Map<string, number>;
 }
+
+// v5.5.0: Adaptive Context Assembler types
+
+export type AssemblyStrategyType =
+  | "factual_recall"
+  | "temporal_reasoning"
+  | "procedural_execution"
+  | "compositional_reasoning"
+  | "balanced";
+
+export interface AssemblyParams {
+  historyMode: "flat" | "hierarchical";
+  maxHistorySessions: number;
+  maxAgeHours: number;
+  sortBy: "recency" | "relevance" | "chronological";
+  includeEntities: boolean;
+  preserveTimestamps: boolean;
+  completenessThreshold: number;
+  includeErrorPatterns?: boolean;
+  crossSessionDepth?: number;
+}
+
+export interface AssemblyResult {
+  strategy: AssemblyStrategyType;
+  historyResult: HistoryLoadResult;
+  formatted: string;
+  metadata: {
+    taskType: string;
+    strategy: AssemblyStrategyType;
+    loadTimeMs: number;
+    entryCount: number;
+    completenessScore?: number;
+  };
+}

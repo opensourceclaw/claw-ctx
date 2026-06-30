@@ -70,3 +70,17 @@ export {
   HierarchicalLoader,
   type HierarchicalLoaderConfig,
 } from "./hierarchical-loader.js";
+// v5.5.0: Adaptive Context Assembler
+export {
+  type AssemblyStrategyType,
+  type AssemblyParams,
+  type ContextStrategy,
+  STRATEGY_DEFINITIONS,
+  getStrategy,
+} from "./context-strategy.js";
+export { StrategyRouter } from "./strategy-router.js";
+export {
+  ContextAssembler,
+  type AssemblyResult as ContextAssemblyResult,
+  type ContextAssemblerConfig,
+} from "./context-assembler.js";

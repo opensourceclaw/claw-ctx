@@ -8,10 +8,38 @@ export interface TaskSignature {
 }
 
 const RULES: Array<{ type: TaskType; keywords: string[]; weight: number }> = [
-  { type: "coding", keywords: ["implement", "create", "write code", "build", "add function"], weight: 1 },
-  { type: "review", keywords: ["review", "check", "audit", "inspect", "examine"], weight: 1 },
-  { type: "debugging", keywords: ["debug", "fix bug", "error", "crash", "broken", "issue"], weight: 1 },
-  { type: "planning", keywords: ["plan", "design", "architect", "roadmap", "strategy"], weight: 1 },
+  {
+    type: "coding",
+    keywords: [
+      "implement", "create", "write code", "build", "add function",
+      // v5.5.0: Extended for procedural_execution strategy
+      "run", "execute", "deploy", "start", "configure", "set up"
+    ],
+    weight: 1
+  },
+  {
+    type: "review",
+    keywords: ["review", "check", "audit", "inspect", "examine"],
+    weight: 1
+  },
+  {
+    type: "debugging",
+    keywords: [
+      "debug", "fix bug", "error", "crash", "broken", "issue",
+      // v5.5.0: Extended for factual_recall strategy
+      "trace", "stack trace", "exception", "what caused", "why did"
+    ],
+    weight: 1
+  },
+  {
+    type: "planning",
+    keywords: [
+      "plan", "design", "architect", "roadmap", "strategy",
+      // v5.5.0: Extended for compositional_reasoning strategy
+      "trade-off", "tradeoff", "architecture", "component", "decision"
+    ],
+    weight: 1
+  },
   { type: "question", keywords: ["how to", "what is", "explain", "why", "when should"], weight: 0.8 },
   { type: "conversation", keywords: ["discuss", "talk about", "opinion", "thoughts"], weight: 0.7 },
 ];
