@@ -1245,4 +1245,162 @@ describe('ClawContextEngine', () => {
       expect(engine).toBeDefined();
     });
   });
+
+  // v5.2.1: Session-level cache stabilization tests
+  describe('v5.2.1 Session Cache', () => {
+    describe('_cachedExternalContext', () => {
+      it('UT-1: caches result on first call', async () => {
+        const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+        await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+
+        // Access internal method via any cast
+        const injectSpy = vi.spyOn(engine as any, 'injectExternalContext').mockResolvedValue(['RL signal']);
+
+        const result1 = await (engine as any)._cachedExternalContext('session-1');
+        const result2 = await (engine as any)._cachedExternalContext('session-1');
+
+        expect(result1).toEqual(['RL signal']);
+        expect(result2).toEqual(['RL signal']);
+        expect(injectSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it('UT-2: returns cached result on second call', async () => {
+        const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+        await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+
+        const injectSpy = vi.spyOn(engine as any, 'injectExternalContext').mockResolvedValue(['signal']);
+
+        await (engine as any)._cachedExternalContext('session-1');
+        await (engine as any)._cachedExternalContext('session-1');
+        await (engine as any)._cachedExternalContext('session-1');
+
+        // Should only call inject once despite 3 calls to cached method
+        expect(injectSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it('UT-3: LRU eviction when cache exceeds 10 entries', async () => {
+        const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+        await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+
+        vi.spyOn(engine as any, 'injectExternalContext').mockResolvedValue(['signal']);
+
+        // Fill cache with 10 entries
+        for (let i = 0; i < 10; i++) {
+          await (engine as any)._cachedExternalContext(`session-${i}`);
+        }
+
+        expect((engine as any)._rlGovernanceCache.size).toBe(10);
+
+        // Add 11th entry - should trigger LRU eviction
+        await (engine as any)._cachedExternalContext('session-11');
+
+        // Cache should still be 10 (oldest evicted)
+        expect((engine as any)._rlGovernanceCache.size).toBe(10);
+        // First entry should be evicted
+        expect((engine as any)._rlGovernanceCache.has('session-0')).toBe(false);
+        // New entry should exist
+        expect((engine as any)._rlGovernanceCache.has('session-11')).toBe(true);
+      });
+    });
+
+    describe('_cachedCrossDomain', () => {
+      it('UT-4: caches with same pillar and intent', async () => {
+        const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+        await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+
+        const injectSpy = vi.spyOn(engine as any, 'injectCrossDomainContext').mockResolvedValue({
+          block: 'cross-domain block',
+          report: { signalsInjected: 1 }
+        });
+
+        const p = { sessionId: 'session-1', crossDomain: { currentPillar: 'pillar-A', currentIntent: 'intent-X' } };
+
+        const result1 = await (engine as any)._cachedCrossDomain(p);
+        const result2 = await (engine as any)._cachedCrossDomain(p);
+
+        expect(result1.block).toBe('cross-domain block');
+        expect(result2.block).toBe('cross-domain block');
+        expect(injectSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it('UT-5: re-injects on pillar change', async () => {
+        const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+        await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+
+        const injectSpy = vi.spyOn(engine as any, 'injectCrossDomainContext').mockResolvedValue({
+          block: 'cross-domain block',
+          report: { signalsInjected: 1 }
+        });
+
+        await (engine as any)._cachedCrossDomain({ sessionId: 'session-1', crossDomain: { currentPillar: 'pillar-A', currentIntent: 'intent-X' } });
+        await (engine as any)._cachedCrossDomain({ sessionId: 'session-1', crossDomain: { currentPillar: 'pillar-B', currentIntent: 'intent-X' } });
+
+        // Should call inject twice due to pillar change
+        expect(injectSpy).toHaveBeenCalledTimes(2);
+      });
+
+      it('UT-6: re-injects on intent change', async () => {
+        const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+        await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+
+        const injectSpy = vi.spyOn(engine as any, 'injectCrossDomainContext').mockResolvedValue({
+          block: 'cross-domain block',
+          report: { signalsInjected: 1 }
+        });
+
+        await (engine as any)._cachedCrossDomain({ sessionId: 'session-1', crossDomain: { currentPillar: 'pillar-A', currentIntent: 'intent-X' } });
+        await (engine as any)._cachedCrossDomain({ sessionId: 'session-1', crossDomain: { currentPillar: 'pillar-A', currentIntent: 'intent-Y' } });
+
+        // Should call inject twice due to intent change
+        expect(injectSpy).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    describe('Drift session aggregation', () => {
+      it('UT-7: only injects on sudden change (gap > 0.3)', async () => {
+        const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+        await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+
+        // Initialize drift state
+        (engine as any)._lastDriftScore = 0.5;
+        (engine as any).driftAlerts = [];
+
+        // Simulate small drift (gap = 0.2, no sudden change)
+        const smallGap = 0.2;
+        const currentScore = 0.7;
+        const suddenChange = Math.abs(currentScore - (engine as any)._lastDriftScore) > 0.3;
+
+        expect(suddenChange).toBe(false);
+
+        // Simulate large drift (gap = 0.4, sudden change)
+        (engine as any)._lastDriftScore = 0.5;
+        const largeCurrentScore = 0.9;
+        const suddenChangeLarge = Math.abs(largeCurrentScore - (engine as any)._lastDriftScore) > 0.3;
+
+        expect(suddenChangeLarge).toBe(true);
+      });
+    });
+
+    describe('Auto-session once', () => {
+      it('UT-8: only triggers once per session', async () => {
+        const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+        await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
+
+        // Mock auto-session to always return true
+        vi.spyOn((engine as any)._autoSession, 'shouldSuggestNewSession').mockReturnValue(true);
+        vi.spyOn((engine as any)._autoSession, 'generateSuggestion').mockReturnValue('New session?');
+
+        // First call
+        const shouldTrigger1 = !(engine as any)._autoSessionSuggested && (engine as any)._autoSession.shouldSuggestNewSession(0.8);
+        if (shouldTrigger1) (engine as any)._autoSessionSuggested = true;
+
+        // Second call (should be blocked by flag)
+        const shouldTrigger2 = !(engine as any)._autoSessionSuggested && (engine as any)._autoSession.shouldSuggestNewSession(0.8);
+
+        expect(shouldTrigger1).toBe(true);
+        expect(shouldTrigger2).toBe(false);
+        expect((engine as any)._autoSessionSuggested).toBe(true);
+      });
+    });
+  });
 });

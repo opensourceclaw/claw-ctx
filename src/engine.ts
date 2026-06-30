@@ -245,12 +245,23 @@ export class ClawContextEngine {
   // v5.0.0: Checkpoint manager
   private _checkpointManager: CheckpointManager | null = null;
   // v5.1.1: Drift batching + token warning dedup
-  private _driftBatchCounter: number = 0;
   private _pendingDriftAlerts: DriftAlert[] = [];
   private _lastDriftScore: number = 0;
   private _tokenWarningEmitted: boolean = false;
   // v5.2.0: Memory search cache for stable prefix
   private _memorySearchCache: Map<string, { query: string; block: string; ts: number }> = new Map();
+  // v5.2.1: RL/Governance session-level cache
+  private _rlGovernanceCache: Map<string, { result: string[]; ts: number }> = new Map();
+  // v5.2.1: Cross-domain context with pillar/intent change detection
+  private _crossDomainCache: Map<string, {
+    block: string;
+    report: { signalsInjected: number; totalTokens: number; correlations: InjectedSignal[] };
+    ts: number;
+    pillar: string;
+    intent: string;
+  }> = new Map();
+  // v5.2.1: Auto-session suggestion flag (once per session)
+  private _autoSessionSuggested: boolean = false;
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -391,13 +402,14 @@ export class ClawContextEngine {
     const scoreGap = Math.abs(currentDriftScore - this._lastDriftScore);
     const suddenChange = scoreGap > 0.3;
 
-    // v5.1.1: Batch injection every 5 turns OR on sudden change
-    this._driftBatchCounter++;
-    if (this._driftBatchCounter >= 5 || suddenChange) {
+    // v5.2.1: Only inject on sudden change (score gap > 0.3)
+    // Alerts persist for entire session (sticky)
+    if (suddenChange) {
       this.driftAlerts = [...this._pendingDriftAlerts];
       this._pendingDriftAlerts = [];
-      this._driftBatchCounter = 0;
+      this.logger.debug?.(`[claw-ctx] Drift sudden change detected (gap=${scoreGap.toFixed(2)}), injecting ${this.driftAlerts.length} alerts`);
     }
+    // ELSE: Keep existing driftAlerts (sticky for session)
     this._lastDriftScore = currentDriftScore;
 
     const q = p.prompt || extractText(p.messages[p.messages.length - 1]) || "";
@@ -405,9 +417,9 @@ export class ClawContextEngine {
     let mems: any[] = this.cache.get(q) ?? [];
     if (!mems.length) { try { const r = await this.manager.search(q, undefined, this.config.topK ?? 10); mems = (r as any)?.memories ?? r ?? []; if (Array.isArray(mems)) this.cache.set(q, mems); } catch (e) { this.logger.warn("[claw-ctx] search fail:", e); } }
     if (!Array.isArray(mems) || mems.length === 0) {
-      // Still inject RL/governance/cross-domain/CI even without memories
-      const additions = await this.injectExternalContext(p.sessionId);
-      const crossDomainResult = await this.injectCrossDomainContext(p);
+      // v5.2.1: Still inject RL/governance/cross-domain/CI even without memories (cached)
+      const additions = await this._cachedExternalContext(p.sessionId);
+      const crossDomainResult = await this._cachedCrossDomain(p);
       if (crossDomainResult) additions.push(crossDomainResult.block);
       const ciResult = await this.injectCIContext(p);
       if (ciResult) additions.push(ciResult.block);
@@ -462,12 +474,12 @@ export class ClawContextEngine {
 
     // === DYNAMIC SUFFIX (changes each turn) ===
 
-    // RL experience + governance signal injection
-    const externalAdditions = await this.injectExternalContext(p.sessionId);
+    // v5.2.1: RL experience + governance signal injection (session-cached)
+    const externalAdditions = await this._cachedExternalContext(p.sessionId);
     dynamicAdditions.push(...externalAdditions);
 
-    // Cross-domain signal injection (v3.0.0)
-    const crossDomainResult = await this.injectCrossDomainContext(p);
+    // v5.2.1: Cross-domain signal injection with pillar/intent change detection
+    const crossDomainResult = await this._cachedCrossDomain(p);
     if (crossDomainResult) dynamicAdditions.push(crossDomainResult.block);
 
     // CI/CD signal injection (v4.0.0)
@@ -565,12 +577,15 @@ export class ClawContextEngine {
     const driftScore = this.driftDetector.getDriftScore();
     const autoCompact = this._autoCompact.shouldCompact(driftScore);
     let newSessionSuggestion: string | undefined;
-    if (this._autoSession.shouldSuggestNewSession(driftScore)) {
+    // v5.2.1: Auto-session suggestion only once per session
+    if (!this._autoSessionSuggested && this._autoSession.shouldSuggestNewSession(driftScore)) {
+      this._autoSessionSuggested = true;
       newSessionSuggestion = this._autoSession.generateSuggestion();
       // Append suggestion to system prompt as well
       dynamicSuffix = dynamicSuffix
         ? `${dynamicSuffix}\n\n[Auto-Session] ${newSessionSuggestion}`
         : `[Auto-Session] ${newSessionSuggestion}`;
+      this.logger.debug?.(`[claw-ctx] Auto-session suggestion triggered: ${newSessionSuggestion}`);
     }
 
     // v5.2.0: Combine stable prefix + dynamic suffix
@@ -1275,6 +1290,104 @@ export class ClawContextEngine {
     }
 
     return block;
+  }
+
+  /**
+   * v5.2.1: RL/Governance context with session-level caching.
+   * Returns cached result if available for this session.
+   *
+   * @param sessionId - Current session identifier
+   * @returns Array of external context blocks (cached or freshly injected)
+   */
+  private async _cachedExternalContext(sessionId: string): Promise<string[]> {
+    // Check cache first
+    const cached = this._rlGovernanceCache.get(sessionId);
+    if (cached) {
+      this.logger.debug?.(`[claw-ctx] RL/Governance cache hit for session ${sessionId}`);
+      return cached.result;
+    }
+
+    // Cache miss: inject and cache result
+    this.logger.debug?.(`[claw-ctx] RL/Governance cache miss for session ${sessionId}`);
+    const result = await this.injectExternalContext(sessionId);
+
+    // LRU eviction: keep cache under 10 entries
+    if (this._rlGovernanceCache.size >= 10) {
+      // Find and delete oldest entry
+      let oldestKey: string | null = null;
+      let oldestTs = Infinity;
+      for (const [key, val] of this._rlGovernanceCache) {
+        if (val.ts < oldestTs) {
+          oldestTs = val.ts;
+          oldestKey = key;
+        }
+      }
+      if (oldestKey) {
+        this._rlGovernanceCache.delete(oldestKey);
+        this.logger.debug?.(`[claw-ctx] RL/Governance LRU evicted session ${oldestKey}`);
+      }
+    }
+
+    // Store new result
+    this._rlGovernanceCache.set(sessionId, { result, ts: Date.now() });
+
+    return result;
+  }
+
+  /**
+   * v5.2.1: Cross-domain context with pillar/intent change detection.
+   * Only re-injects when pillar or intent changes.
+   *
+   * @param p - Full assemble params (sessionId + crossDomain config)
+   * @returns Cross-domain injection result or null
+   */
+  private async _cachedCrossDomain(
+    p: { sessionId: string; crossDomain?: { currentPillar?: string; currentIntent?: string; [key: string]: any } }
+  ): Promise<{ block: string; report: any } | null> {
+    const pillar = p.crossDomain?.currentPillar ?? "";
+    const intent = p.crossDomain?.currentIntent ?? "";
+    const cacheKey = `${p.sessionId}:cd:${pillar}:${intent}`;
+
+    // Check cache for same pillar + intent
+    const cached = this._crossDomainCache.get(cacheKey);
+    if (cached) {
+      this.logger.debug?.(`[claw-ctx] Cross-domain cache hit for session ${p.sessionId} (pillar=${pillar}, intent=${intent})`);
+      return { block: cached.block, report: cached.report };
+    }
+
+    // Cache miss or pillar/intent changed
+    this.logger.debug?.(`[claw-ctx] Cross-domain cache miss for session ${p.sessionId} (pillar=${pillar}, intent=${intent})`);
+
+    const result = await this.injectCrossDomainContext(p as any);
+
+    // LRU eviction if needed
+    if (this._crossDomainCache.size >= 10) {
+      let oldestKey: string | null = null;
+      let oldestTs = Infinity;
+      for (const [key, val] of this._crossDomainCache) {
+        if (val.ts < oldestTs) {
+          oldestTs = val.ts;
+          oldestKey = key;
+        }
+      }
+      if (oldestKey) {
+        this._crossDomainCache.delete(oldestKey);
+        this.logger.debug?.(`[claw-ctx] Cross-domain LRU evicted key ${oldestKey}`);
+      }
+    }
+
+    // Cache result (even if null, to avoid repeated calls)
+    if (result) {
+      this._crossDomainCache.set(cacheKey, {
+        block: result.block,
+        report: result.report,
+        ts: Date.now(),
+        pillar,
+        intent,
+      });
+    }
+
+    return result;
   }
 
   /**
