@@ -1,5 +1,23 @@
 # Changelog
 
+## v5.6.1 (2026-07-01)
+
+### Added
+- **Integration Tests**: 39 new tests with real imports (no vi.mock for claw-mem/claw-rl)
+  - `tests/plugin-registration.test.ts`: Plugin registration smoke tests (6 tests)
+  - `tests/engine-integration.test.ts`: Engine integration with real dependencies (10 tests)
+  - `tests/session-resume/pipeline-integration.test.ts`: Session-resume pipeline tests (11 tests)
+  - `tests/injectors/coordination.test.ts`: Multi-injector coordination tests (13 tests)
+
+### Changed
+- Test methodology upgrade: Integration tests now use real `src/` imports instead of vi.mock
+- Follows tri-role-release-v2 Test Methodology Standard: "hook/integration tests MUST import real src/ modules"
+
+### Verified
+- Build: 0 errors
+- Tests: 886/886 passed (57 files)
+- No regression: All 847 existing tests still pass
+
 ## v5.6.0 (2026-07-01)
 
 ### Added

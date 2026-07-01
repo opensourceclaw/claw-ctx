@@ -6,3 +6,4 @@ docs/
 docs/api/
 *.log
 .DS_Store
+.claw-mem-index/
