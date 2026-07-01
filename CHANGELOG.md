@@ -1,5 +1,42 @@
 # Changelog
 
+## v5.6.0 (2026-07-01)
+
+### Added
+- **ContextQualityEvaluator**: 3-dimension quality evaluation (coverage, redundancy, freshness)
+- **CoverageEvaluator**: Query keyword coverage in context (stopword filtering, entity matching)
+- **RedundancyEvaluator**: Jaccard similarity for duplicate detection (with sampling for performance)
+- **FreshnessEvaluator**: Exponential decay on entry timestamps (configurable half-life)
+- **ContextQualityReport**: Structured quality report with assessment (good/acceptable/poor)
+- **relevanceScore passthrough**: HistoryLoader passes hybrid_search score to HistoryEntry
+- **engine.ts integration**: ContextAssembler now integrated into main assembly pipeline
+
+### Changed
+- `types.ts`: Added `relevanceScore` to HistoryEntry
+- `context-assembler.ts`: Uses relevanceScore for relevance sort, evaluates quality
+- `history-loader.ts`: Passes through search score as relevanceScore
+- `bootstrap.ts`: Added `getManager()` method for ContextAssembler initialization
+- `engine.ts`: Preloads ContextAssembler result, uses cached result in sync methods
+
+### Quality Dimensions
+| Dimension | Weight | Method |
+|-----------|:------:|--------|
+| Coverage | 0.40 | Keyword match: context vs query |
+| Redundancy | 0.35 | Jaccard similarity between entries |
+| Freshness | 0.25 | Exponential decay on timestamps |
+
+### Integration Pipeline
+```
+engine.assemble() [async]
+    ├── ContextAssembler.assemble() → _lastAssemblyResult
+    ├── _buildStableSessionResume() → uses _lastAssemblyResult.formatted
+    └── _injectSessionResume() → uses _lastAssemblyResult.formatted
+```
+
+### Verified
+- Build: 0 errors
+- Tests: 847/847 passed (53 files)
+
 ## v5.5.0 (2026-07-01)
 
 ### Added

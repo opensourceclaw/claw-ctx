@@ -5,6 +5,7 @@
  * Routes to appropriate strategy, loads history, formats output.
  *
  * v5.5.0: Initial implementation
+ * v5.6.0: Added ContextQualityEvaluator integration
  */
 
 import type { TaskType } from "../adaptive/task-type-detector.js";
@@ -12,6 +13,12 @@ import type { HistoryEntry, HistoryLoadResult, SessionResumeConfig } from "./typ
 import { DEFAULT_SESSION_RESUME_CONFIG } from "./types.js";
 import { HistoryLoader } from "./history-loader.js";
 import { StrategyRouter } from "./strategy-router.js";
+import {
+  ContextQualityEvaluator,
+  type ContextQualityReport,
+  type QualityEvaluatorConfig,
+  DEFAULT_QUALITY_CONFIG,
+} from "./context-quality-evaluator.js";
 import type {
   AssemblyStrategyType,
   AssemblyParams,
@@ -32,6 +39,9 @@ export interface AssemblyResult {
   /** Strategy-specific formatted context */
   formatted: string;
 
+  /** v5.6.0: Quality evaluation report */
+  quality?: ContextQualityReport;
+
   /** Metadata for debugging and telemetry */
   metadata: {
     taskType: TaskType;
@@ -50,6 +60,10 @@ export interface ContextAssemblerConfig {
   defaultStrategy?: AssemblyStrategyType;
   /** Enable debug logging */
   debug?: boolean;
+  /** v5.6.0: Enable quality evaluation (default: true) */
+  enableQualityEval?: boolean;
+  /** v5.6.0: Quality evaluator configuration */
+  qualityConfig?: Partial<QualityEvaluatorConfig>;
 }
 
 /**
@@ -63,11 +77,16 @@ export class ContextAssembler {
   private _router: StrategyRouter;
   private _historyLoader: HistoryLoader;
   private _config: ContextAssemblerConfig;
+  private _qualityEvaluator?: ContextQualityEvaluator;  // v5.6.0
 
   constructor(historyLoader: HistoryLoader, config?: ContextAssemblerConfig) {
     this._router = new StrategyRouter();
     this._historyLoader = historyLoader;
     this._config = config ?? {};
+    // v5.6.0: Initialize quality evaluator if enabled
+    if (this._config.enableQualityEval !== false) {
+      this._qualityEvaluator = new ContextQualityEvaluator(config?.qualityConfig);
+    }
   }
 
   /**
@@ -107,10 +126,17 @@ export class ContextAssembler {
         strategy.params
       );
 
+      // v5.6.0: Step 5: Evaluate quality
+      let quality: ContextQualityReport | undefined;
+      if (this._qualityEvaluator) {
+        quality = this._qualityEvaluator.evaluate(sortedEntries, formatted, query);
+      }
+
       return {
         strategy: strategy.type,
         historyResult,
         formatted,
+        quality,  // v5.6.0
         metadata: {
           taskType,
           strategy: strategy.type,
@@ -251,11 +277,22 @@ export class ContextAssembler {
         );
 
       case "relevance":
-        // Highest score first
-        // Note: relevance score not directly available, use recency as proxy
-        return sorted.sort(
-          (a, b) => b.summary.timestamp - a.summary.timestamp
-        );
+        // v5.6.0: Use relevanceScore if available, fallback to recency
+        return sorted.sort((a, b) => {
+          // If both have relevanceScore, use it
+          if (a.relevanceScore !== undefined && b.relevanceScore !== undefined) {
+            return b.relevanceScore - a.relevanceScore;  // Higher score first
+          }
+
+          // If neither has relevanceScore, use timestamp (recency)
+          if (a.relevanceScore === undefined && b.relevanceScore === undefined) {
+            return b.summary.timestamp - a.summary.timestamp;
+          }
+
+          // Mixed: prioritize entries with relevanceScore
+          if (a.relevanceScore !== undefined) return -1;
+          return 1;
+        });
 
       case "chronological":
         // Oldest first (for timeline reconstruction)

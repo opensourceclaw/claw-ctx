@@ -139,4 +139,12 @@ export class SessionResumeManager {
   reset(): void {
     this._history = null;
   }
+
+  /**
+   * v5.6.0: Get the MemoryManager instance.
+   * Used by engine.ts to create HistoryLoader + ContextAssembler.
+   */
+  getManager(): MemoryManager {
+    return this._manager;
+  }
 }

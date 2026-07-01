@@ -218,7 +218,7 @@ export class HistoryLoader {
     }
 
     // Parse summaries
-    const raw: Array<{ summary: SessionSummary; memoryId: string; storedAt: number }> = [];
+    const raw: Array<{ summary: SessionSummary; memoryId: string; storedAt: number; score: number }> = [];
     for (const r of tagged) {
       let summary: SessionSummary | null = null;
       try {
@@ -233,7 +233,8 @@ export class HistoryLoader {
       const ageHours = (now - summary.timestamp) / 3600000;
       if (ageHours > cfg.maxAgeHours) continue;
 
-      raw.push({ summary, memoryId: r.id ?? "", storedAt: summary.timestamp });
+      // v5.6.0: Include relevance score from search result
+      raw.push({ summary, memoryId: r.id ?? "", storedAt: summary.timestamp, score: r.score });
     }
 
     // Deduplicate by sessionId (keep most recent)
@@ -246,9 +247,16 @@ export class HistoryLoader {
     }
 
     // Sort by recency descending
+    // v5.6.0: Include relevanceScore in HistoryEntry
     const entries: HistoryEntry[] = [...dedupMap.values()]
       .sort((a, b) => b.summary.timestamp - a.summary.timestamp)
-      .slice(0, cfg.maxHistorySessions);
+      .slice(0, cfg.maxHistorySessions)
+      .map(item => ({
+        summary: item.summary,
+        memoryId: item.memoryId,
+        storedAt: item.storedAt,
+        relevanceScore: item.score,  // v5.6.0: Pass through relevance score
+      }));
 
     // Format
     const formatted = this._formatEntries(entries, cfg.injectMode as "full" | "compact");

@@ -84,3 +84,13 @@ export {
   type AssemblyResult as ContextAssemblyResult,
   type ContextAssemblerConfig,
 } from "./context-assembler.js";
+// v5.6.0: Context Quality Evaluator
+export {
+  ContextQualityEvaluator,
+  type ContextQualityReport,
+  type QualityEvaluatorConfig,
+  DEFAULT_QUALITY_CONFIG,
+} from "./context-quality-evaluator.js";
+export { CoverageEvaluator, type CoverageResult } from "./coverage-evaluator.js";
+export { RedundancyEvaluator, type RedundancyResult } from "./redundancy-evaluator.js";
+export { FreshnessEvaluator, type FreshnessResult } from "./freshness-evaluator.js";

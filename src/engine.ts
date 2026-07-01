@@ -72,6 +72,9 @@ import { AutoSessionController, type AutoSessionConfig } from "./auto-session.js
 import { SemanticCompressor, type CompressionResult } from "./semantic-compressor.js";
 import { SessionResumeManager, type SessionResumeConfig, DEFAULT_SESSION_RESUME_CONFIG } from "./session-resume/mod.js";
 import { CheckpointManager } from "./session-resume/checkpoint.js";
+import { ContextAssembler, type AssemblyResult } from "./session-resume/context-assembler.js";
+import { HistoryLoader } from "./session-resume/history-loader.js";
+import { TaskTypeDetector } from "./adaptive/task-type-detector.js";
 
 // v4.11.0: RL-driven memory strategy selection
 import {
@@ -262,6 +265,10 @@ export class ClawContextEngine {
   }> = new Map();
   // v5.2.1: Auto-session suggestion flag (once per session)
   private _autoSessionSuggested: boolean = false;
+  // v5.6.0: Context assembler and task type detector
+  private _contextAssembler: ContextAssembler | null = null;
+  private _taskTypeDetector: TaskTypeDetector | null = null;
+  private _lastAssemblyResult: AssemblyResult | null = null;
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -297,6 +304,15 @@ export class ClawContextEngine {
           ? { ...DEFAULT_SESSION_RESUME_CONFIG, ...config.sessionResume }
           : DEFAULT_SESSION_RESUME_CONFIG
       );
+      // v5.6.0: Initialize context assembler
+      this._taskTypeDetector = new TaskTypeDetector();
+      const historyLoader = new HistoryLoader(
+        this._sessionResume.getManager(),
+        this._sessionResume.getConfig()
+      );
+      this._contextAssembler = new ContextAssembler(historyLoader, {
+        debug: config.debug,
+      });
     }
     // v5.1.0: Checkpoint manager (feature detection — no-op if claw-mem < v6.27.0)
     this._checkpointManager = new CheckpointManager(
@@ -459,6 +475,33 @@ export class ClawContextEngine {
     const dynamicAdditions: string[] = [];
 
     // === STABLE PREFIX (cached by DeepSeek) ===
+
+    // v5.6.0: Preload context using ContextAssembler
+    if (this._contextAssembler && this._taskTypeDetector) {
+      try {
+        const messages = p.messages ?? [];
+        const lastMessage = messages[messages.length - 1];
+        const query = this._extractTextFromMessage(lastMessage);
+        const taskSignature = this._taskTypeDetector.detect(query ?? "");
+
+        this._lastAssemblyResult = await this._contextAssembler.assemble(
+          p.sessionId,
+          taskSignature.type,
+          query
+        );
+
+        // Log quality if available
+        if (this._lastAssemblyResult.quality && this.config.debug) {
+          this.logger.info(`[claw-ctx] Context quality: ${this._lastAssemblyResult.quality.overall.toFixed(2)} (${this._lastAssemblyResult.quality.assessment})`);
+        }
+      } catch (error) {
+        // Non-blocking: fallback to cached result or null
+        if (this.config.debug) {
+          this.logger.warn("[claw-ctx] ContextAssembler preload failed:", error);
+        }
+        this._lastAssemblyResult = null;
+      }
+    }
 
     // v5.2.0: Session resume first (fixed format)
     const sessionResumeBlock = this._buildStableSessionResume(p.sessionId);
@@ -1214,6 +1257,20 @@ export class ClawContextEngine {
       }
     }
 
+    // v5.6.0: Use cached ContextAssembler result if available
+    if (this._lastAssemblyResult?.formatted) {
+      const historySection = [
+        "[Session History]",
+        "The following summarizes recent sessions for continuity:",
+        "",
+        this._lastAssemblyResult.formatted,
+        "",
+        "Use this context to maintain continuity across sessions.",
+      ].join("\n");
+      return sys ? `${sys}\n\n${historySection}` : historySection;
+    }
+
+    // Fallback: use SessionResumeManager directly
     if (!this._sessionResume) return sys;
     try {
       const historySection = this._sessionResume.assemble();
@@ -1231,6 +1288,7 @@ export class ClawContextEngine {
   /**
    * v5.2.0: Build stable session resume with deterministic format.
    * Uses session hash to create cacheable prefix.
+   * v5.6.0: Uses cached ContextAssembler result if available.
    */
   private _buildStableSessionResume(sessionId: string): string | undefined {
     const sessionHash = this._computeSessionHash(sessionId);
@@ -1244,8 +1302,11 @@ export class ClawContextEngine {
       }
     }
 
-    // Session resume history
-    if (this._sessionResume) {
+    // v5.6.0: Use cached ContextAssembler result if available
+    if (this._lastAssemblyResult?.formatted) {
+      parts.push(`[Session History — hash:${sessionHash}]\n${this._sanitizeDynamicContent(this._lastAssemblyResult.formatted)}`);
+    } else if (this._sessionResume) {
+      // Fallback: use SessionResumeManager directly
       try {
         const historySection = this._sessionResume.assemble();
         if (historySection) {
@@ -1408,6 +1469,27 @@ export class ClawContextEngine {
       .replace(/msg-\d+/g, "[msg-id]")
       .replace(/turn \d+/gi, "[turn]")
       .replace(/\d{13,}/g, "[ts]");  // Unix timestamps
+  }
+
+  /**
+   * v5.6.0: Extract text from a message (handles various message formats).
+   */
+  private _extractTextFromMessage(message: unknown): string | undefined {
+    if (!message) return undefined;
+    if (typeof message === "string") return message;
+    if (typeof message === "object" && message !== null) {
+      const msg = message as Record<string, unknown>;
+      if (typeof msg.content === "string") return msg.content;
+      if (Array.isArray(msg.content)) {
+        return msg.content
+          .filter((part: unknown): part is { type: string; text: string } =>
+            typeof part === "object" && part !== null && (part as { type?: string }).type === "text"
+          )
+          .map((part) => part.text)
+          .join(" ");
+      }
+    }
+    return undefined;
   }
 
   async dispose(): Promise<void> {

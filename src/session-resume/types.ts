@@ -85,6 +85,8 @@ export interface HistoryEntry {
   memoryId: string;
   /** Timestamp of storage */
   storedAt: number;
+  /** v5.6.0: Relevance score from search (0-1), if available */
+  relevanceScore?: number;
 }
 
 /** v5.1.0: Session Snapshot for checkpoint/recovery. Mirrors claw-mem SessionSnapshot. */
