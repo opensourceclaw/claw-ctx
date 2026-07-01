@@ -57,7 +57,7 @@ const plugin = {
   id: "claw-ctx",
   name: "Claw Context Engine",
   description: "Context Engine with C2 gating, RL injection, governance signals, cross-domain injection, CI/CD signals, and self-refinement for OpenClaw agents",
-  version: "5.1.0",
+  version: "5.6.0",
   kind: "context-engine",
 
   register(api: any) {
@@ -71,7 +71,7 @@ const plugin = {
       (api as any).registerContextEngine("claw-ctx", (_ctx: any) => {
         return createClawContextEngine(config, api.logger);
       });
-      api.logger.info("[claw-ctx] v4.26.0 registered");
+      api.logger.info("[claw-ctx] v5.6.0 registered");
     } catch (e) {
       api.logger.warn("[claw-ctx] registration failed:", e);
     }
