@@ -27,10 +27,11 @@
  * v1.0.0: Initial implementation
  */
 
-import type { SessionResumeConfig, HistoryLoadResult, SessionSummary } from "./types.js";
+import type { SessionResumeConfig, HistoryLoadResult, SessionSummary, RecapLoadResult } from "./types.js";
 import { DEFAULT_SESSION_RESUME_CONFIG } from "./types.js";
 import { SummaryGenerator } from "./summary-generator.js";
 import { HistoryLoader } from "./history-loader.js";
+import { RecapLoader } from "./recap-loader.js";
 
 // Minimal MemoryManager interface (duck-typed to match claw-mem)
 interface MemoryManager {
@@ -47,6 +48,7 @@ export class SessionResumeManager {
   private _manager: MemoryManager;
   private _config: SessionResumeConfig;
   private _history: HistoryLoadResult | null = null;
+  private _recap: RecapLoadResult | null = null;
   private _generator: SummaryGenerator;
 
   constructor(manager: MemoryManager, config?: Partial<SessionResumeConfig>) {
@@ -57,9 +59,21 @@ export class SessionResumeManager {
 
   /**
    * Phase 1: bootstrap — load history from claw-mem.
+   * v5.7.0: Also loads recap when injectMode="recap".
    */
   async bootstrap(sessionId: string): Promise<{ historyLoaded: boolean; sessionCount: number }> {
     try {
+      // v5.7.0: Load recap if injectMode is "recap"
+      if (this._config.injectMode === "recap") {
+        const recapLoader = new RecapLoader(this._manager);
+        this._recap = await recapLoader.load(sessionId);
+        return {
+          historyLoaded: this._recap?.recap !== null,
+          sessionCount: this._recap?.recap ? 1 : 0,
+        };
+      }
+
+      // Original history loading for other modes
       const loader = new HistoryLoader(this._manager, this._config);
       this._history = await loader.load(sessionId);
       return {
@@ -68,6 +82,7 @@ export class SessionResumeManager {
       };
     } catch (e) {
       this._history = null;
+      this._recap = null;
       return { historyLoaded: false, sessionCount: 0 };
     }
   }
@@ -75,9 +90,25 @@ export class SessionResumeManager {
   /**
    * Phase 2: assemble — format history as systemPromptAddition section.
    * Returns null if no history or injectMode is disabled.
+   * v5.7.0: Returns recap if injectMode="recap".
    */
   assemble(): string | null {
     if (this._config.injectMode === "disabled") return null;
+
+    // v5.7.0: Return recap for recap mode
+    if (this._config.injectMode === "recap") {
+      if (!this._recap || !this._recap.formatted) return null;
+      return [
+        "[Session Recap]",
+        "The following summarizes your last session:",
+        "",
+        this._recap.formatted,
+        "",
+        "Use this context to continue where you left off.",
+      ].join("\n");
+    }
+
+    // Original assembly for full/compact modes
     if (!this._history || this._history.entries.length === 0) return null;
     if (!this._history.formatted) return null;
 
@@ -138,6 +169,7 @@ export class SessionResumeManager {
   /** Reset state. */
   reset(): void {
     this._history = null;
+    this._recap = null;
   }
 
   /**

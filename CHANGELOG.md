@@ -1,5 +1,24 @@
 # Changelog
 
+## v5.7.0 (2026-07-05)
+
+### Added
+- **Recap Loader** (`src/session-resume/recap-loader.ts`)
+  - Loads session recaps from claw-mem
+  - Used when injectMode="recap" for lightweight session recovery
+  - Parses recap content and metadata
+
+- **Recap Formatter** (`src/session-resume/recap-formatter.ts`)
+  - Formats recaps for context injection
+  - Three styles: friendly, compact, detailed
+  - Configurable max length and metadata inclusion
+
+### Changed
+- **types.ts**: Added "recap" to injectMode options
+- **bootstrap.ts**: SessionResumeManager now supports recap injection mode
+  - When injectMode="recap", only injects session recap (not full history)
+- **mod.ts**: Exported RecapLoader, RecapFormatter, Recap types
+
 ## v5.6.2 (2026-07-01)
 
 ### Fixed

@@ -47,7 +47,7 @@ export interface SessionResumeConfig {
   /** Minimum relevance score threshold (default: 0.3) */
   minRelevance: number;
   /** How to inject history */
-  injectMode: "full" | "compact" | "disabled";
+  injectMode: "full" | "compact" | "recap" | "disabled";
   /** Store summary every afterTurn (default: true) */
   storeOnEveryTurn: boolean;
   // v5.3.0: Completeness configuration
@@ -181,4 +181,23 @@ export interface AssemblyResult {
     entryCount: number;
     completenessScore?: number;
   };
+}
+
+// v5.7.0: Recap types for session recap injection
+
+export interface Recap {
+  /** What we were doing in the session */
+  whatWereWeDoing: string;
+  /** What is the next step */
+  whatIsNext: string;
+  /** When the recap was generated */
+  timestamp: number;
+  /** Session identifier */
+  sessionId: string;
+}
+
+export interface RecapLoadResult {
+  recap: Recap | null;
+  formatted: string | null;
+  sessionId: string;
 }

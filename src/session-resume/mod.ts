@@ -94,3 +94,7 @@ export {
 export { CoverageEvaluator, type CoverageResult } from "./coverage-evaluator.js";
 export { RedundancyEvaluator, type RedundancyResult } from "./redundancy-evaluator.js";
 export { FreshnessEvaluator, type FreshnessResult } from "./freshness-evaluator.js";
+// v5.7.0: Recap Loader and Formatter
+export { RecapLoader } from "./recap-loader.js";
+export { RecapFormatter, type RecapFormatOptions } from "./recap-formatter.js";
+export type { Recap, RecapLoadResult } from "./types.js";
