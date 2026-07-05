@@ -45,15 +45,18 @@ export class RecapLoader {
    */
   async load(sessionId?: string): Promise<RecapLoadResult> {
     try {
-      // Search for session_recap memories
+      // v5.8.0: Search for session_recap memories with time-based sorting
+      // When sessionId is provided, filter by session_id
+      // When sessionId is undefined, return the most recent recap (not all)
       const query = sessionId
         ? `session_id:${sessionId} session_recap`
         : "session_recap";
 
+      // v5.8.0: Request multiple results to sort by timestamp
       const results = await this._manager.search(query, {
         memory_type: "session_recap",
         tags: ["session_recap"],
-      }, 1);
+      }, sessionId ? 1 : 5); // Get more results when sessionId is undefined
 
       if (!results || results.length === 0) {
         return {
@@ -63,8 +66,14 @@ export class RecapLoader {
         };
       }
 
-      // Parse the recap from the memory content
-      const memory = results[0];
+      // v5.8.0: Sort by timestamp and take the most recent
+      const sortedResults = results.sort((a, b) => {
+        const tsA = a.timestamp ?? (typeof a.metadata?.timestamp === 'number' ? a.metadata.timestamp : 0);
+        const tsB = b.timestamp ?? (typeof b.metadata?.timestamp === 'number' ? b.metadata.timestamp : 0);
+        return tsB - tsA; // Most recent first
+      });
+
+      const memory = sortedResults[0];
       const recap = this.parseRecap(memory.content, memory.metadata);
 
       // Format for injection

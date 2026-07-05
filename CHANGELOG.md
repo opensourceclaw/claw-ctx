@@ -1,5 +1,31 @@
 # Changelog
 
+## v5.8.0 (2026-07-05)
+
+### Fixed
+- **ContextAssembler ignoring injectMode="recap"**: When injectMode was set to "recap", ContextAssembler still loaded full history
+  - Added check before calling ContextAssembler.assemble() to skip when injectMode="recap"
+  - Engine.ts line 480: Skip ContextAssembler preload when isRecapMode is true
+
+- **RecapLoader search logic**: When sessionId=undefined, search returned unsorted results
+  - Added time-based sorting to return most recent recap
+  - Request multiple results (5) when sessionId is undefined, then sort by timestamp
+  - Properly handles metadata.timestamp type conversion
+
+- **_buildStableSessionResume priority**: Used ContextAssembler result instead of recap when injectMode="recap"
+  - Added explicit check for injectMode="recap" at the start of the method
+  - When injectMode="recap", uses SessionResumeManager.assemble() directly
+  - Returns with [Session Recap] prefix instead of [Session History]
+
+### Changed
+- **engine.ts**: Two modifications for recap mode support
+  - Line 482-484: Check injectMode before calling ContextAssembler
+  - Line 1305-1318: Priority logic for recap mode in _buildStableSessionResume
+
+- **recap-loader.ts**: Enhanced search with time-based sorting
+  - Line 56-59: Request multiple results when sessionId undefined
+  - Line 70-73: Sort by timestamp (most recent first)
+
 ## v5.7.0 (2026-07-05)
 
 ### Added

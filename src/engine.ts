@@ -477,7 +477,11 @@ export class ClawContextEngine {
     // === STABLE PREFIX (cached by DeepSeek) ===
 
     // v5.6.0: Preload context using ContextAssembler
-    if (this._contextAssembler && this._taskTypeDetector) {
+    // v5.8.0: Skip ContextAssembler when injectMode="recap" — use SessionResumeManager instead
+    const resumeConfig = this._sessionResume?.getConfig();
+    const isRecapMode = resumeConfig?.injectMode === "recap";
+
+    if (this._contextAssembler && this._taskTypeDetector && !isRecapMode) {
       try {
         const messages = p.messages ?? [];
         const lastMessage = messages[messages.length - 1];
@@ -1289,6 +1293,7 @@ export class ClawContextEngine {
    * v5.2.0: Build stable session resume with deterministic format.
    * Uses session hash to create cacheable prefix.
    * v5.6.0: Uses cached ContextAssembler result if available.
+   * v5.8.0: When injectMode="recap", uses SessionResumeManager directly.
    */
   private _buildStableSessionResume(sessionId: string): string | undefined {
     const sessionHash = this._computeSessionHash(sessionId);
@@ -1300,6 +1305,20 @@ export class ClawContextEngine {
       if (recovery) {
         parts.push(`[Recovery Context]\n${this._sanitizeDynamicContent(recovery)}`);
       }
+    }
+
+    // v5.8.0: Check injectMode — if "recap", use SessionResumeManager directly
+    const resumeConfig = this._sessionResume?.getConfig();
+    if (resumeConfig?.injectMode === "recap" && this._sessionResume) {
+      try {
+        const recapSection = this._sessionResume.assemble();
+        if (recapSection) {
+          parts.push(`[Session Recap — hash:${sessionHash}]\n${this._sanitizeDynamicContent(recapSection)}`);
+        }
+      } catch {
+        // session resume assembly is non-blocking
+      }
+      return parts.length > 0 ? parts.join("\n\n") : undefined;
     }
 
     // v5.6.0: Use cached ContextAssembler result if available
