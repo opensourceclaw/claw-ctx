@@ -1,5 +1,30 @@
 # Changelog
 
+## v5.9.0 (2026-07-06)
+
+### Added
+- **CheckpointManager Enhanced Logging** (`src/session-resume/checkpoint.ts`)
+  - Added detailed logging for all checkpoint operations
+  - Logger interface for custom logging implementations
+  - Checkpoint statistics (count, last checkpoint time)
+  - Better error messages with stack traces
+
+### Changed
+- **CheckpointManager** (`src/session-resume/checkpoint.ts`)
+  - Improved error handling with detailed logging
+  - Added stats property for checkpoint monitoring
+  - Added logger parameter to constructor
+
+- **RecapLoader** (`src/session-resume/recap-loader.ts`)
+  - Added fallback logic: if session_summary not found, try loading session-related memories
+  - Improved timestamp sorting with better null handling
+  - Added extractTimestamp helper method
+  - Added logger parameter to constructor
+
+### Fixed
+- Session snapshot storage errors now logged instead of silently swallowed
+- Recap loading fallback improves recovery success rate
+
 ## v5.8.0 (2026-07-05)
 
 ### Fixed

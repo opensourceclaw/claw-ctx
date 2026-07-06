@@ -1,8 +1,13 @@
 /**
- * claw-ctx v5.7.0 — Recap Loader
+ * claw-ctx v5.9.0 — Recap Loader
  *
  * Loads session recaps from claw-mem for session continuity.
  * Used when injectMode="recap" for lightweight session recovery.
+ *
+ * v5.9.0 Changes:
+ * - Added fallback logic for loading recent memories
+ * - Improved time sorting with better null handling
+ * - Added detailed logging for debugging
  *
  * Copyright 2026 OpenSourceClaw Contributors
  * Licensed under the Apache License, Version 2.0
@@ -11,8 +16,9 @@
 import type { Recap, RecapLoadResult } from "./types.js";
 
 // Minimal MemoryManager interface for recap loading
+// v5.8.1: Uses bridge-compatible search signature: (query, memoryType, limit)
 interface MemoryManager {
-  search(query: string, opts?: any, topK?: number): Promise<Array<{
+  search(query: string, memoryType?: string, limit?: number): Promise<Array<{
     content: string;
     score: number;
     tags?: string[];
@@ -23,7 +29,24 @@ interface MemoryManager {
 }
 
 /**
+ * v5.9.0: Logger interface for recap loading
+ */
+interface RecapLogger {
+  info(message: string, data?: Record<string, unknown>): void;
+  warn(message: string, data?: Record<string, unknown>): void;
+  error(message: string, data?: Record<string, unknown>): void;
+}
+
+const defaultLogger: RecapLogger = {
+  info: (msg, data) => console.log(`[RecapLoader] INFO: ${msg}`, data || ""),
+  warn: (msg, data) => console.warn(`[RecapLoader] WARN: ${msg}`, data || ""),
+  error: (msg, data) => console.error(`[RecapLoader] ERROR: ${msg}`, data || ""),
+};
+
+/**
  * RecapLoader - Loads session recaps from claw-mem
+ *
+ * v5.9.0: Enhanced with fallback logic and better error handling
  *
  * Usage:
  *   const loader = new RecapLoader(manager);
@@ -32,33 +55,48 @@ interface MemoryManager {
  */
 export class RecapLoader {
   private _manager: MemoryManager;
+  private _logger: RecapLogger;
 
-  constructor(manager: MemoryManager) {
+  constructor(manager: MemoryManager, logger?: RecapLogger) {
     this._manager = manager;
+    this._logger = logger ?? defaultLogger;
   }
 
   /**
    * Load the most recent recap for a session.
+   *
+   * v5.9.0: Enhanced with fallback logic
+   *   1. First try loading session_summary
+   *   2. If not found, fallback to loading any session-related memories
+   *   3. Improved timestamp sorting with null handling
    *
    * @param sessionId - Target session ID (optional, loads latest if not provided)
    * @returns RecapLoadResult with recap data and formatted text
    */
   async load(sessionId?: string): Promise<RecapLoadResult> {
     try {
-      // v5.8.0: Search for session_recap memories with time-based sorting
-      // When sessionId is provided, filter by session_id
-      // When sessionId is undefined, return the most recent recap (not all)
-      const query = sessionId
-        ? `session_id:${sessionId} session_recap`
-        : "session_recap";
+      this._logger.info("loading recap", { sessionId });
 
-      // v5.8.0: Request multiple results to sort by timestamp
-      const results = await this._manager.search(query, {
-        memory_type: "session_recap",
-        tags: ["session_recap"],
-      }, sessionId ? 1 : 5); // Get more results when sessionId is undefined
+      // v5.9.0: Primary search - session_summary
+      const results = await this._manager.search(
+        "session_summary",  // keyword query
+        undefined,          // memoryType - storage doesn't set this
+        10                 // limit - get enough results to find recent one
+      );
 
       if (!results || results.length === 0) {
+        this._logger.warn("no session_summary found, trying fallback");
+
+        // v5.9.0: Fallback - try loading any session-related memories
+        const fallbackResults = await this.loadFallback(sessionId);
+
+        if (fallbackResults) {
+          this._logger.info("fallback succeeded", {
+            sessionId: fallbackResults.sessionId,
+          });
+          return fallbackResults;
+        }
+
         return {
           recap: null,
           formatted: null,
@@ -66,17 +104,115 @@ export class RecapLoader {
         };
       }
 
-      // v5.8.0: Sort by timestamp and take the most recent
-      const sortedResults = results.sort((a, b) => {
-        const tsA = a.timestamp ?? (typeof a.metadata?.timestamp === 'number' ? a.metadata.timestamp : 0);
-        const tsB = b.timestamp ?? (typeof b.metadata?.timestamp === 'number' ? b.metadata.timestamp : 0);
-        return tsB - tsA; // Most recent first
+      this._logger.info("session_summary results found", {
+        count: results.length,
       });
+
+      // v5.8.1: Filter by sessionId if provided, then sort by timestamp
+      let filteredResults = results;
+
+      // Filter by sessionId if provided
+      if (sessionId) {
+        filteredResults = results.filter((r: any) => {
+          const meta = r.metadata || {};
+          return meta.session_id === sessionId || meta.sessionId === sessionId;
+        });
+
+        this._logger.info("filtered by sessionId", {
+          targetSessionId: sessionId,
+          matchCount: filteredResults.length,
+        });
+
+        // If no results for this session, try fallback
+        if (filteredResults.length === 0) {
+          this._logger.warn("no results for sessionId, trying fallback");
+          const fallbackResults = await this.loadFallback(sessionId);
+
+          if (fallbackResults) {
+            return fallbackResults;
+          }
+
+          return {
+            recap: null,
+            formatted: null,
+            sessionId: sessionId,
+          };
+        }
+      }
+
+      // v5.9.0: Improved sort by timestamp with better null handling
+      const sortedResults = this.sortByTimestamp(filteredResults);
 
       const memory = sortedResults[0];
       const recap = this.parseRecap(memory.content, memory.metadata);
 
       // Format for injection
+      const formatted = this.formatRecap(recap);
+
+      this._logger.info("recap loaded successfully", {
+        sessionId: recap.sessionId,
+        timestamp: recap.timestamp,
+      });
+
+      return {
+        recap,
+        formatted,
+        sessionId: recap.sessionId,
+      };
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this._logger.error("load failed", {
+        error: errorMsg,
+        sessionId,
+      });
+
+      return {
+        recap: null,
+        formatted: null,
+        sessionId: sessionId || "",
+      };
+    }
+  }
+
+  /**
+   * v5.9.0: Fallback loading when primary search fails
+   */
+  private async loadFallback(sessionId?: string): Promise<RecapLoadResult | null> {
+    try {
+      // Try searching for any session-related content
+      const fallbackResults = await this._manager.search(
+        "session",  // broader keyword
+        undefined,
+        5
+      );
+
+      if (!fallbackResults || fallbackResults.length === 0) {
+        this._logger.warn("fallback: no session-related memories found");
+        return null;
+      }
+
+      this._logger.info("fallback: found session-related memories", {
+        count: fallbackResults.length,
+      });
+
+      // Filter by sessionId if provided
+      let filteredResults = fallbackResults;
+      if (sessionId) {
+        filteredResults = fallbackResults.filter((r: any) => {
+          const meta = r.metadata || {};
+          return meta.session_id === sessionId || meta.sessionId === sessionId;
+        });
+
+        if (filteredResults.length === 0) {
+          this._logger.warn("fallback: no matching sessionId");
+          return null;
+        }
+      }
+
+      // Sort by timestamp
+      const sortedResults = this.sortByTimestamp(filteredResults);
+      const memory = sortedResults[0];
+      const recap = this.parseRecap(memory.content, memory.metadata);
       const formatted = this.formatRecap(recap);
 
       return {
@@ -85,12 +221,52 @@ export class RecapLoader {
         sessionId: recap.sessionId,
       };
     } catch (error) {
-      return {
-        recap: null,
-        formatted: null,
-        sessionId: sessionId || "",
-      };
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this._logger.error("fallback failed", { error: errorMsg });
+      return null;
     }
+  }
+
+  /**
+   * v5.9.0: Sort results by timestamp with improved null handling
+   */
+  private sortByTimestamp(results: any[]): any[] {
+    return results.sort((a: any, b: any) => {
+      const tsA = this.extractTimestamp(a);
+      const tsB = this.extractTimestamp(b);
+      return tsB - tsA; // Most recent first
+    });
+  }
+
+  /**
+   * v5.9.0: Extract timestamp from memory record with fallbacks
+   */
+  private extractTimestamp(record: any): number {
+    // Try direct timestamp
+    if (typeof record.timestamp === "number") {
+      return record.timestamp;
+    }
+
+    // Try metadata timestamp
+    if (record.metadata && typeof record.metadata.timestamp === "number") {
+      return record.metadata.timestamp;
+    }
+
+    // Try metadata created_at
+    if (record.metadata && typeof record.metadata.created_at === "number") {
+      return record.metadata.created_at;
+    }
+
+    // Try parsing date string
+    if (record.metadata && typeof record.metadata.created_at === "string") {
+      const parsed = Date.parse(record.metadata.created_at);
+      if (!isNaN(parsed)) {
+        return parsed;
+      }
+    }
+
+    // Default to 0 (oldest)
+    return 0;
   }
 
   /**
@@ -104,7 +280,7 @@ export class RecapLoader {
     return {
       whatWereWeDoing: whatDoingMatch ? whatDoingMatch[1].trim() : content.substring(0, 100),
       whatIsNext: nextMatch ? nextMatch[1].trim() : "Continue with current task",
-      timestamp: (metadata?.timestamp as number) || Date.now(),
+      timestamp: this.extractTimestamp({ metadata }),
       sessionId: (metadata?.session_id as string) || "",
     };
   }
