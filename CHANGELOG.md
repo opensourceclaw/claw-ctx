@@ -1,5 +1,15 @@
 # Changelog
 
+## v5.9.3 (2026-07-06)
+
+### Fixed
+- **afterTurn auto-ingest**: When OpenClaw calls afterTurn directly (without prior ingest), claw-ctx now auto-ingests new messages before checkpointing
+- Session Snapshot now works end-to-end (verified: checkpointCount increments correctly)
+
+### Changed
+- **engine.ts**: Added diagnostic logging for `_sessionState` in afterTurn checkpoint
+- **engine.ts**: Added diagnostic logging for ingest state extraction
+
 ## v5.9.2 (2026-07-06)
 
 ### Fixed

@@ -371,6 +371,7 @@ export class ClawContextEngine {
       this._sessionState = this._sessionState
         ? SessionStateExtractor.merge(this._sessionState, newState)
         : newState;
+      this.logger.info(`[claw-ctx] ingest: _sessionState set, entities=${this._sessionState.entities?.length ?? 0}`);
 
       // v4.9.0: Feed dependency tracker
       if (this._depTracker) {
@@ -909,6 +910,18 @@ export class ClawContextEngine {
     if (this.config.debug) this.logger.info(`[claw-ctx] afterTurn() called, sessionId=${p.sessionId}, messages=${p.messages?.length ?? 0}`);
     if (p.isHeartbeat) return;
     this._session(p.sessionId);
+
+    // v5.9.3: Ingest new messages when afterTurn is called directly (without prior ingest)
+    if (p.messages && p.messages.length > 0) {
+      const newMessages = p.messages.slice(p.prePromptMessageCount ?? 0);
+      if (newMessages.length > 0) {
+        try {
+          for (const m of newMessages) {
+            await this.ingest({ sessionId: p.sessionId, sessionKey: p.sessionKey, message: m, isHeartbeat: false });
+          }
+        } catch { /* non-blocking */ }
+      }
+    }
     if (p.autoCompactionSummary) { try { this.manager.store(p.autoCompactionSummary, "episodic", ["compaction"]); } catch { /* ok */ } }
 
     // v4.16.0: Self-refinement evaluation of last assistant message
@@ -963,6 +976,7 @@ export class ClawContextEngine {
     // v5.1.0: Checkpoint session state for recovery
     if (this._checkpointManager) {
       try {
+        this.logger.info(`[claw-ctx] afterTurn checkpoint: _sessionState=${this._sessionState ? "present" : "null"}, entities=${this._sessionState?.entities?.length ?? 0}`);
         this._checkpointManager.checkpoint(this._sessionState ?? undefined);
       } catch { /* best effort */ }
     }
