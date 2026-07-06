@@ -1,5 +1,27 @@
 # Changelog
 
+## v5.9.1 (2026-07-06)
+
+### Added
+- **Dynamic Version Injection** (`scripts/gen-version.mjs`)
+  - Build-time script to generate `src/version.ts` from `package.json`
+  - Version automatically syncs with package.json during build
+
+### Changed
+- **src/index.ts**
+  - Added VERSION import from auto-generated `version.ts`
+  - Hardcoded version replaced with dynamic VERSION constant
+  - Registration log uses dynamic version
+
+- **package.json**
+  - Build script now runs `gen-version.mjs` before TypeScript compilation
+
+- **.gitignore**
+  - Added `src/version.ts` to prevent committing auto-generated file
+
+### Fixed
+- Version mismatch issue: runtime version now always matches package.json
+
 ## v5.9.0 (2026-07-06)
 
 ### Added

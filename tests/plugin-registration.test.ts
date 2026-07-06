@@ -44,8 +44,8 @@ describe("Plugin Registration", () => {
   });
 
   it("TC-PLUG-3: plugin version matches expected", () => {
-    // Version should be 5.6.1 after update
-    expect(plugin.version).toMatch(/^5\.6\./);
+    // Version should match semantic versioning
+    expect(plugin.version).toMatch(/^5\.\d+\.\d+$/);
   });
 
   it("TC-PLUG-4: engine factory returns valid engine", () => {
