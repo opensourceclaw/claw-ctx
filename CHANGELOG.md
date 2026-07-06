@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.9.2 (2026-07-06)
+
+### Fixed
+- **claw-mem fallback path**: Corrected import path from `dist/memory_manager.js` to `dist/src/memory_manager.js`
+  - Session Snapshot now works correctly when claw-mem is loaded via fallback path
+  - CheckpointManager now properly detects claw-mem >= v6.27.0 support
+
+### Changed
+- **engine.ts mock**: Added `sessionSnapshot`, `sessionGetUnclosed`, `sessionClose` methods to fallback mock
+  - Ensures CheckpointManager returns correct supported status even when claw-mem is unavailable
+
 ## v5.9.1 (2026-07-06)
 
 ### Added

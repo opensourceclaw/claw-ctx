@@ -17,7 +17,7 @@
  */
 
 /**
- * claw-ctx v5.9.1 Plugin for OpenClaw
+ * claw-ctx v5.9.2 Plugin for OpenClaw
  * Standalone Context Engine with claw-mem integration,
  * C2 confidence gating, RL experience injection, governance signal pass-through,
  * and cross-domain signal injection.

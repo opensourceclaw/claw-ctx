@@ -37,10 +37,11 @@ try {
   getMemoryManager = _clawMem.getMemoryManager;
 } catch {
   try {
-    _clawMem = _require("../../claw-mem/dist/memory_manager.js");
+    _clawMem = _require("../../claw-mem/dist/src/memory_manager.js");
     getMemoryManager = _clawMem.getMemoryManager;
   } catch {
     // claw-mem unavailable — use mock for CI/testing
+    // v5.9.2: Added sessionSnapshot for CheckpointManager support
     getMemoryManager = (opts: any) => {
       return {
         sessionId: "",
@@ -48,6 +49,9 @@ try {
         retrieve: () => [],
         search: () => [],
         injectConstitution: () => {},
+        sessionSnapshot: () => ({ stored: false }),
+        sessionGetUnclosed: () => ({ sessions: [] }),
+        sessionClose: () => ({ closed: false }),
       };
     };
   }
