@@ -44,6 +44,30 @@ export { MultimodalContextHandler, type MultimodalContent, type MultimodalConfig
 export { AutoCompactController, DEFAULT_AUTO_COMPACT_CONFIG, type AutoCompactConfig } from "./auto-compact.js";
 export { AutoSessionController, DEFAULT_AUTO_SESSION_CONFIG, type AutoSessionConfig } from "./auto-session.js";
 export { SemanticCompressor, type MessageImportance, type CompressionResult } from "./semantic-compressor.js";
+// v5.10.0 Performance Optimization
+export {
+  TokenCountCache,
+  BatchTokenCounter,
+  getTokenCountCache,
+  resetTokenCountCache,
+  createBatchTokenCounter,
+  type CacheEntry,
+  type CacheStats,
+  type BatchTokenResult as CachedBatchTokenResult,
+} from "./token-count-cache.js";
+export {
+  ImportanceScorer,
+  IncrementalCompressor,
+  StreamingCompressor,
+  getImportanceScorer,
+  getIncrementalCompressor,
+  resetScorerInstances,
+  DEFAULT_SCORER_CONFIG,
+  DEFAULT_INCREMENTAL_CONFIG,
+  type ScorerConfig,
+  type IncrementalConfig,
+  type CompressionChunk,
+} from "./importance-scorer.js";
 export { SessionResumeManager, SummaryGenerator, HistoryLoader, DEFAULT_SESSION_RESUME_CONFIG, type SessionSummary, type SessionResumeConfig, type HistoryLoadResult } from "./session-resume/mod.js";
 export { QualityEvaluator, type QualityEvaluationResult, type QualityDimensionResult, type QualityEvaluatorConfig, DEFAULT_QUALITY_EVALUATOR_CONFIG } from "./self-refinement/mod.js";
 export type { ReasoningStrategy as ReasoningStrategyInterface } from "./self-refinement/reasoning-strategies/base.js";
