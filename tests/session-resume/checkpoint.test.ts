@@ -232,4 +232,26 @@ describe("CheckpointManager", () => {
       }),
     );
   });
+
+  // v5.11.4: buildSnapshot extracts pendingItems from decisions
+  it("v5.11.4: buildSnapshot extracts pendingItems from decisions", () => {
+    const mgr = makeMockManager();
+    const state = makeSessionState({
+      decisions: [
+        { description: "Fix the auth bug", actor: "user", confidence: 0.8, context: "" },
+        { description: "Deploy to staging", actor: "team", confidence: 0.7, context: "" },
+        { description: "Write tests", actor: "user", confidence: 0.5, context: "" }, // low confidence, excluded
+        { description: "System decision", actor: "agent", confidence: 0.9, context: "" }, // not user/team, excluded
+      ],
+    });
+    const cm = new CheckpointManager(mgr, undefined, () => state);
+    cm.checkpoint();
+    expect(mgr.sessionSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          pendingItems: ["Fix the auth bug", "Deploy to staging"],
+        }),
+      }),
+    );
+  });
 });

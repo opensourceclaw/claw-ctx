@@ -249,6 +249,13 @@ export class CheckpointManager {
       .slice(0, 5)
       .map((e) => e.name);
 
+    // v5.11.4: Extract pending items from decisions (user/team actor, high confidence)
+    // Matches SummaryGenerator logic for pendingTasks extraction
+    const pendingItems = state.decisions
+      .filter((d) => (d.actor === "user" || d.actor === "team") && d.confidence >= 0.6)
+      .slice(0, 5)
+      .map((d) => d.description.length > 100 ? d.description.slice(0, 97) + "..." : d.description);
+
     return {
       sessionId: state.sessionId,
       startedAt: (state as any).startedAt ?? state.lastUpdated,
@@ -256,7 +263,7 @@ export class CheckpointManager {
       turnCount: state.messageCount,
       currentTopic: topTopics.map((t) => t.label).join(", ") || "unknown",
       recentDecisions: topDecisions.map((d) => d.description),
-      pendingItems: [],
+      pendingItems,
       keyEntities: topEntities,
       isClosed: false,
     };

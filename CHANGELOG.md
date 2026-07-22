@@ -1,5 +1,23 @@
 # Changelog
 
+## v5.11.4 (2026-07-22)
+
+### Fixed
+- **P1: RecapLoader JSON 解析优先** (`src/session-resume/recap-loader.ts:280-330`)
+  - `parseRecap()` 现在优先使用 `JSON.parse()` 解析 SummaryGenerator 存储的 JSON 格式
+  - 保留正则回退路径兼容旧版文本格式
+  - `formatRecap()` 支持渲染 `pendingTasks` 和 `keyPoints`
+
+- **P2: pendingItems 从 SessionState.decisions 提取** (`src/session-resume/checkpoint.ts:248-260`)
+  - `buildSnapshot()` 从 decisions 中提取 user/team actor 且 confidence >= 0.6 的项
+  - 与 `SummaryGenerator` 的 pendingTasks 提取逻辑一致
+  - 修复 `pendingItems: []` 恒为空的问题
+
+### Tests
+- 2 个新测试覆盖 v5.11.4 改动
+  - `v5.11.4: parseRecap handles JSON from SummaryGenerator`
+  - `v5.11.4: buildSnapshot extracts pendingItems from decisions`
+
 ## v5.11.3 (2026-07-22)
 
 ### Fixed
