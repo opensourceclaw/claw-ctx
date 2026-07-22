@@ -1,5 +1,56 @@
 # Changelog
 
+## v5.11.0 (2026-07-21)
+
+### Theme
+- **Context Compression Optimization** - Memory leak fix, edge case handling, token reduction
+
+### Added
+- **LRUCache** (`src/lru-cache.ts`) - Bounded LRU cache with optional TTL
+  - `get/set/delete/has/clear/prune/entries/size`
+  - `maxSize` enforced via Map insertion order (LRU eviction)
+  - Optional `ttlMs` for time-based expiry
+  - 17 unit tests in `tests/lru-cache.test.ts`
+- **SemanticCompressorConfig** - Configurable `minKeep`, `duplicateWindowSize`, `duplicateThreshold`
+- **engine.closeSession(sessionId)** - Explicitly release session-scoped cache entries
+
+### Fixed
+- **L1/L6: Memory leak in `_memorySearchCache`** (`src/engine.ts`)
+  - Replaced unbounded `Map` with `LRUCache` (maxSize=32, ttlMs=30s)
+  - `_rlGovernanceCache` and `_crossDomainCache` also upgraded to `LRUCache` (maxSize=10), removing ~30 lines of manual LRU logic
+- **L2: `compress()` empty input handling** (`src/semantic-compressor.ts`)
+  - Explicit null/empty check returns empty `CompressionResult`
+  - Length mismatch now throws (was silent index-out-of-bounds risk)
+- **L3: `extractText()` nested content blocks** (`src/semantic-compressor.ts`)
+  - `tool_use` blocks now serialize `{ tool, input }` JSON
+  - `tool_result` blocks extract nested text content
+  - Mixed arrays of string/text/thinking/tool_use/tool_result fully supported
+- **L4: Jaccard duplicate detection performance** (`src/semantic-compressor.ts`)
+  - Sliding window of tokenized `Set<string>` reuses prior tokenization
+  - New `jaccardSetSimilarity(a, b)` operates on Sets directly
+  - Avoids O(n*k) re-tokenization in long sessions
+
+### Changed
+- **SemanticCompressor constructor** now accepts optional `SemanticCompressorConfig`
+  - Default behavior unchanged (minKeep=20, window=10, threshold=0.7)
+  - Fully backward compatible - existing `new SemanticCompressor()` calls work unchanged
+- **`buildSummary()` output format** - Single-line compact form
+  - Old: 4-line block (~80 tokens)
+  - New: ` | `-joined parts (~25 tokens), empty fields omitted
+  - Reduces compressed summary token count by ~55%
+  - Still contains `Compacted History` and `Topics:` keywords (existing test compatibility)
+
+### Tests
+- `tests/lru-cache.test.ts` - 17 cases (basic ops, LRU eviction, TTL, entries iteration)
+- `tests/semantic-compressor-edge-cases.test.ts` - 21 cases (L2/L3/L4, config, buildSummary format)
+- Full suite: 61 files, 963 passed, 5 skipped, 0 failures
+
+### Out of Scope
+- LLM-based summarization
+- `IncrementalCompressor` / `StreamingCompressor` refactor (in `importance-scorer.ts`)
+- Compression audit log
+- `src/compression/` subdirectory restructure (kept flat to match existing style)
+
 ## v5.9.3 (2026-07-06)
 
 ### Fixed

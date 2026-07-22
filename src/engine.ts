@@ -74,6 +74,7 @@ import { MultimodalContextHandler } from "./multimodal_context_handler.js";
 import { AutoCompactController, type AutoCompactConfig } from "./auto-compact.js";
 import { AutoSessionController, type AutoSessionConfig } from "./auto-session.js";
 import { SemanticCompressor, type CompressionResult } from "./semantic-compressor.js";
+import { LRUCache } from "./lru-cache.js";
 import { SessionResumeManager, type SessionResumeConfig, DEFAULT_SESSION_RESUME_CONFIG } from "./session-resume/mod.js";
 import { CheckpointManager } from "./session-resume/checkpoint.js";
 import { ContextAssembler, type AssemblyResult } from "./session-resume/context-assembler.js";
@@ -256,17 +257,20 @@ export class ClawContextEngine {
   private _lastDriftScore: number = 0;
   private _tokenWarningEmitted: boolean = false;
   // v5.2.0: Memory search cache for stable prefix
-  private _memorySearchCache: Map<string, { query: string; block: string; ts: number }> = new Map();
+  // v5.11.0: Replaced unbounded Map with LRUCache (maxSize=32, ttl=30s)
+  private _memorySearchCache: LRUCache<string, { query: string; block: string; ts: number }> = new LRUCache({ maxSize: 32, ttlMs: 30_000 });
   // v5.2.1: RL/Governance session-level cache
-  private _rlGovernanceCache: Map<string, { result: string[]; ts: number }> = new Map();
+  // v5.11.0: Replaced manual LRU logic with LRUCache (maxSize=10)
+  private _rlGovernanceCache: LRUCache<string, { result: string[]; ts: number }> = new LRUCache({ maxSize: 10 });
   // v5.2.1: Cross-domain context with pillar/intent change detection
-  private _crossDomainCache: Map<string, {
+  // v5.11.0: Replaced manual LRU logic with LRUCache (maxSize=10)
+  private _crossDomainCache: LRUCache<string, {
     block: string;
     report: { signalsInjected: number; totalTokens: number; correlations: InjectedSignal[] };
     ts: number;
     pillar: string;
     intent: string;
-  }> = new Map();
+  }> = new LRUCache({ maxSize: 10 });
   // v5.2.1: Auto-session suggestion flag (once per session)
   private _autoSessionSuggested: boolean = false;
   // v5.6.0: Context assembler and task type detector
@@ -1090,6 +1094,22 @@ export class ClawContextEngine {
     return this._preloadManager;
   }
 
+  /**
+   * v5.11.0: Release session-scoped cache entries.
+   *
+   * Called when OpenClaw closes a session. Removes the session's entries
+   * from `_memorySearchCache` and `_rlGovernanceCache`, and prunes expired
+   * entries from `_crossDomainCache` (whose key is composite, not sessionId).
+   *
+   * Idempotent: safe to call multiple times or with unknown sessionId.
+   */
+  closeSession(sessionId: string): void {
+    this._memorySearchCache.delete(sessionId);
+    this._rlGovernanceCache.delete(sessionId);
+    this._crossDomainCache.prune();
+    this.logger.debug?.(`[claw-ctx] session ${sessionId} cache released`);
+  }
+
   // ── v4.11.0: RL Memory Strategy Selection ──────────────────────────
 
   /** Select best memory recall strategy based on current context. */
@@ -1409,24 +1429,7 @@ export class ClawContextEngine {
     this.logger.debug?.(`[claw-ctx] RL/Governance cache miss for session ${sessionId}`);
     const result = await this.injectExternalContext(sessionId);
 
-    // LRU eviction: keep cache under 10 entries
-    if (this._rlGovernanceCache.size >= 10) {
-      // Find and delete oldest entry
-      let oldestKey: string | null = null;
-      let oldestTs = Infinity;
-      for (const [key, val] of this._rlGovernanceCache) {
-        if (val.ts < oldestTs) {
-          oldestTs = val.ts;
-          oldestKey = key;
-        }
-      }
-      if (oldestKey) {
-        this._rlGovernanceCache.delete(oldestKey);
-        this.logger.debug?.(`[claw-ctx] RL/Governance LRU evicted session ${oldestKey}`);
-      }
-    }
-
-    // Store new result
+    // v5.11.0: LRU handled by LRUCache.set() internally
     this._rlGovernanceCache.set(sessionId, { result, ts: Date.now() });
 
     return result;
@@ -1458,22 +1461,7 @@ export class ClawContextEngine {
 
     const result = await this.injectCrossDomainContext(p as any);
 
-    // LRU eviction if needed
-    if (this._crossDomainCache.size >= 10) {
-      let oldestKey: string | null = null;
-      let oldestTs = Infinity;
-      for (const [key, val] of this._crossDomainCache) {
-        if (val.ts < oldestTs) {
-          oldestTs = val.ts;
-          oldestKey = key;
-        }
-      }
-      if (oldestKey) {
-        this._crossDomainCache.delete(oldestKey);
-        this.logger.debug?.(`[claw-ctx] Cross-domain LRU evicted key ${oldestKey}`);
-      }
-    }
-
+    // v5.11.0: LRU eviction handled by LRUCache.set() internally
     // Cache result (even if null, to avoid repeated calls)
     if (result) {
       this._crossDomainCache.set(cacheKey, {

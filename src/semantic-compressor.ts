@@ -76,7 +76,28 @@ function extractText(msg: any): string {
   if (!msg) return "";
   const c = msg.content;
   if (typeof c === "string") return c;
-  if (Array.isArray(c)) return c.map((b: any) => typeof b === "string" ? b : b?.text ?? b?.thinking ?? "").join(" ");
+  if (Array.isArray(c)) {
+    return c.map((b: any) => {
+      if (typeof b === "string") return b;
+      if (b?.text) return b.text;
+      if (b?.thinking) return b.thinking;
+      // v5.11.0: L3 - Handle nested tool_use / tool_result content blocks
+      if (b?.type === "tool_use") {
+        try {
+          return JSON.stringify({ tool: b.name, input: b.input });
+        } catch {
+          return `[tool_use: ${b.name ?? "unknown"}]`;
+        }
+      }
+      if (b?.type === "tool_result") {
+        const inner = Array.isArray(b.content)
+          ? b.content.map((x: any) => x?.text ?? "").join("")
+          : String(b.content ?? "");
+        return `[tool_result: ${inner}]`;
+      }
+      return "";
+    }).join(" ").trim();
+  }
   return String(c ?? "");
 }
 
@@ -92,12 +113,55 @@ function jaccardSimilarity(a: string, b: string): number {
   return intersection.size / (wordsA.size + wordsB.size - intersection.size);
 }
 
+/**
+ * v5.11.0: Set-based Jaccard similarity - avoids re-tokenizing strings
+ * when the caller already has a word Set (used by the incremental duplicate
+ * detector in scoreImportance).
+ */
+function jaccardSetSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  const [smaller, larger] = a.size <= b.size ? [a, b] : [b, a];
+  let intersection = 0;
+  for (const w of smaller) if (larger.has(w)) intersection++;
+  return intersection / (a.size + b.size - intersection);
+}
+
+/**
+ * v5.11.0: Tokenize a message into a Set of lowercased words > 3 chars.
+ * Used to share the tokenization result across Jaccard comparisons within
+ * the duplicate detection window.
+ */
+function tokenize(text: string): Set<string> {
+  const words = text.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+  return new Set(words);
+}
+
+export interface SemanticCompressorConfig {
+  /** Minimum number of newest messages always kept. Default: 20. */
+  minKeep?: number;
+  /** Sliding window size for near-duplicate detection. Default: 10. */
+  duplicateWindowSize?: number;
+  /** Jaccard threshold above which a message is flagged as duplicate. Default: 0.7. */
+  duplicateThreshold?: number;
+}
+
 export class SemanticCompressor {
-  private minKeep = 20;
+  private readonly config: Required<SemanticCompressorConfig>;
+
+  constructor(config?: SemanticCompressorConfig) {
+    this.config = {
+      minKeep: config?.minKeep ?? 20,
+      duplicateWindowSize: config?.duplicateWindowSize ?? 10,
+      duplicateThreshold: config?.duplicateThreshold ?? 0.7,
+    };
+  }
 
   scoreImportance(messages: Array<{ message?: any }>): MessageImportance[] {
     const texts = messages.map((e, i) => ({ index: i, text: extractText(e.message) }));
     const results: MessageImportance[] = [];
+    // v5.11.0: L4 - Sliding window of tokenized word Sets, reuses prior
+    // tokenization instead of re-splitting strings for each Jaccard check.
+    const window = new Map<number, Set<string>>();
 
     for (let i = 0; i < texts.length; i++) {
       const { index, text } = texts[i];
@@ -126,9 +190,21 @@ export class SemanticCompressor {
         factors.push("question");
       }
 
-      // Duplicate penalty: check against previous messages
-      for (let j = Math.max(0, i - 10); j < i; j++) {
-        if (jaccardSimilarity(text, texts[j].text) > 0.7) {
+      // v5.11.0: L4 - Tokenize once per message, reuse via sliding window.
+      // Avoids O(n*k) re-tokenization when checking against prior messages.
+      const tokens = tokenize(text);
+      window.set(i, tokens);
+      // Evict entries outside the duplicate window (keeps Map bounded).
+      const windowStart = i - this.config.duplicateWindowSize;
+      if (windowStart > 0) {
+        const evictKey = windowStart - 1;
+        if (window.has(evictKey)) window.delete(evictKey);
+      }
+
+      // Duplicate penalty: check against previous messages in the window
+      for (let j = Math.max(0, i - this.config.duplicateWindowSize); j < i; j++) {
+        const prevTokens = window.get(j);
+        if (prevTokens && jaccardSetSimilarity(tokens, prevTokens) > this.config.duplicateThreshold) {
           score += DUPLICATE_PENALTY;
           factors.push("duplicate");
           break;
@@ -194,18 +270,20 @@ export class SemanticCompressor {
   }
 
   buildSummary(messages: Array<{ message?: any }>, count: number, decisions: string[], entities: string[], topics: string[]): string {
-    const topicStr = topics.length > 0 ? topics.join(", ") : "general discussion";
-    const decisionStr = decisions.length > 0
-      ? `\nKey decisions: ${decisions.map(d => `"${d}"`).join("; ")}`
-      : "";
-    const entityStr = entities.length > 0
-      ? `\nReferenced entities: ${entities.slice(0, 10).join(", ")}`
-      : "";
-
-    return `[Compacted History — ${count} earlier messages summarized]
-Topics: ${topicStr}${decisionStr}${entityStr}
-
-Continue with the current task using the remaining recent context below.`;
+    // v5.11.0: Compact single-line summary. Omit empty fields to save tokens.
+    const parts: string[] = [`[Compacted History - ${count} msgs]`];
+    if (topics.length > 0) {
+      parts.push(`Topics: ${topics.join(",")}`);
+    } else {
+      parts.push("Topics: general discussion");
+    }
+    if (decisions.length > 0) {
+      parts.push(`decisions: ${decisions.slice(0, 5).map(d => `"${d}"`).join(";")}`);
+    }
+    if (entities.length > 0) {
+      parts.push(`entities: ${entities.slice(0, 8).join(",")}`);
+    }
+    return parts.join(" | ");
   }
 
   compress(
@@ -213,6 +291,23 @@ Continue with the current task using the remaining recent context below.`;
     msgTokens: number[],
     targetTokens: number
   ): CompressionResult {
+    // v5.11.0: L2 - Explicit empty input short-circuit
+    if (!messages || messages.length === 0) {
+      return {
+        keptIndices: [],
+        removedIndices: [],
+        summary: "",
+        decisions: [],
+        entities: [],
+        topics: [],
+      };
+    }
+    if (messages.length !== msgTokens.length) {
+      throw new Error(
+        `Length mismatch: messages=${messages.length} tokens=${msgTokens.length}`,
+      );
+    }
+
     const importance = this.scoreImportance(messages);
     const totalMsgs = messages.length;
 
@@ -221,7 +316,7 @@ Continue with the current task using the remaining recent context below.`;
 
     // Strategy: keep at least minKeep newest messages, then fill budget with
     // high-importance messages from the older portion
-    const minKeep = Math.min(this.minKeep, totalMsgs);
+    const minKeep = Math.min(this.config.minKeep, totalMsgs);
     const keepSet = new Set<number>();
 
     // Always keep the newest minKeep messages
