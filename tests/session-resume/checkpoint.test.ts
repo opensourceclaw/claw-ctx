@@ -160,6 +160,44 @@ describe("CheckpointManager", () => {
     expect(cm.consumeRecovery()).toBeNull();
   });
 
+  // v5.11.3: bootstrap filters out current session from recovery candidates
+  it("v5.11.3: bootstrap filters out current sessionId from recovery", async () => {
+    const mgr = makeMockManager({
+      sessionGetUnclosed: vi.fn().mockResolvedValue({
+        sessions: [
+          {
+            sessionId: "current-session",
+            startedAt: Date.now() - 10000,
+            lastActiveAt: Date.now() - 500,
+            turnCount: 3,
+            currentTopic: "Current topic",
+            recentDecisions: [],
+            pendingItems: [],
+            keyEntities: [],
+            isClosed: false,
+          },
+          {
+            sessionId: "interrupted",
+            startedAt: Date.now() - 10000,
+            lastActiveAt: Date.now() - 500,
+            turnCount: 3,
+            currentTopic: "Interrupted topic",
+            recentDecisions: [],
+            pendingItems: [],
+            keyEntities: [],
+            isClosed: false,
+          },
+        ],
+      }),
+    });
+    const cm = new CheckpointManager(mgr);
+    await cm.bootstrap("current-session");
+    const recovery = cm.consumeRecovery();
+    expect(recovery).not.toBeNull();
+    expect(recovery).toContain("Interrupted topic");
+    expect(recovery).not.toContain("Current topic");
+  });
+
   // 12
   it("consumeRecovery returns null without bootstrap", () => {
     const mgr = makeMockManager();

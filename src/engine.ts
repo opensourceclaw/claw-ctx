@@ -348,6 +348,7 @@ export class ClawContextEngine {
     let importedMessages = 0;
     if (this._sessionResume) {
       try {
+        this._sessionResume.reset();
         const resumeResult = await this._sessionResume.bootstrap(p.sessionId);
         if (resumeResult.historyLoaded) {
           importedMessages = resumeResult.sessionCount;
@@ -623,7 +624,7 @@ export class ClawContextEngine {
     // v4.19.0: Overflow detection — warn if approaching budget limit
     // v5.1.1: Deduplicate token warning (emit only once until compact)
     const budgetLimit = p.tokenBudget ?? 8000;
-    if (tokens > budgetLimit * 0.85 && !this._tokenWarningEmitted) {
+    if (tokens > budgetLimit * 0.75 && !this._tokenWarningEmitted) {
       const overflowWarn = `[Token Budget Warning: ${tokens}/${budgetLimit} tokens used (${Math.round(tokens / budgetLimit * 100)}%) — consider compaction]`;
       dynamicSuffix = dynamicSuffix ? `${dynamicSuffix}\n\n${overflowWarn}` : overflowWarn;
       this._tokenWarningEmitted = true;
@@ -685,6 +686,53 @@ export class ClawContextEngine {
       }
       // v5.1.1: Reset token warning flag after successful compaction
       this._tokenWarningEmitted = false;
+
+      // v5.11.3: Sync in-memory and persisted state after compaction.
+      // Why: _executeCompaction only rewrites the session file; _sessionState,
+      // _checkpointManager, _sessionResume, and manager.store all still reflect
+      // pre-compaction content. Without this sync, /new or restart after overflow
+      // would inject stale (pre-compaction) context as recovery.
+      try {
+        const keptMsgs = (result as any).keptMsgs as Array<{ message?: any }> | undefined;
+        const summaryBlock = (result as any).summaryBlock as string | undefined;
+
+        // 1. Rebuild _sessionState from kept messages (drops entities from removed msgs)
+        if (keptMsgs && keptMsgs.length > 0) {
+          try {
+            const extracted = SessionStateExtractor.extract(
+              keptMsgs.map(m => m.message).filter(Boolean).map((m: any) => ({
+                content: typeof m.content === "string" ? m.content : extractText(m),
+                role: m.role || "user",
+              })),
+              p.sessionId,
+            );
+            this._sessionState = extracted;
+            this.logger.info(`[claw-ctx] post-compact state rebuilt: entities=${extracted.entities?.length ?? 0}`);
+          } catch (e: any) {
+            this.logger.warn(`[claw-ctx] post-compact state rebuild failed: ${e?.message ?? e}`);
+          }
+        }
+
+        // 2. Persist updated snapshot to claw-mem so restart sees post-compaction state
+        if (this._checkpointManager) {
+          try {
+            await this._checkpointManager.checkpoint(this._sessionState ?? undefined);
+          } catch (e: any) {
+            this.logger.warn(`[claw-ctx] post-compact checkpoint failed: ${e?.message ?? e}`);
+          }
+        }
+
+        // 3. Persist compaction summary as episodic memory
+        if (summaryBlock) {
+          try {
+            this.manager.store(summaryBlock, "episodic", ["compaction", "post-compact"]);
+          } catch (e: any) {
+            this.logger.warn(`[claw-ctx] post-compact episodic store failed: ${e?.message ?? e}`);
+          }
+        }
+      } catch (e: any) {
+        this.logger.warn(`[claw-ctx] post-compact state sync failed (non-blocking): ${e?.message ?? e}`);
+      }
       return {
         ok: true,
         compacted: true,
@@ -708,7 +756,7 @@ export class ClawContextEngine {
   private async _executeCompaction(
     sessionFile: string,
     targetTokens: number
-  ): Promise<{ compacted: boolean; reason?: string; summary: string; tokensBefore: number; tokensAfter?: number; details?: unknown }> {
+  ): Promise<{ compacted: boolean; reason?: string; summary: string; tokensBefore: number; tokensAfter?: number; details?: unknown; keptMsgs?: Array<{ line: string; type: string; message?: any }>; summaryBlock?: string }> {
     const lines = fs.readFileSync(sessionFile, "utf-8").split("\n").filter(l => l.trim());
     const entries: Array<{ line: string; type: string; message?: any }> = [];
 
@@ -805,6 +853,8 @@ export class ClawContextEngine {
       tokensBefore: totalMsgTokens,
       tokensAfter: newTokens,
       details: { messagesBefore: msgEntries.length, messagesAfter: keptMsgs.length + 1, removedCount, tokensBefore: totalMsgTokens, tokensAfter: newTokens },
+      keptMsgs,
+      summaryBlock,
     };
   }
 
@@ -984,6 +1034,38 @@ export class ClawContextEngine {
         this._checkpointManager.checkpoint(this._sessionState ?? undefined);
       } catch { /* best effort */ }
     }
+
+    // v5.11.1: Self-triggered compaction for ownsCompaction contract.
+    // Why: OpenClaw 2026.7.x skips [context-overflow-precheck] when ownsCompaction=true
+    // and never reads assembled.autoCompact, so claw-ctx must self-trigger in afterTurn
+    // to prevent token growth until timeout/overflow error.
+    // v5.11.2: Threshold 85% -> 75% (industry-standard proactive compaction)
+    if (p.tokenBudget && p.sessionFile && p.messages && p.messages.length > 0) {
+      try {
+        let estTokens = 0;
+        for (const m of p.messages) {
+          estTokens += this._estimateMessageTokens(m);
+        }
+        const triggerThreshold = Math.floor(p.tokenBudget * 0.75);
+        if (estTokens > triggerThreshold) {
+          this.logger.info(`[claw-ctx] afterTurn: ${estTokens} tokens > ${triggerThreshold} threshold (budget=${p.tokenBudget}), triggering self-compaction`);
+          const result = await this.compact({
+            sessionId: p.sessionId,
+            sessionKey: p.sessionKey,
+            sessionFile: p.sessionFile,
+            tokenBudget: p.tokenBudget,
+            currentTokenCount: estTokens,
+          });
+          if (result.compacted) {
+            this.logger.info(`[claw-ctx] afterTurn self-compaction: ${result.result?.tokensBefore} -> ${result.result?.tokensAfter} tokens`);
+          } else if (result.reason) {
+            this.logger.debug?.(`[claw-ctx] afterTurn self-compaction skipped: ${result.reason}`);
+          }
+        }
+      } catch (e: any) {
+        this.logger.warn(`[claw-ctx] afterTurn self-compaction check failed: ${e?.message ?? e}`);
+      }
+    }
   }
 
   async prepareSubagentSpawn(p: { parentSessionKey: string; childSessionKey: string; contextMode?: "isolated" | "fork"; parentSessionId?: string; parentSessionFile?: string; childSessionId?: string; childSessionFile?: string; ttlMs?: number }): Promise<{ rollback: () => void } | undefined> {
@@ -1103,11 +1185,22 @@ export class ClawContextEngine {
    *
    * Idempotent: safe to call multiple times or with unknown sessionId.
    */
-  closeSession(sessionId: string): void {
+  async closeSession(sessionId: string): Promise<void> {
     this._memorySearchCache.delete(sessionId);
     this._rlGovernanceCache.delete(sessionId);
     this._crossDomainCache.prune();
     this.logger.debug?.(`[claw-ctx] session ${sessionId} cache released`);
+
+    // v5.11.3: Close checkpoint so this session is not returned by sessionGetUnclosed
+    // on future bootstrap() calls. Without this, /new after /new would inject the
+    // previous session as recovery context (false "interrupted session" detection).
+    if (this._checkpointManager) {
+      try {
+        await this._checkpointManager.closeSession(sessionId);
+      } catch (e: any) {
+        this.logger.warn(`[claw-ctx] checkpoint closeSession failed: ${e?.message ?? e}`);
+      }
+    }
   }
 
   // ── v4.11.0: RL Memory Strategy Selection ──────────────────────────

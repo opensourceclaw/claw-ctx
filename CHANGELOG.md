@@ -1,5 +1,64 @@
 # Changelog
 
+## v5.11.3 (2026-07-22)
+
+### Fixed
+- **P0: compact 成功后状态同步** (`src/engine.ts:686-745`)
+  - `_executeCompaction()` 返回 `keptMsgs` 和 `summaryBlock`
+  - `compact()` 成功路径主动重建 `_sessionState`、调 `_checkpointManager.checkpoint()`、`manager.store(summaryBlock, "episodic", ["compaction", "post-compact"])`
+  - **根因**：原实现仅重写 sessionFile，内存态和持久化态都反映 pre-compaction 状态，导致溢出后 /new 或重启会注入陈旧上下文
+  - **失败非阻塞**：任何同步步骤抛异常只 warn，不影响 compact 主流程
+
+- **P0: `closeSession` 调 `_checkpointManager.closeSession`** (`src/engine.ts:1138-1160`)
+  - 之前只清 LRU 缓存，未标记 claw-mem 中 session 为 `isClosed=true`
+  - 导致 `/new` 后旧 session 仍被 `sessionGetUnclosed` 返回，当作"中断未恢复"再次注入
+  - **签名变更**：`closeSession()` 从同步 `void` 变为 `async Promise<void>`（OpenClaw 不直接调此方法，向后兼容）
+
+- **P0: `bootstrap` 调 `_sessionResume.reset()`** (`src/engine.ts:351`)
+  - 防止跨 session 复用同一实例时 `_history`/`_recap` 泄漏到新 session
+  - 在 `_sessionResume.bootstrap()` 之前调用，失败回退到旧行为
+
+- **P0: `getRecoveryContext` 接受 sessionId 过滤** (`src/session-resume/checkpoint.ts:132-171`)
+  - `getRecoveryContext(currentSessionId?)` 过滤掉当前 session
+  - `bootstrap(sessionId)` 传 sessionId 到 getRecoveryContext
+  - 防止新 session 的 bootstrap 把自己当作"中断未恢复"注入
+
+### Tests
+- 3 个新测试覆盖 v5.11.3 改动
+  - `v5.11.3: bootstrap filters out current sessionId from recovery`
+  - `v5.11.3: compact syncs state (tokenWarningEmitted reset + state rebuilt)`
+  - `v5.11.3: closeSession is async and returns Promise`
+
+### Remaining Issues (未修，留待 v5.12.0)
+- **P1**: Recap 格式不匹配 - `SummaryGenerator` 产 JSON 但 `RecapLoader.parseRecap` 用正则匹配字面量（`recap-loader.ts:275`）
+- **P2**: `buildSnapshot.pendingItems` 恒为空数组（`checkpoint.ts:248`）
+
+## v5.11.2 (2026-07-22)
+
+### Changed
+- **Compaction threshold 85% -> 75%** (`src/engine.ts`)
+  - `assemble()` token warning: `budgetLimit * 0.85` -> `budgetLimit * 0.75`
+  - `afterTurn()` self-trigger: `tokenBudget * 0.85` -> `tokenBudget * 0.75`
+  - **Why**: 85% was too conservative - by the time compaction triggers, only 15% budget remains for response + tool calls. 75% aligns with industry-standard proactive compaction (LangChain 80%, Continue.dev 70%, Cursor ~80%) and leaves 25% headroom for response generation.
+  - For 1M-token DeepSeek window: triggers at 750k instead of 850k, giving 256k response budget (was 150k).
+
+### Tests
+- Updated 3 test assertions/comments to reflect 75% threshold
+
+## v5.11.1 (2026-07-22)
+
+### Fixed
+- **afterTurn self-triggered compaction** (`src/engine.ts`)
+  - When `tokenBudget` is provided and estimated tokens exceed 85% of budget, `afterTurn()` now proactively calls `compact()` to rewrite the session file
+  - **Root cause**: OpenClaw `2026.7.x` skips `[context-overflow-precheck]` when `ownsCompaction: true` and never reads `assembled.autoCompact`, so claw-ctx must self-trigger to avoid token growth until timeout/overflow error
+  - Last successful compaction before this fix: `2026-07-18T01:00:35` (pre-OpenClaw upgrade)
+  - Non-blocking: failures only warn, do not interrupt `afterTurn`
+
+### Tests
+- 2 new tests in `tests/engine.test.ts`
+  - `v5.11.1: afterTurn self-triggers compaction when tokens exceed 85% budget`
+  - `v5.11.1: afterTurn does not trigger compaction when below threshold`
+
 ## v5.11.0 (2026-07-21)
 
 ### Theme

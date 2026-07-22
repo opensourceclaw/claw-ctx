@@ -128,21 +128,31 @@ export class CheckpointManager {
     }
   }
 
-  /** Fetch unclosed sessions and format recovery context. No-op if unsupported. */
-  async getRecoveryContext(): Promise<string | null> {
+  /** Fetch unclosed sessions and format recovery context. No-op if unsupported.
+   * v5.11.3: Accept optional currentSessionId to filter out the session that was
+   * just opened (so it is not treated as an interrupted session to recover from).
+   */
+  async getRecoveryContext(currentSessionId?: string): Promise<string | null> {
     if (!this.supported) {
       this._logger.warn("getRecoveryContext skipped - not supported");
       return null;
     }
 
     try {
-      this._logger.info("fetching unclosed sessions for recovery");
+      this._logger.info("fetching unclosed sessions for recovery", { currentSessionId });
 
       const result = (await this._manager.sessionGetUnclosed!()) as { sessions?: SessionSnapshot[] } | undefined;
-      const unclosed = result?.sessions ?? [];
+      const allUnclosed = result?.sessions ?? [];
+
+      // v5.11.3: Filter out the current session so it is not injected as its own recovery context.
+      const unclosed = currentSessionId
+        ? allUnclosed.filter((s) => s.sessionId !== currentSessionId)
+        : allUnclosed;
 
       this._logger.info("unclosed sessions found", {
         count: unclosed.length,
+        totalBeforeFilter: allUnclosed.length,
+        filteredOut: allUnclosed.length - unclosed.length,
       });
 
       if (unclosed.length === 0) {
@@ -170,10 +180,12 @@ export class CheckpointManager {
     }
   }
 
-  /** Bootstrap pre-fetch: load recovery context and cache for synchronous injection. */
+  /** Bootstrap pre-fetch: load recovery context and cache for synchronous injection.
+   * v5.11.3: Pass sessionId to filter out the current session from recovery candidates.
+   */
   async bootstrap(sessionId: string): Promise<void> {
     this._logger.info("bootstrap started", { sessionId });
-    this._pendingRecovery = await this.getRecoveryContext();
+    this._pendingRecovery = await this.getRecoveryContext(sessionId);
     this._logger.info("bootstrap completed", {
       hasRecoveryContext: this._pendingRecovery !== null,
     });

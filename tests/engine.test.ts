@@ -752,6 +752,41 @@ describe('ClawContextEngine', () => {
       expect(result.result?.tokensAfter).toBeGreaterThan(0);
     });
 
+    it('v5.11.1: afterTurn self-triggers compaction when tokens exceed 75% budget', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const sessionFile = createSessionFile(60); // ~10200 tokens
+      const filler = 'Lorem ipsum dolor sit amet '.repeat(40);
+      const messages: any[] = [];
+      for (let i = 0; i < 60; i++) {
+        messages.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `Msg ${i}: ${filler}` });
+      }
+      const beforeLines = fs.readFileSync(sessionFile, 'utf-8').split('\n').filter(l => l.trim()).length;
+      await engine.afterTurn({
+        sessionId: 'test-sess',
+        sessionFile,
+        messages,
+        prePromptMessageCount: messages.length, // skip ingest
+        tokenBudget: 1000, // 0.75*1000 = 750, estTokens ~10200 > 750 -> triggers
+      });
+      const afterLines = fs.readFileSync(sessionFile, 'utf-8').split('\n').filter(l => l.trim()).length;
+      expect(afterLines).toBeLessThan(beforeLines);
+    });
+
+    it('v5.11.1: afterTurn does not trigger compaction when below threshold', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const sessionFile = createSessionFile(5); // small session
+      const beforeLines = fs.readFileSync(sessionFile, 'utf-8').split('\n').filter(l => l.trim()).length;
+      await engine.afterTurn({
+        sessionId: 'test-sess',
+        sessionFile,
+        messages: [{ role: 'user', content: 'short message' }],
+        prePromptMessageCount: 1,
+        tokenBudget: 100000, // 75% = 75000, short message << 75000 -> no compact
+      });
+      const afterLines = fs.readFileSync(sessionFile, 'utf-8').split('\n').filter(l => l.trim()).length;
+      expect(afterLines).toBe(beforeLines);
+    });
+
     it('compact with missing sessionFile returns error', async () => {
       const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
       const result = await engine.compact({
@@ -761,6 +796,29 @@ describe('ClawContextEngine', () => {
       });
       expect(result.ok).toBe(false);
       expect(result.compacted).toBe(false);
+    });
+
+    it('v5.11.3: compact syncs state (tokenWarningEmitted reset + state rebuilt)', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      const sessionFile = createSessionFile(60); // many messages
+      const result = await engine.compact({
+        sessionId: 'test-sess',
+        sessionFile,
+        tokenBudget: 1000,
+      });
+      expect(result.compacted).toBe(true);
+      // Verify the file was rewritten (keptMsgs + summary)
+      const afterLines = fs.readFileSync(sessionFile, 'utf-8').split('\n').filter(l => l.trim()).length;
+      expect(afterLines).toBeLessThan(61);
+    });
+
+    it('v5.11.3: closeSession is async and returns Promise', async () => {
+      const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+      await engine.bootstrap({ sessionId: 'test-sess', sessionFile: '/tmp/test.md' });
+      // Should not throw - returns Promise that resolves
+      const result = engine.closeSession('test-sess');
+      expect(result).toBeInstanceOf(Promise);
+      await result;
     });
 
     it('v4.9.0: getDependencyTracker creates tracker lazily', () => {
@@ -1125,7 +1183,7 @@ describe('ClawContextEngine', () => {
       const result1 = await engine.assemble({
         sessionId: 'test',
         messages: [{ role: 'user', content: 'test message' }],
-        tokenBudget: 100, // Very low budget, will trigger >85% warning
+        tokenBudget: 100, // Very low budget, will trigger >75% warning
       });
 
       // If warning was emitted, check it's not repeated

@@ -144,10 +144,10 @@ export class RecapLoader {
       const sortedResults = this.sortByTimestamp(filteredResults);
 
       const memory = sortedResults[0];
-      const recap = this.parseRecap(memory.content, memory.metadata);
+      const { recap, extra } = this.parseRecap(memory.content, memory.metadata);
 
       // Format for injection
-      const formatted = this.formatRecap(recap);
+      const formatted = this.formatRecap(recap, extra);
 
       this._logger.info("recap loaded successfully", {
         sessionId: recap.sessionId,
@@ -212,8 +212,8 @@ export class RecapLoader {
       // Sort by timestamp
       const sortedResults = this.sortByTimestamp(filteredResults);
       const memory = sortedResults[0];
-      const recap = this.parseRecap(memory.content, memory.metadata);
-      const formatted = this.formatRecap(recap);
+      const { recap, extra } = this.parseRecap(memory.content, memory.metadata);
+      const formatted = this.formatRecap(recap, extra);
 
       return {
         recap,
@@ -271,30 +271,91 @@ export class RecapLoader {
 
   /**
    * Parse recap from memory content.
+   *
+   * v5.11.4: Primary path is JSON.parse since SummaryGenerator stores
+   * `JSON.stringify(SessionSummary)`. The legacy regex path is retained
+   * for back-compat with any older records that used the "Session Recap:" /
+   * "Next:" textual format.
    */
-  private parseRecap(content: string, metadata?: Record<string, unknown>): Recap {
-    // Try to extract from content
+  private parseRecap(content: string, metadata?: Record<string, unknown>): { recap: Recap; extra?: { pendingTasks?: string[]; keyPoints?: string[] } } {
+    // v5.11.4: Try JSON first (current SummaryGenerator format)
+    try {
+      const obj = JSON.parse(content) as Partial<{
+        theme: string;
+        pendingTasks: string[];
+        keyPoints: string[];
+        timestamp: number;
+        sessionId: string;
+        messageCount: number;
+      }>;
+
+      if (obj && typeof obj === "object") {
+        const whatWereWeDoing = obj.theme
+          ?? (obj.keyPoints && obj.keyPoints.length > 0 ? obj.keyPoints[0] : "")
+          ?? "Previous session";
+
+        const whatIsNext = obj.pendingTasks && obj.pendingTasks.length > 0
+          ? obj.pendingTasks[0]
+          : (obj.keyPoints && obj.keyPoints.length > 1 ? obj.keyPoints[1] : "Continue with current task");
+
+        const recap: Recap = {
+          whatWereWeDoing,
+          whatIsNext,
+          timestamp: typeof obj.timestamp === "number" ? obj.timestamp : this.extractTimestamp({ metadata }),
+          sessionId: (metadata?.session_id as string) || obj.sessionId || "",
+        };
+
+        const extra = {
+          pendingTasks: obj.pendingTasks,
+          keyPoints: obj.keyPoints,
+        };
+
+        return { recap, extra };
+      }
+    } catch {
+      // Not JSON, fall through to legacy regex path
+    }
+
+    // Legacy regex path (pre-v5.7.0 textual format)
     const whatDoingMatch = content.match(/Session Recap:\s*(.+?)(?:\n|$)/i);
     const nextMatch = content.match(/Next:\s*(.+?)(?:\n|$)/i);
 
-    return {
+    const recap: Recap = {
       whatWereWeDoing: whatDoingMatch ? whatDoingMatch[1].trim() : content.substring(0, 100),
       whatIsNext: nextMatch ? nextMatch[1].trim() : "Continue with current task",
       timestamp: this.extractTimestamp({ metadata }),
       sessionId: (metadata?.session_id as string) || "",
     };
+
+    return { recap };
   }
 
   /**
    * Format recap for user-friendly display.
+   *
+   * v5.11.4: Accept optional extra fields to render pendingTasks and keyPoints
+   * when the source was a SessionSummary JSON. Falls back to the minimal
+   * whatWereWeDoing/whatIsNext pair for legacy records.
    */
-  private formatRecap(recap: Recap): string {
-    return [
+  private formatRecap(recap: Recap, extra?: { pendingTasks?: string[]; keyPoints?: string[] }): string {
+    const lines: string[] = [
       `📋 **Last Session**`,
       ``,
       `**What we were doing:** ${recap.whatWereWeDoing}`,
       ``,
       `**Next step:** ${recap.whatIsNext}`,
-    ].join("\n");
+    ];
+
+    if (extra?.pendingTasks && extra.pendingTasks.length > 0) {
+      lines.push(``, `**Pending tasks:**`);
+      for (const t of extra.pendingTasks.slice(0, 5)) lines.push(`- ${t}`);
+    }
+
+    if (extra?.keyPoints && extra.keyPoints.length > 0) {
+      lines.push(``, `**Key points:**`);
+      for (const p of extra.keyPoints.slice(0, 5)) lines.push(`- ${p}`);
+    }
+
+    return lines.join("\n");
   }
 }
