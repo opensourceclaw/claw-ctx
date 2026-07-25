@@ -1,13 +1,7 @@
 /**
  * claw-ctx — Model-Aware Context Optimizer
  *
- * Selects optimal context loading strategy based on model characteristics.
- * Different models benefit from different approaches:
- * - static-prefix: Cache-friendly static content first (DeepSeek, Claude, GPT-4x)
- * - dynamic-load: On-demand search and load (MiniMax, Kimi, OpenAI o-series)
- * - hybrid: Mixed approach (default for unknown models)
- *
- * v5.16.0: Initial implementation
+ * v5.16.1: Added metrics collection and observability support
  */
 import {
   ModelProfileRegistry,
@@ -15,6 +9,15 @@ import {
   type ModelProfile,
   type OptimizationStrategy,
 } from "./model-profile.js";
+import {
+  OptimizerMetricsCollector,
+  optimizerMetricsCollector,
+} from "./metrics/optimizer-metrics.js";
+import {
+  OptimizerObserver,
+  optimizerObserver,
+  type IEventBus,
+} from "./obs/optimizer-observer.js";
 
 /**
  * Optimization hint for context assembly
@@ -102,17 +105,58 @@ export const DEFAULT_STRATEGY_CONFIGS: Record<OptimizationStrategy, StrategyConf
  */
 export class ModelAwareOptimizer {
   private registry: ModelProfileRegistry;
+  private metrics: OptimizerMetricsCollector;
+  private observer: OptimizerObserver;
 
-  constructor(registry?: ModelProfileRegistry) {
+  constructor(
+    registry?: ModelProfileRegistry,
+    metrics?: OptimizerMetricsCollector,
+    observer?: OptimizerObserver
+  ) {
     this.registry = registry ?? modelProfileRegistry;
+    this.metrics = metrics ?? optimizerMetricsCollector;
+    this.observer = observer ?? optimizerObserver;
+  }
+
+  /**
+   * Get the metrics collector instance
+   */
+  getMetrics(): OptimizerMetricsCollector {
+    return this.metrics;
+  }
+
+  /**
+   * Get the observer instance
+   */
+  getObserver(): OptimizerObserver {
+    return this.observer;
+  }
+
+  /**
+   * Set the event bus for observability
+   */
+  setEventBus(eventBus: IEventBus): void {
+    this.observer.setEventBus(eventBus);
   }
 
   /**
    * Get optimization strategy for a model
    */
   getStrategy(modelId: string): OptimizationStrategy {
+    const startTime = Date.now();
     const profile = this.registry.resolve(modelId);
-    return profile?.optimization.strategy ?? "hybrid";
+    const strategy = profile?.optimization.strategy ?? "hybrid";
+
+    // Record metrics
+    this.metrics.recordStrategyUsed(strategy, modelId);
+    const duration = Date.now() - startTime;
+    this.metrics.recordOptimizeDuration(duration);
+
+    // Emit observability event
+    this.observer.emitStrategyUsed(strategy, modelId);
+    this.observer.emitOptimizeDuration(duration, modelId);
+
+    return strategy;
   }
 
   /**
@@ -247,6 +291,9 @@ export class ModelAwareOptimizer {
 
     // Reserve for critical signals (from total budget, not effective)
     const reserve = totalBudget - effectiveBudget;
+
+    // Emit observability event
+    this.observer.emitBudgetAllocated(modelId, totalBudget, stable, dynamic, reserve);
 
     return { stable, dynamic, reserve, preload };
   }

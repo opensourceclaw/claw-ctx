@@ -94,6 +94,26 @@ export {
   type StrategyConfig,
 } from "./model-aware-optimizer.js";
 
+// v5.16.1 Metrics collection
+export {
+  OptimizerMetricsCollector,
+  optimizerMetricsCollector,
+  type OptimizerMetrics,
+  type StrategyUsageStat,
+  type ModelCallStat,
+  type PerformanceStat,
+} from "./metrics/optimizer-metrics.js";
+
+// v5.16.1 Observability (claw-obs integration)
+export {
+  OptimizerObserver,
+  optimizerObserver,
+  type IEventBus,
+  type OptimizerEvents,
+  type OptimizerEventName,
+  type OptimizerEventData,
+} from "./obs/optimizer-observer.js";
+
 // v5.16.0 CLI entry point (run via: claw-ctx <command>)
 // CLI is available via bin entry in package.json
 
