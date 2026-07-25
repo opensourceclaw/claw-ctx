@@ -7,4 +7,4 @@ docs/api/
 *.log
 .DS_Store
 .claw-mem-index/
-src/version.ts
+src/version.ts.npmrc
