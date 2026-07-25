@@ -78,6 +78,22 @@ export { PromptStyleEngine, type PromptStyle, type StyleConfig, type StyleApplic
 export { ContextPredictor, PredictionEngine, PreloadManager, type PredictedItem, type PredictionResult, type ContextHistory } from "./predictive/index.js";
 export { VersionHistory, ChangePatternAnalyzer, type ContextItem, type ContextStrategy, type ContextSnapshot, type ModifiedItem, type ChangeReport } from "./evolution/index.js";
 
+// v5.16.0 Model-aware context optimization
+export {
+  ModelProfileRegistry,
+  BUILTIN_MODEL_PROFILES,
+  modelProfileRegistry,
+  type ModelProfile,
+  type OptimizationStrategy,
+} from "./model-profile.js";
+export {
+  ModelAwareOptimizer,
+  modelAwareOptimizer,
+  DEFAULT_STRATEGY_CONFIGS,
+  type OptimizationHint,
+  type StrategyConfig,
+} from "./model-aware-optimizer.js";
+
 const plugin = {
   id: "claw-ctx",
   name: "Claw Context Engine",

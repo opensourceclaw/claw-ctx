@@ -80,6 +80,8 @@ import { CheckpointManager } from "./session-resume/checkpoint.js";
 import { ContextAssembler, type AssemblyResult } from "./session-resume/context-assembler.js";
 import { HistoryLoader } from "./session-resume/history-loader.js";
 import { TaskTypeDetector } from "./adaptive/task-type-detector.js";
+// v5.16.0: Model-aware context optimization
+import { ModelAwareOptimizer, modelAwareOptimizer, type OptimizationHint } from "./model-aware-optimizer.js";
 
 // v4.11.0: RL-driven memory strategy selection
 import {
@@ -277,6 +279,9 @@ export class ClawContextEngine {
   private _contextAssembler: ContextAssembler | null = null;
   private _taskTypeDetector: TaskTypeDetector | null = null;
   private _lastAssemblyResult: AssemblyResult | null = null;
+  // v5.16.0: Model-aware context optimizer
+  private _modelOptimizer: ModelAwareOptimizer;
+  private _lastOptimizationHint: OptimizationHint | null = null;
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -328,6 +333,8 @@ export class ClawContextEngine {
       { mode: "every_turn", maxRecoveryAgeHours: 48 },
       () => this._sessionState,
     );
+    // v5.16.0: Model-aware context optimizer
+    this._modelOptimizer = modelAwareOptimizer;
   }
 
   private _session(id: string): void { if (this.sid !== id) { this.sid = id; this.manager.sessionId = id; } }
@@ -402,6 +409,16 @@ export class ClawContextEngine {
   async assemble(p: { sessionId: string; sessionKey?: string; messages: any[]; tokenBudget?: number; availableTools?: Set<string>; citationsMode?: string; model?: string; prompt?: string; confidenceThreshold?: number; confidenceMode?: ConfidenceMode; crossDomain?: { enabled: boolean; currentPillar?: string; currentIntent?: string; timeRange?: string; maxSignals?: number }; ci?: { enabled: boolean; project?: string; includeBuildStatus?: boolean; includeTestResults?: boolean; includeDeployStatus?: boolean; maxSignals?: number } }): Promise<{ messages: any[]; estimatedTokens: number; systemPromptAddition?: string; promptAuthority?: string; confidenceReport?: ConfidenceReport; crossDomainReport?: { signalsInjected: number; totalTokens: number; correlations: InjectedSignal[] }; ciReport?: { signalsInjected: number; totalTokens: number; signals: CISignal[] }; driftScore?: number; autoCompact?: boolean; newSessionSuggestion?: string }> {
     if (this.config.debug) this.logger.info(`[claw-ctx] assemble() called, sessionId=${p.sessionId}, messages=${p.messages?.length ?? 0}, tokenBudget=${p.tokenBudget ?? 0}`);
     this._session(p.sessionId);
+
+    // v5.16.0: Get model-aware optimization hint
+    if (p.model) {
+      this._lastOptimizationHint = this._modelOptimizer.getOptimizationHint(p.model);
+      if (this.config.debug) {
+        this.logger.info(`[claw-ctx] Model-aware optimization: model=${p.model}, strategy=${this._lastOptimizationHint.strategy}, cacheStaticPrefix=${this._lastOptimizationHint.cacheStaticPrefix}`);
+      }
+    } else {
+      this._lastOptimizationHint = null;
+    }
 
     // Apply confidence mode if specified
     if (p.confidenceMode && p.confidenceMode !== "disabled") {
@@ -1174,6 +1191,29 @@ export class ClawContextEngine {
   /** v5.0.0-rc.2: Get the preload manager. */
   getPreloadManager(): PreloadManager {
     return this._preloadManager;
+  }
+
+  /** v5.16.0: Get the model-aware optimizer. */
+  getModelOptimizer(): ModelAwareOptimizer {
+    return this._modelOptimizer;
+  }
+
+  /** v5.16.0: Get the last optimization hint (from last assemble call). */
+  getLastOptimizationHint(): OptimizationHint | null {
+    return this._lastOptimizationHint;
+  }
+
+  /**
+   * v5.16.0: Get model-aware budget allocation.
+   * Returns optimized budget split for stable/dynamic/reserve/preload.
+   */
+  getModelBudgetAllocation(modelId: string, totalBudget: number): {
+    stable: number;
+    dynamic: number;
+    reserve: number;
+    preload: number;
+  } {
+    return this._modelOptimizer.calculateBudgetAllocation(modelId, totalBudget);
   }
 
   /**
