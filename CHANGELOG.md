@@ -1,5 +1,23 @@
 # Changelog
 
+## v5.16.2 (2026-07-27)
+
+### Added
+- **Proactive Compaction Controller** (`src/proactive-compaction-controller.ts`)
+  - Triggers compaction *before* token overflow, not after errors
+  - Model-specific thresholds (e.g., DeepSeek: 100k, GLM-5.2: 200k, GPT-5.6: 400k)
+  - Session state tracking (compaction count, cooldown, last token count)
+  - Configurable proactive ratio (default: 75% of context window)
+  - Exported via `index.ts` for external use
+
+### Changed
+- `index.ts` exports `ProactiveCompactionController` and related types
+
+### Tests
+- 18 new tests for ProactiveCompactionController
+
+---
+
 ## v5.16.0 (2026-07-25)
 
 ### Added

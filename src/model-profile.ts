@@ -77,16 +77,16 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
     name: "MiniMax M2.5",
     provider: "MiniMax",
     cache: { staticPrefixBonus: false, supported: true },
-    context: { maxTokens: 128000, effectiveWindowRatio: 0.85, prefersSummary: false },
-    optimization: { strategy: "dynamic-load", preloadPriority: ["code", "docs"], compressionThreshold: 100000 }
+    context: { maxTokens: 204800, effectiveWindowRatio: 0.85, prefersSummary: false },
+    optimization: { strategy: "dynamic-load", preloadPriority: ["code", "docs"], compressionThreshold: 153600 }
   },
   {
     id: "minimax-m3",
     name: "MiniMax M3",
     provider: "MiniMax",
     cache: { staticPrefixBonus: false, supported: true },
-    context: { maxTokens: 256000, effectiveWindowRatio: 0.85, prefersSummary: false },
-    optimization: { strategy: "dynamic-load", preloadPriority: ["code", "docs"], compressionThreshold: 200000 }
+    context: { maxTokens: 1000000, effectiveWindowRatio: 0.9, prefersSummary: false },
+    optimization: { strategy: "dynamic-load", preloadPriority: ["code", "docs"], compressionThreshold: 800000 }
   },
 
   // Kimi (dynamic-load)
@@ -95,16 +95,16 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
     name: "Kimi k1.5",
     provider: "Kimi",
     cache: { staticPrefixBonus: false, supported: true },
-    context: { maxTokens: 200000, effectiveWindowRatio: 0.8, prefersSummary: false },
-    optimization: { strategy: "dynamic-load", preloadPriority: ["docs", "code"], compressionThreshold: 150000 }
+    context: { maxTokens: 128000, effectiveWindowRatio: 0.8, prefersSummary: false },
+    optimization: { strategy: "dynamic-load", preloadPriority: ["docs", "code"], compressionThreshold: 96000 }
   },
   {
     id: "kimi-k2",
     name: "Kimi k2",
     provider: "Kimi",
     cache: { staticPrefixBonus: false, supported: true },
-    context: { maxTokens: 320000, effectiveWindowRatio: 0.8, prefersSummary: false },
-    optimization: { strategy: "dynamic-load", preloadPriority: ["docs", "code"], compressionThreshold: 250000 }
+    context: { maxTokens: 262144, effectiveWindowRatio: 0.8, prefersSummary: false },
+    optimization: { strategy: "dynamic-load", preloadPriority: ["docs", "code"], compressionThreshold: 210000 }
   },
 
   // DeepSeek (static-prefix)
@@ -129,16 +129,16 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
     name: "DeepSeek V4 Flash",
     provider: "DeepSeek",
     cache: { staticPrefixBonus: true, supported: true },
-    context: { maxTokens: 128000, effectiveWindowRatio: 0.9, prefersSummary: false },
-    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code"], compressionThreshold: 100000 }
+    context: { maxTokens: 1000000, effectiveWindowRatio: 0.9, prefersSummary: false },
+    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code"], compressionThreshold: 800000 }
   },
   {
     id: "deepseek-v4-pro",
     name: "DeepSeek V4 Pro",
     provider: "DeepSeek",
     cache: { staticPrefixBonus: true, supported: true },
-    context: { maxTokens: 256000, effectiveWindowRatio: 0.9, prefersSummary: false },
-    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code", "tests"], compressionThreshold: 200000 }
+    context: { maxTokens: 1000000, effectiveWindowRatio: 0.9, prefersSummary: false },
+    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code", "tests"], compressionThreshold: 800000 }
   },
 
   // Qwen (static-prefix)
@@ -155,32 +155,32 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
     name: "Qwen 3.5",
     provider: "Qwen",
     cache: { staticPrefixBonus: true, supported: true },
-    context: { maxTokens: 128000, effectiveWindowRatio: 0.85, prefersSummary: false },
-    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code"], compressionThreshold: 100000 }
+    context: { maxTokens: 1000000, effectiveWindowRatio: 0.85, prefersSummary: false },
+    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code"], compressionThreshold: 800000 }
   },
   {
     id: "qwen-3.6",
     name: "Qwen 3.6",
     provider: "Qwen",
     cache: { staticPrefixBonus: true, supported: true },
-    context: { maxTokens: 128000, effectiveWindowRatio: 0.85, prefersSummary: false },
-    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code"], compressionThreshold: 100000 }
+    context: { maxTokens: 1000000, effectiveWindowRatio: 0.85, prefersSummary: false },
+    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code"], compressionThreshold: 800000 }
   },
   {
     id: "qwen-3.7",
     name: "Qwen 3.7",
     provider: "Qwen",
     cache: { staticPrefixBonus: true, supported: true },
-    context: { maxTokens: 128000, effectiveWindowRatio: 0.85, prefersSummary: false },
-    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code"], compressionThreshold: 100000 }
+    context: { maxTokens: 1000000, effectiveWindowRatio: 0.85, prefersSummary: false },
+    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code"], compressionThreshold: 800000 }
   },
   {
     id: "qwen-3.8",
     name: "Qwen 3.8",
     provider: "Qwen",
     cache: { staticPrefixBonus: true, supported: true },
-    context: { maxTokens: 256000, effectiveWindowRatio: 0.85, prefersSummary: false },
-    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code", "tests"], compressionThreshold: 200000 }
+    context: { maxTokens: 1000000, effectiveWindowRatio: 0.85, prefersSummary: false },
+    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code", "tests"], compressionThreshold: 800000 }
   },
 
   // GLM (static-prefix)
@@ -189,24 +189,24 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
     name: "GLM 5",
     provider: "GLM",
     cache: { staticPrefixBonus: true, supported: true },
-    context: { maxTokens: 128000, effectiveWindowRatio: 0.85, prefersSummary: false },
-    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code"], compressionThreshold: 100000 }
+    context: { maxTokens: 200000, effectiveWindowRatio: 0.85, prefersSummary: false },
+    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code"], compressionThreshold: 150000 }
   },
   {
     id: "glm-5.1",
     name: "GLM 5.1",
     provider: "GLM",
     cache: { staticPrefixBonus: true, supported: true },
-    context: { maxTokens: 128000, effectiveWindowRatio: 0.85, prefersSummary: false },
-    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code"], compressionThreshold: 100000 }
+    context: { maxTokens: 200000, effectiveWindowRatio: 0.85, prefersSummary: false },
+    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code"], compressionThreshold: 150000 }
   },
   {
     id: "glm-5.2",
     name: "GLM 5.2",
     provider: "GLM",
     cache: { staticPrefixBonus: true, supported: true },
-    context: { maxTokens: 256000, effectiveWindowRatio: 0.85, prefersSummary: false },
-    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code", "tests"], compressionThreshold: 200000 }
+    context: { maxTokens: 1000000, effectiveWindowRatio: 0.9, prefersSummary: false },
+    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code", "tests"], compressionThreshold: 800000 }
   },
 
   // ── 国际模型 (19) ─────────────────────────────────────────────
@@ -311,24 +311,24 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
     name: "Claude Opus 4",
     provider: "Claude",
     cache: { staticPrefixBonus: true, supported: true },
-    context: { maxTokens: 200000, effectiveWindowRatio: 0.9, prefersSummary: false },
-    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code", "tests"], compressionThreshold: 160000 }
+    context: { maxTokens: 1000000, effectiveWindowRatio: 0.9, prefersSummary: false },
+    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code", "tests"], compressionThreshold: 800000 }
   },
   {
     id: "claude-4.6",
     name: "Claude 4.6",
     provider: "Claude",
     cache: { staticPrefixBonus: true, supported: true },
-    context: { maxTokens: 256000, effectiveWindowRatio: 0.9, prefersSummary: false },
-    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code", "tests"], compressionThreshold: 200000 }
+    context: { maxTokens: 1000000, effectiveWindowRatio: 0.9, prefersSummary: false },
+    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code", "tests"], compressionThreshold: 800000 }
   },
   {
     id: "claude-5",
     name: "Claude 5",
     provider: "Claude",
     cache: { staticPrefixBonus: true, supported: true },
-    context: { maxTokens: 512000, effectiveWindowRatio: 0.9, prefersSummary: false },
-    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code", "tests"], compressionThreshold: 400000 }
+    context: { maxTokens: 1000000, effectiveWindowRatio: 0.9, prefersSummary: false },
+    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code", "tests"], compressionThreshold: 800000 }
   },
 
   // Gemini (static-prefix)
@@ -345,8 +345,8 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
     name: "Gemini 2.5 Pro",
     provider: "Gemini",
     cache: { staticPrefixBonus: true, supported: true },
-    context: { maxTokens: 256000, effectiveWindowRatio: 0.85, prefersSummary: false },
-    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code", "tests"], compressionThreshold: 200000 }
+    context: { maxTokens: 1048576, effectiveWindowRatio: 0.85, prefersSummary: false },
+    optimization: { strategy: "static-prefix", preloadPriority: ["docs", "code", "tests"], compressionThreshold: 800000 }
   },
   {
     id: "gemini-3",

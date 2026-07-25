@@ -114,6 +114,15 @@ export {
   type OptimizerEventData,
 } from "./obs/optimizer-observer.js";
 
+// v5.16.0 Proactive compaction controller
+export {
+  ProactiveCompactionController,
+  proactiveCompactionController,
+  DEFAULT_COMPACTION_TRIGGER_CONFIG,
+  type CompactionTriggerConfig,
+  type CompactionRecommendation,
+} from "./proactive-compaction-controller.js";
+
 // v5.16.0 CLI entry point (run via: claw-ctx <command>)
 // CLI is available via bin entry in package.json
 

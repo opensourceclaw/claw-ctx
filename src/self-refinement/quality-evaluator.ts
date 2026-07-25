@@ -40,7 +40,7 @@ const TRUNCATION_PATTERNS = [
 ];
 
 const CJK_UNCLOSED_BRACKETS = [
-  /【[^】]*$/, /「[^」]*$/, /（[^）]*$/,
+  /【[^】]{0,500}$/, /「[^」]{0,500}$/, /（[^）]{0,500}$/,
 ];
 
 const ERROR_PATTERNS = [
@@ -101,6 +101,12 @@ export class QualityEvaluator {
         issues: ["Empty output"],
         suggestions: ["Generate a complete response"],
       };
+    }
+
+    // Security: Prevent ReDoS attacks by limiting input length
+    const MAX_OUTPUT_LENGTH = 50000; // 50KB limit
+    if (output.length > MAX_OUTPUT_LENGTH) {
+      output = output.substring(0, MAX_OUTPUT_LENGTH);
     }
 
     const dimensions: QualityDimensionResult[] = [

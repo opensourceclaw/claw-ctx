@@ -52,13 +52,20 @@ export const DEFAULT_MULTIMODAL_CONFIG: MultimodalConfig = {
   audioTranscriptionEnabled: true,
 };
 
+// ── Security: Input length limits to prevent ReDoS attacks ───────────────
+const MAX_INPUT_LENGTH = 10000; // 10KB limit for text input processing
+
+function isInputTooLong(text: string): boolean {
+  return text.length > MAX_INPUT_LENGTH;
+}
+
 // ── Detection patterns ───────────────────────────────────────────────
 
-const IMAGE_URL_PATTERN = /\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?[^\s]*)?$/i;
+const IMAGE_URL_PATTERN = /\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?[^\s]{0,200})?$/i;
 const IMAGE_DATA_PATTERN = /data:image\/(png|jpeg|gif|webp);base64,/i;
-const AUDIO_URL_PATTERN = /\.(mp3|wav|ogg|flac|aac|m4a)(\?[^\s]*)?$/i;
-const VIDEO_URL_PATTERN = /\.(mp4|webm|avi|mov|mkv)(\?[^\s]*)?$/i;
-const IMG_TAG_PATTERN = /!\[[^\]]*\]\(([^)]+)\)/g;
+const AUDIO_URL_PATTERN = /\.(mp3|wav|ogg|flac|aac|m4a)(\?[^\s]{0,200})?$/i;
+const VIDEO_URL_PATTERN = /\.(mp4|webm|avi|mov|mkv)(\?[^\s]{0,200})?$/i;
+const IMG_TAG_PATTERN = /!\[[^\]]{0,200}\]\(([^)]{0,500})\)/g;
 
 // ── MultimodalContextHandler ──────────────────────────────────────────
 
@@ -87,6 +94,13 @@ export class MultimodalContextHandler {
     if (!message?.content) return results;
 
     const text = message.content;
+
+    // Security: Prevent ReDoS attacks by limiting input length
+    if (isInputTooLong(text)) {
+      // Truncate for safety
+      const truncated = text.substring(0, MAX_INPUT_LENGTH);
+      return this.extractMultimodalContent({ ...message, content: truncated });
+    }
 
     // Check for data URI images
     const dataMatch = text.match(IMAGE_DATA_PATTERN);
