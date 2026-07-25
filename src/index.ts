@@ -94,6 +94,9 @@ export {
   type StrategyConfig,
 } from "./model-aware-optimizer.js";
 
+// v5.16.0 CLI entry point (run via: claw-ctx <command>)
+// CLI is available via bin entry in package.json
+
 const plugin = {
   id: "claw-ctx",
   name: "Claw Context Engine",

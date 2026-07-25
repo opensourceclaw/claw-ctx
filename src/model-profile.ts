@@ -6,7 +6,11 @@
  * and optimal loading strategies.
  *
  * v5.16.0: Initial implementation with 35 built-in model profiles
+ * v5.16.0: Added custom config loading support
  */
+
+import * as fs from "fs";
+import * as path from "path";
 
 /**
  * Optimization strategy type
@@ -373,15 +377,143 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
 /**
  * Model profile registry
  * Manages built-in and custom model profiles
+ *
+ * Priority: custom > builtin > default
  */
 export class ModelProfileRegistry {
+  private builtinProfiles: Map<string, ModelProfile>;
+  private customProfiles: Map<string, ModelProfile>;
   private profiles: Map<string, ModelProfile>;
 
   constructor() {
+    this.builtinProfiles = new Map();
+    this.customProfiles = new Map();
     this.profiles = new Map();
     // Load built-in profiles
     for (const profile of BUILTIN_MODEL_PROFILES) {
+      this.builtinProfiles.set(profile.id, profile);
       this.profiles.set(profile.id, profile);
+    }
+  }
+
+  /**
+   * Load custom model configurations from a JSON file
+   * Custom configs override built-in profiles with same ID
+   *
+   * @param configPath - Path to models.json file or directory containing it
+   * @returns Number of custom profiles loaded
+   */
+  loadCustomConfigs(configPath: string): number {
+    let filePath = configPath;
+
+    // If path is a directory, look for models.json inside
+    if (fs.existsSync(configPath) && fs.statSync(configPath).isDirectory()) {
+      filePath = path.join(configPath, "models.json");
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return 0;
+    }
+
+    try {
+      const content = fs.readFileSync(filePath, "utf-8");
+      const config = JSON.parse(content);
+
+      if (!Array.isArray(config.models)) {
+        return 0;
+      }
+
+      let loaded = 0;
+      for (const profile of config.models) {
+        if (this._validateProfile(profile)) {
+          this.customProfiles.set(profile.id, profile);
+          this.profiles.set(profile.id, profile); // Override builtin
+          loaded++;
+        }
+      }
+
+      return loaded;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Load custom configs from workspace .claw-ctx directory
+   *
+   * @param workspaceDir - Workspace root directory
+   * @returns Number of custom profiles loaded
+   */
+  loadWorkspaceConfigs(workspaceDir: string): number {
+    const configDir = path.join(workspaceDir, ".claw-ctx");
+    return this.loadCustomConfigs(configDir);
+  }
+
+  /**
+   * Validate a model profile object
+   */
+  private _validateProfile(profile: unknown): profile is ModelProfile {
+    if (!profile || typeof profile !== "object") return false;
+    const p = profile as Record<string, unknown>;
+
+    // Required fields
+    if (typeof p.id !== "string" || !p.id) return false;
+    if (typeof p.name !== "string" || !p.name) return false;
+    if (typeof p.provider !== "string" || !p.provider) return false;
+
+    // Validate cache
+    if (!p.cache || typeof p.cache !== "object") return false;
+    const cache = p.cache as Record<string, unknown>;
+    if (typeof cache.staticPrefixBonus !== "boolean") return false;
+    if (typeof cache.supported !== "boolean") return false;
+
+    // Validate context
+    if (!p.context || typeof p.context !== "object") return false;
+    const context = p.context as Record<string, unknown>;
+    if (typeof context.maxTokens !== "number" || context.maxTokens <= 0) return false;
+    if (typeof context.effectiveWindowRatio !== "number") return false;
+    if (typeof context.prefersSummary !== "boolean") return false;
+
+    // Validate optimization
+    if (!p.optimization || typeof p.optimization !== "object") return false;
+    const opt = p.optimization as Record<string, unknown>;
+    if (!["static-prefix", "dynamic-load", "hybrid"].includes(opt.strategy as string)) return false;
+    if (!Array.isArray(opt.preloadPriority)) return false;
+    if (typeof opt.compressionThreshold !== "number") return false;
+
+    return true;
+  }
+
+  /**
+   * Get all custom profile IDs
+   */
+  getCustomIds(): string[] {
+    return Array.from(this.customProfiles.keys());
+  }
+
+  /**
+   * Get all builtin profile IDs
+   */
+  getBuiltinIds(): string[] {
+    return Array.from(this.builtinProfiles.keys());
+  }
+
+  /**
+   * Check if a profile is custom (not builtin)
+   */
+  isCustom(id: string): boolean {
+    return this.customProfiles.has(id);
+  }
+
+  /**
+   * Clear all custom profiles (reset to builtin only)
+   */
+  clearCustom(): void {
+    this.customProfiles.clear();
+    // Rebuild profiles from builtin
+    this.profiles.clear();
+    for (const [id, profile] of this.builtinProfiles) {
+      this.profiles.set(id, profile);
     }
   }
 
