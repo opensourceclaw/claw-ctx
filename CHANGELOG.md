@@ -1,5 +1,24 @@
 # Changelog
 
+## v5.16.0 (2026-07-25)
+
+### Added
+- **Model-Aware Context Optimization**
+  - `ModelProfile` interface with 35 model configs
+  - `ModelProfileRegistry` class for model management
+  - `ModelAwareOptimizer` core class
+  - 3 optimization strategies: static-prefix, dynamic-load, hybrid
+  - Custom config loading (`.claw-ctx/models.json`)
+  - CLI commands: `model list`, `model show`, `model strategy`, `model providers`
+
+### Changed
+- `engine.ts` integrated with ModelAwareOptimizer
+
+### Test
+- 1073 tests passed (新增 110 个测试)
+
+---
+
 ## v5.11.4 (2026-07-22)
 
 ### Fixed
