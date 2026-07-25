@@ -4,6 +4,9 @@
   "description": "Context Engine for OpenClaw with C2 gating, RL injection, governance, cross-domain, and CI/CD signals — standalone TypeScript plugin",
   "main": "dist/index.js",
   "type": "module",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com/"
+  },
   "bin": {
     "claw-ctx": "./dist/cli.js"
   },
