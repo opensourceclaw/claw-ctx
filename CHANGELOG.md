@@ -1,5 +1,34 @@
 # Changelog
 
+## v5.16.3 (2026-07-27)
+
+### Changed
+- **Model Context Window Audit** - Full verification against official docs for 35 models
+  - **GLM-5**: 128k → 200k, threshold 100k → 150k
+  - **GLM-5.1**: 128k → 200k, threshold 100k → 150k
+  - **GLM-5.2**: 256k → 1M, threshold 200k → 800k, effectiveWindowRatio 0.85 → 0.9
+  - **MiniMax M2.5**: 128k → 204.8k
+  - **MiniMax M3**: 256k → 1M
+  - **DeepSeek V4 Flash**: 128k → 1M
+  - **DeepSeek V4 Pro**: 256k → 1M
+  - **Qwen 3.5-3.8**: 128k/256k → 1M
+  - **Claude Opus 4**: 200k → 1M
+  - **Claude 4.6**: 256k → 1M
+  - **Claude 5 (Sonnet 5)**: 512k → 1M
+  - **Gemini 2.5 Pro**: 256k → 1,048,576
+  - **Kimi k1.5**: 200k → 128k (downgrade)
+  - **Kimi k2**: 320k → 262k (downgrade)
+
+### Fixed
+- **Security**: ReDoS protection and workflow permissions (CodeQL fixes)
+
+### Documentation
+- **Audit Report**: `docs/audits/2026-07-27-model-context-window-audit.md`
+  - 15 models correct, 14 updated, 2 downgraded, 4 unverifiable
+  - Compression thresholds optimized per context size (75%-80% ratio)
+
+---
+
 ## v5.16.2 (2026-07-27)
 
 ### Added
