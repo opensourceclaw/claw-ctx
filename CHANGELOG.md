@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.16.4 (2026-07-29)
+
+### Fixed
+- Confirmed model context windows against official documentation
+- Compression thresholds unified: 128k→75%, 200k→75%, 256k→78%, 1M→80%
+
+### Verified Models
+- Kimi k2: 262,144 ✅, Gemini 2.0 Flash: 128k ✅, GPT-4o: 128k ✅, DeepSeek R1: 128k ✅
+
+---
+
 ## v5.16.3 (2026-07-27)
 
 ### Changed

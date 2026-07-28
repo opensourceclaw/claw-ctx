@@ -72,6 +72,7 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
   // ── 国内模型 (16) ─────────────────────────────────────────────
 
   // MiniMax (dynamic-load)
+  // Source: https://platform.minimaxi.com/document/guides/model
   {
     id: "minimax-m2.5",
     name: "MiniMax M2.5",
@@ -90,6 +91,7 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
   },
 
   // Kimi (dynamic-load)
+  // Source: https://platform.moonshot.cn/docs/intro
   {
     id: "kimi-k1.5",
     name: "Kimi k1.5",
@@ -108,6 +110,7 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
   },
 
   // DeepSeek (static-prefix)
+  // Source: https://api-docs.deepseek.com/
   {
     id: "deepseek-v3",
     name: "DeepSeek V3",
@@ -142,6 +145,7 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
   },
 
   // Qwen (static-prefix)
+  // Source: https://help.aliyun.com/document_detail/610227.html
   {
     id: "qwen-3",
     name: "Qwen 3",
@@ -184,6 +188,7 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
   },
 
   // GLM (static-prefix)
+  // Source: https://bigmodel.cn/dev/api/normal-model/glm-4
   {
     id: "glm-5",
     name: "GLM 5",
@@ -212,6 +217,7 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
   // ── 国际模型 (19) ─────────────────────────────────────────────
 
   // Mistral (static-prefix)
+  // Source: https://docs.mistral.ai/getting_started/models/
   {
     id: "mistral-large-2",
     name: "Mistral Large 2",
@@ -222,6 +228,7 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
   },
 
   // OpenAI GPT series (static-prefix)
+  // Source: https://platform.openai.com/docs/models
   {
     id: "gpt-4o",
     name: "GPT-4o",
@@ -290,6 +297,7 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
   },
 
   // Claude (static-prefix)
+  // Source: https://docs.anthropic.com/en/docs/about-claude/models
   {
     id: "claude-3.5-sonnet",
     name: "Claude 3.5 Sonnet",
@@ -332,6 +340,7 @@ export const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
   },
 
   // Gemini (static-prefix)
+  // Source: https://ai.google.dev/gemini-api/docs/models/gemini
   {
     id: "gemini-2.0-flash",
     name: "Gemini 2.0 Flash",
