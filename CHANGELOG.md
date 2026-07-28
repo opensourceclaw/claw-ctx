@@ -1,5 +1,25 @@
 # Changelog
 
+## v5.16.5 (2026-07-29)
+
+### Added
+- **Model Config Sync API** — `getModelConfigs()` for OpenClaw integration
+  - Returns all 35+ model configs with proactiveThreshold
+  - `proactiveThreshold` = `contextWindow * 0.75`
+- **OpenClaw Integration Guide** — `docs/openclaw-integration.md`
+  - 5-step integration process (~1 hour)
+  - Config drift detection guidance
+- **Example Code** — `examples/openclaw-proactive-compact.ts`
+
+### Fixed
+- Auto-compaction failure at 57% (now provides clear guidance via API)
+
+### Tests
+- Unit tests for `getModelConfigs()` (4 tests)
+- Total: 1116 passed, 99.29% pass rate
+
+---
+
 ## v5.16.4 (2026-07-29)
 
 ### Fixed

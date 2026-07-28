@@ -24,6 +24,7 @@
  */
 import { VERSION } from "./version.js";
 import { createClawContextEngine } from "./engine.js";
+import { modelProfileRegistry } from "./model-profile.js";
 
 export { ConfidenceGate, type ConfidenceMode, type ConfidenceReport } from "./confidence_gate.js";
 export { RLInjector, MockRLProvider, type RLExperience, type RLProvider } from "./rl_injector.js";
@@ -150,5 +151,28 @@ const plugin = {
     }
   },
 };
+
+// v5.16.5 Model Config Sync API
+export interface ModelConfig {
+  contextWindow: number;
+  compressionThreshold: number;
+  effectiveWindowRatio: number;
+  proactiveThreshold: number;
+}
+
+export function getModelConfigs(): Record<string, ModelConfig> {
+  const configs: Record<string, ModelConfig> = {};
+  for (const id of modelProfileRegistry.getAllIds()) {
+    const profile = modelProfileRegistry.get(id);
+    if (!profile) continue;
+    configs[profile.id] = {
+      contextWindow: profile.context.maxTokens,
+      compressionThreshold: profile.optimization.compressionThreshold,
+      effectiveWindowRatio: profile.context.effectiveWindowRatio,
+      proactiveThreshold: Math.floor(profile.context.maxTokens * 0.75),
+    };
+  }
+  return configs;
+}
 
 export default plugin;
