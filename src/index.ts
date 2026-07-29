@@ -26,6 +26,13 @@ import { VERSION } from "./version.js";
 import { createClawContextEngine } from "./engine.js";
 import { modelProfileRegistry } from "./model-profile.js";
 
+// v5.17.0 Context Budget API
+export { ContextBudgetManager, ContextTaskType } from "./context/ContextBudgetManager.js";
+export type { ContextBudget, BudgetStatus } from "./context/ContextBudgetManager.js";
+export { ContextTaskDetector } from "./detection/TaskTypeDetector.js";
+export { loadContextBudgetConfig, DEFAULT_CONTEXT_BUDGET_CONFIG } from "./config/ContextBudgetConfig.js";
+export type { ContextBudgetConfig } from "./config/ContextBudgetConfig.js";
+
 export { ConfidenceGate, type ConfidenceMode, type ConfidenceReport } from "./confidence_gate.js";
 export { RLInjector, MockRLProvider, type RLExperience, type RLProvider } from "./rl_injector.js";
 export { GovernanceInjector, MockGovernanceProvider, type GovernanceSignal, type GovernanceProvider, type GovernanceLayer } from "./governance_injector.js";

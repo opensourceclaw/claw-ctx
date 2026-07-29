@@ -19,7 +19,7 @@
     "unit-test-gate": "passed",
     "build-gate": "passed",
     "test-gate": "passed",
-    "release-gate": "pending"
+    "release-gate": "passed"
   },
   "subTasks": {
     "detailed-design": "skipped",
@@ -29,19 +29,10 @@
     "internal-verify": "completed",
     "unit-test": "completed",
     "acceptance": "completed",
-    "git-commit": "pending",
-    "release": "pending"
+    "git-commit": "completed",
+    "release": "completed"
   },
-  "status": "releasing",
-  "subTasks": {
-    "detailed-design": "skipped",
-    "design-review": "completed",
-    "implementation": "completed",
-    "code-review": "completed",
-    "internal-verify": "completed",
-    "unit-test": "completed"
-  },
-  "status": "building",
+  "status": "completed",
   "objective": "OpenClaw Integration & Model Config Sync",
   "planDocument": "docs/roadmap-v5.16.5.md"
 }

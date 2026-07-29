@@ -1,6 +1,6 @@
 {
   "id": "claw-ctx",
-  "version": "5.9.3",
+  "version": "5.16.5",
   "kind": "context-engine",
   "name": "Claw Context Engine",
   "description": "Standalone Context Engine with claw-mem integration for OpenClaw",
