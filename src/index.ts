@@ -182,4 +182,14 @@ export function getModelConfigs(): Record<string, ModelConfig> {
   return configs;
 }
 
+// v6.0.0: Capability Layer
+export { ContextCapability } from "./capability/index.js";
+export type {
+  IContextCapability,
+  BootstrapParams, BootstrapResult,
+  IngestParams,
+  AssembleParams, AssembleResult,
+  CompactParams, CompactResult,
+} from "./capability/index.js";
+
 export default plugin;

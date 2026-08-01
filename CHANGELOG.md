@@ -1,5 +1,21 @@
 # Changelog
 
+## v6.0.0 (2026-08-01)
+
+### Added
+- **Capability Layer** — `IContextCapability` interface for OpenClaw Runtime
+  - `bootstrap(params)` — Session init + history import
+  - `ingest(params)` — Message ingestion
+  - `assemble(params)` — Context assembly (with all injectors)
+  - `compact(params)` — Context compaction
+  - `closeSession(id)` — Session cleanup
+  - `healthCheck()` — Health status
+  - `dispose()` — Resource cleanup
+- **ContextCapability** class wrapping ClawContextEngine
+
+### Changed
+- All v5.17.0 public API remains backward-compatible (plugin entrypoint preserved)
+
 ## v5.16.5 (2026-07-29)
 
 ### Added
