@@ -339,19 +339,24 @@ export class ClawContextEngine {
 
   private _session(id: string): void { if (this.sid !== id) { this.sid = id; this.manager.sessionId = id; } }
 
-  async bootstrap(p: { sessionId: string; sessionKey?: string; sessionFile: string }): Promise<{ bootstrapped: boolean; importedMessages?: number; reason?: string }> {
+  async bootstrap(p: { sessionId: string; sessionKey?: string; sessionFile: string; memoryReady?: boolean }): Promise<{ bootstrapped: boolean; importedMessages?: number; reason?: string; memoryOk?: boolean; contextOk?: boolean }> {
     this._session(p.sessionId);
+    let memoryOk = false;
+    let contextOk = true;
     try { this.manager.injectConstitution?.(); } catch { this.logger.warn("[claw-ctx] constitution skip"); }
 
-    // v5.1.0: Checkpoint recovery — pre-fetch before session resume
-    if (this._checkpointManager) {
+    // v6.2.0: Serial recovery — memory first, then context
+    if (p.memoryReady) {
       try {
-        await this._checkpointManager.bootstrap(p.sessionId);
-      } catch { /* best effort */ }
+        if (this._checkpointManager) {
+          await this._checkpointManager.bootstrap(p.sessionId).catch(() => {});
+        }
+        memoryOk = true;
+      } catch { /* graceful degradation */ }
+    } else {
+      this.logger.info("[claw-ctx] Memory not ready, skipping memory-dependent recovery");
     }
 
-    // v4.1.0: Session continuity — inject previous session context
-    // v5.0.0: Replaced by SessionResumeManager
     let importedMessages = 0;
     if (this._sessionResume) {
       try {
@@ -362,11 +367,12 @@ export class ClawContextEngine {
           this.logger.info(`[claw-ctx] Loaded ${resumeResult.sessionCount} previous session(s)`);
         }
       } catch (e) {
-        this.logger.warn("[claw-ctx] session resume bootstrap failed:", e);
+        contextOk = false;
+        this.logger.warn(`[claw-ctx] session resume bootstrap failed: ${e}`);
       }
     }
 
-    return { bootstrapped: true, importedMessages, reason: "Claw Context bootstrapped" };
+    return { bootstrapped: true, importedMessages, memoryOk, contextOk, reason: "Claw Context bootstrapped" };
   }
 
   async ingest(p: { sessionId: string; sessionKey?: string; message: any; isHeartbeat?: boolean }): Promise<{ ingested: boolean }> {

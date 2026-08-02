@@ -1,10 +1,10 @@
 {
-  "pipelineId": "pipeline-20260729-v5165",
-  "version": "5.16.5",
+  "pipelineId": "pipeline-20260802-v620-session-recovery",
+  "version": "6.2.0",
   "project": "claw-ctx",
   "projectPath": "/Users/liantian/workspace/osprojects/claw-ctx",
   "currentStage": "RELEASE",
-  "startedAt": "2026-07-29T06:05:00.000Z",
+  "startedAt": "2026-08-02T18:58:00.000Z",
   "stages": [
     "PLAN",
     "CODE",
@@ -16,23 +16,20 @@
     "plan-approval-gate": "passed",
     "design-review-gate": "passed",
     "code-review-gate": "passed",
-    "unit-test-gate": "passed",
-    "build-gate": "passed",
     "test-gate": "passed",
-    "release-gate": "passed"
+    "release-gate": "in_progress"
   },
   "subTasks": {
-    "detailed-design": "skipped",
+    "detailed-design": "completed",
     "design-review": "completed",
     "implementation": "completed",
     "code-review": "completed",
-    "internal-verify": "completed",
     "unit-test": "completed",
-    "acceptance": "completed",
-    "git-commit": "completed",
-    "release": "completed"
+    "test": "completed",
+    "release": "in_progress"
   },
-  "status": "completed",
-  "objective": "OpenClaw Integration & Model Config Sync",
-  "planDocument": "docs/roadmap-v5.16.5.md"
+  "status": "releasing",
+  "objective": "会话恢复解耦 (串行恢复 + 容忍部分失败)",
+  "planDocument": "docs/roadmaps/ITERATION_PLAN_v6.2.0.md",
+  "dependencies": {}
 }

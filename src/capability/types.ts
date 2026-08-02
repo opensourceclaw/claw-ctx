@@ -4,12 +4,15 @@ export interface BootstrapParams {
   sessionId: string;
   sessionKey?: string;
   sessionFile: string;
+  memoryReady?: boolean;
 }
 
 export interface BootstrapResult {
   bootstrapped: boolean;
   importedMessages?: number;
   reason?: string;
+  memoryOk?: boolean;
+  contextOk?: boolean;
 }
 
 export interface IngestParams {
