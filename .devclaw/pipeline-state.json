@@ -5,6 +5,7 @@
   "projectPath": "/Users/liantian/workspace/osprojects/claw-ctx",
   "currentStage": "RELEASE",
   "startedAt": "2026-08-02T19:30:00.000Z",
+  "completedAt": "2026-08-02T19:50:00.000Z",
   "stages": [
     "PLAN",
     "CODE",
@@ -17,7 +18,7 @@
     "design-review-gate": "passed",
     "code-review-gate": "passed",
     "test-gate": "passed",
-    "release-gate": "in_progress"
+    "release-gate": "passed"
   },
   "subTasks": {
     "detailed-design": "completed",
@@ -26,9 +27,9 @@
     "code-review": "completed",
     "unit-test": "completed",
     "test": "completed",
-    "release": "in_progress"
+    "release": "completed"
   },
-  "status": "releasing",
+  "status": "completed",
   "objective": "压缩触发解耦 (OpenClaw 统一检测和触发)",
   "planDocument": "docs/roadmaps/ITERATION_PLAN_v6.3.0.md",
   "dependencies": {}
