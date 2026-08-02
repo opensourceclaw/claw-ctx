@@ -44,6 +44,8 @@ export interface AssembleResult {
 export interface CompactParams {
   sessionId: string;
   targetTokens?: number;
+  targetBudget?: number;
+  strategy?: "aggressive" | "balanced" | "conservative";
   force?: boolean;
 }
 
@@ -51,6 +53,10 @@ export interface CompactResult {
   ok: boolean;
   compacted?: boolean;
   reason?: string;
+  originalTokens?: number;
+  compressedTokens?: number;
+  removedMessages?: number;
+  duration?: number;
 }
 
 export interface IContextCapability {

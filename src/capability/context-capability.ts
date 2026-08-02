@@ -48,7 +48,24 @@ export class ContextCapability implements IContextCapability {
 
   async compact(params: CompactParams): Promise<CompactResult> {
     this.checkDisposed();
-    return this.engine.compact(params as any) as Promise<CompactResult>;
+    const startTime = Date.now();
+    const result = await this.engine.compact({
+      sessionId: params.sessionId,
+      sessionFile: "",
+      tokenBudget: params.targetBudget ?? params.targetTokens,
+      force: params.force,
+      compactionTarget: params.strategy === "aggressive" ? "aggressive"
+        : params.strategy === "conservative" ? "conservative"
+        : "balanced",
+    } as any);
+    return {
+      ok: result.ok,
+      compacted: result.compacted,
+      reason: result.reason,
+      originalTokens: result.result?.tokensBefore,
+      compressedTokens: result.result?.tokensAfter,
+      duration: Date.now() - startTime,
+    };
   }
 
   async closeSession(sessionId: string): Promise<void> {

@@ -1,11 +1,10 @@
 {
-  "pipelineId": "pipeline-20260802-v620-session-recovery",
-  "version": "6.2.0",
+  "pipelineId": "pipeline-20260802-v630-compaction-decoupling",
+  "version": "6.3.0",
   "project": "claw-ctx",
   "projectPath": "/Users/liantian/workspace/osprojects/claw-ctx",
   "currentStage": "RELEASE",
-  "startedAt": "2026-08-02T18:58:00.000Z",
-  "completedAt": "2026-08-02T19:28:00.000Z",
+  "startedAt": "2026-08-02T19:30:00.000Z",
   "stages": [
     "PLAN",
     "CODE",
@@ -18,7 +17,7 @@
     "design-review-gate": "passed",
     "code-review-gate": "passed",
     "test-gate": "passed",
-    "release-gate": "passed"
+    "release-gate": "in_progress"
   },
   "subTasks": {
     "detailed-design": "completed",
@@ -27,10 +26,10 @@
     "code-review": "completed",
     "unit-test": "completed",
     "test": "completed",
-    "release": "completed"
+    "release": "in_progress"
   },
-  "status": "completed",
-  "objective": "会话恢复解耦 (串行恢复 + 容忍部分失败)",
-  "planDocument": "docs/roadmaps/ITERATION_PLAN_v6.2.0.md",
+  "status": "releasing",
+  "objective": "压缩触发解耦 (OpenClaw 统一检测和触发)",
+  "planDocument": "docs/roadmaps/ITERATION_PLAN_v6.3.0.md",
   "dependencies": {}
 }
