@@ -153,7 +153,7 @@ export class HistoryLoader {
     };
 
     // v5.3.0: Perform initial search
-    let searchResult = await this._performSearch(initialParams);
+    const searchResult = await this._performSearch(initialParams);
 
     // v5.3.0: Assess completeness
     const assessment = this._completenessGate.assess(

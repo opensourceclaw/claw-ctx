@@ -39,7 +39,7 @@ export class PromptStyleEngine {
 
     const lines = items.map((m) => `- ${m.content}`);
 
-    let block = cfg.template
+    const block = cfg.template
       .replace("{items}", lines.join("\n"))
       .replace("{reasons}", this.buildReasons(items))
       .replace("{conditions}", this.buildConditions(items));
