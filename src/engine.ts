@@ -703,6 +703,19 @@ export class ClawContextEngine {
     const targetTokens = Math.floor(contextWindow * 0.75);
 
     try {
+      // v6.5.0: pre-compaction memory flush — preserve important memories before
+      // context is compacted away. Graceful degradation when claw-mem unavailable.
+      try {
+        const preCompactMems = await this.manager.search("important", undefined, 10);
+        const items = Array.isArray(preCompactMems) ? preCompactMems : (preCompactMems as any)?.memories ?? [];
+        for (const m of items.slice(0, 10)) {
+          const text = typeof m === "string" ? m : (m as any)?.content ?? "";
+          if (text) this.manager.store(`[pre-compact] ${text.slice(0, 300)}`, "episodic", ["pre-compaction"]);
+        }
+      } catch {
+        this.logger.warn("[claw-ctx] pre-compaction memory flush skipped (claw-mem unavailable)");
+      }
+
       const result = await this._executeCompaction(sessionFile, targetTokens);
       if (!result.compacted) {
         return { ok: true, compacted: false, reason: result.reason, result: { tokensBefore: result.tokensBefore ?? 0, tokensAfter: result.tokensBefore ?? 0 } };

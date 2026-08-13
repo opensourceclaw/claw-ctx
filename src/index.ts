@@ -193,4 +193,8 @@ export type {
   InjectParams, InjectResult,
 } from "./capability/index.js";
 
+// v6.5.0: MECW
+export { MecwEstimator, DEFAULT_COMPLEXITY_FACTORS } from "./mecw/index.js";
+export type { MecwEstimate } from "./mecw/index.js";
+
 export default plugin;

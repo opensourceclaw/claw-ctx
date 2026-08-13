@@ -8,6 +8,8 @@
  */
 
 import { ModelAwareOptimizer, type OptimizationHint } from "./model-aware-optimizer.js";
+import { MecwEstimator } from "./mecw/MecwEstimator.js";
+import { ContextTaskType } from "./context/ContextBudgetManager.js";
 
 /**
  * Compaction trigger configuration
@@ -102,7 +104,8 @@ export class ProactiveCompactionController {
   shouldCompact(
     sessionId: string,
     modelId: string,
-    currentTokens: number
+    currentTokens: number,
+    taskType?: ContextTaskType
   ): CompactionRecommendation {
     // Get or create session state
     let state = this.sessionStates.get(sessionId);
@@ -120,7 +123,11 @@ export class ProactiveCompactionController {
 
     // Determine threshold
     let threshold: number;
-    if (this.config.useModelThresholds) {
+    if (taskType) {
+      // v6.5.0: MECW-aware threshold — MECW = maxTokens × ratio × complexityFactor
+      const estimator = new MecwEstimator(this.optimizer);
+      threshold = estimator.estimateMecw(modelId, taskType).mecwTokens;
+    } else if (this.config.useModelThresholds) {
       // Use model-specific compression threshold from profile
       threshold = modelHint.compressionThreshold;
     } else {

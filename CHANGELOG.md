@@ -1,5 +1,20 @@
 # Changelog
 
+## v6.5.0 (2026-08-14)
+
+### Added
+
+- **MECW-Aware Compaction**: dynamic compaction threshold based on Maximum Effective Context Window
+  - `MecwEstimator` (`src/mecw/`) — `estimateMecw = maxContextTokens × effectiveWindowRatio × complexityFactor`
+  - `complexityFactor` table (SIMPLE 1.0 / MULTI 0.8 / SUMMARIZATION 0.7 / COMPLEX_REASONING 0.6), configurable override
+  - `ProactiveCompactionController.shouldCompact` now accepts optional `taskType` → routes to MECW threshold (backward-compatible fallback to static `compressionThreshold` when omitted)
+  - `detectTaskType` full-chain integration in engine/controller
+  - Complex task MECW < simple task (65280 < 108800 for gpt-4o, verified)
+
+### Changed
+
+- Version: 6.4.0 → 6.5.0
+
 ## v6.4.0 (2026-08-13)
 
 ### Added

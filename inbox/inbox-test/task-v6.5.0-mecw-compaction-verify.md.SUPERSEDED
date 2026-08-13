@@ -1,0 +1,55 @@
+# Task: claw-ctx v6.5.0 — MECW-Aware Compaction 独立验收
+
+**From**: Friday (A)
+**To**: Edith (C)
+**Date**: 2026-08-13
+**Stage**: TEST（独立验收）
+**Priority**: P1
+**PipelineId**: pipeline-20260813-ctxv650
+**Project**: claw-ctx
+**Version**: v6.5.0
+
+---
+
+## ⚠️ Inbox 绝对路径
+
+```
+Read:   /Users/liantian/workspace/osprojects/claw-ctx/inbox/inbox-test/
+Write:  /Users/liantian/workspace/osprojects/claw-ctx/inbox/inbox-results/
+Repo:   /Users/liantian/workspace/osprojects/claw-ctx/
+Design: /Users/liantian/workspace/osprojects/claw-ctx/inbox/inbox-plan/v6.5.0-mecw-compaction-design.md
+```
+
+## 背景
+
+Jarvis 实现 MECW-Aware Compaction（任务 `task-v6.5.0-mecw-compaction.md`）。本任务独立验收。
+
+## 复验任务（独立，不信任 Jarvis 自证）
+
+1. **独立 build + test**：`npm run build` 零错误；`npm test` 全绿（目标 94+ files，含新增 mecw/ 测试）。
+2. **复验 MECW 公式**：`MecwEstimator.estimateMecw` = maxContextTokens × effectiveWindowRatio × complexityFactor，结果向下取整正确。
+3. **复验 complexityFactor 表**：4 类初始值（1.0/0.8/0.7/0.6）正确，且可配置覆盖；复杂任务 MECW < 简单任务（论文方向）。
+4. **复验 controller 接入**：`shouldCompact` 传 taskType 用 MECW threshold；未传时回退静态 compressionThreshold（向后兼容验证）。
+5. **复验 claw-mem flush**：compact 前 flush，claw-mem 不可用时优雅降级（不抛错）。
+6. **复验零回归**：v6.4.0 的 3 工具注册 + compaction 修复仍正常（78/1130 基线不退化）。
+7. **核对数字真实性**：Jarvis 报告数字与实测一致（前几轮有数字不实教训，重点核）。
+
+## 验收标准
+- [ ] build 零错误；test 全绿（数字与报告一致）
+- [ ] MECW 公式 + factor 表正确可配置
+- [ ] controller 接 MECW + 向后兼容
+- [ ] claw-mem flush 集成 + 降级
+- [ ] 复杂任务 MECW < 简单任务
+- [ ] 零回归（v6.4.0 不退化）
+- [ ] 输出独立验收报告
+
+## 输出文档
+完成后在 `inbox/inbox-results/pipeline-20260813-ctxv650-test-acceptance.md` 创建验收报告。
+
+## ⚠️ 提醒
+- ✅ 独立验收，特别核数字真实性
+- ❌ 不 commit/push/release
+
+---
+
+**启动时间**: 2026-08-13 22:56 GMT+8

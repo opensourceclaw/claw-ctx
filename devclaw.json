@@ -1,52 +1,79 @@
 {
-  "project": "claw-ctx",
-  "version": "4.5.0",
-  "next_version": "5.0.0",
-  "createdAt": "2026-06-05T11:00:00+08:00",
-  "phase": "completed",
-  "specDir": "docs/v4.x/specs",
-  "planDir": "docs/v4.x/plans",
-  "mixMode": {
-    "planner": "friday",
-    "executor": "edith",
-    "validator": "friday",
-    "description": "Friday plans via inbox, Edith executes, Friday validates"
-  },
-  "harness": {
-    "mode": "plan",
-    "sandbox": true,
-    "selfTest": true,
-    "coverageThreshold": 80
-  },
-  "rsi": {
-    "enabled": true,
-    "cycle": "per_version",
-    "metrics": ["test_coverage", "latency", "token_count_accuracy"]
-  },
-  "phases": {
-    "v4.3.0": {
-      "name": "Token Precise Counting",
-      "status": "completed",
-      "spec": "docs/v4.x/specs/v430-token-counter.md",
-      "completedAt": "2026-06-05"
+  "projectId": "claw-ctx",
+  "version": "6.4.0",
+  "currentPipelineId": "pipeline-20260813-ctxv650",
+  "currentIterationPlan": "inbox/inbox-plan/v6.5.0-mecw-compaction-design.md",
+  "protocolVersion": "v2.7",
+  "agents": {
+    "A": {
+      "name": "Friday",
+      "role": "Project/Product management, Planning, Architecture, Code review, Release, Git commit"
     },
-    "v4.4.0": {
-      "name": "Context Drift Detection",
-      "status": "completed",
-      "spec": "docs/v4.x/specs/v440-drift-detector.md",
-      "completedAt": "2026-06-05"
+    "B": {
+      "name": "Jarvis",
+      "role": "Implementation, Unit/Integration tests"
     },
-    "v4.5.0": {
-      "name": "Smart Budget Allocation",
-      "status": "completed",
-      "spec": "docs/v4.x/specs/v450-smart-budget.md",
-      "completedAt": "2026-06-05"
+    "C": {
+      "name": "Edith",
+      "role": "Independent QC, System tests, Acceptance"
+    },
+    "D": {
+      "name": "Karen",
+      "role": "Deploy, Operate, Release"
+    },
+    "Owner": {
+      "name": "Peter",
+      "role": "Product owner, Final decision (constitutional power)"
     }
   },
-  "constraints": [
-    "All code and comments in English",
-    "Type hints required",
-    "Docstrings required",
-    "Coverage >= 80%"
-  ]
+  "inbox": {
+    "root": "inbox",
+    "directories": {
+      "inbox-plan": "Iteration plans, requirements (Friday)",
+      "inbox-code": "Development tasks (Friday → Jarvis)",
+      "inbox-build": "Build tasks (Jarvis)",
+      "inbox-test": "Testing tasks (Friday → Edith)",
+      "inbox-release": "Release tasks (Karen+Peter)",
+      "inbox-deploy": "Deployment tasks (Karen)",
+      "inbox-operate": "Operations tasks (Karen)",
+      "inbox-observe": "Observation tasks (Friday)",
+      "inbox-govern": "Governance tasks (Friday)",
+      "inbox-results": "Completion reports (all agents → Friday)",
+      "inbox-friday": "Human-in-the-loop gate / approvals",
+      "inbox-code-review": "Code review workspace",
+      "inbox-design-review": "Design review workspace",
+      "inbox-internal-verify": "Internal pre-release verification",
+      "inbox-governance": "Governance events / audit (legacy)"
+    },
+    "processedDir": "processed"
+  },
+  "inboxWorkflow": {
+    "description": "Agent communication via markdown files in inbox directories",
+    "lifecycle": {
+      "task_creation": "Friday writes task to inbox-code/ or inbox-test/",
+      "task_ack": "Agent writes ack to inbox-results/ when task is picked up",
+      "task_execution": "Agent implements tasks following the task file spec",
+      "task_complete": "Agent writes completion report to inbox-results/",
+      "task_processed": "Friday moves task file from inbox-code/ to inbox-code/processed/ after completion"
+    },
+    "conventions": {
+      "task_files": "Named task-{version}-{descriptor}.md",
+      "result_files": "Named {pipelineId}-complete.md or {version}-{phase}-complete.md",
+      "stage_tracking": "devclaw.json pipeline.currentStage updated by Friday at each gate",
+      "no_polling": "Agents check their read directory on startup and when notified",
+      "human_in_loop": "inbox-friday/ for manual approvals; normal flow uses inbox-results/"
+    }
+  },
+  "protocol": {
+    "file": "docs/protocol/inbox-protocol.md",
+    "version": "v3.6"
+  },
+  "watcher": {
+    "enabled": false,
+    "interval": 30000
+  },
+  "pipeline": {
+    "stages": ["PLAN", "CODE", "BUILD", "TEST", "RELEASE", "DEPLOY", "OPERATE", "OBSERVE", "GOVERN"],
+    "currentStage": "PLAN"
+  }
 }
