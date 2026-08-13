@@ -44,8 +44,8 @@ describe("Plugin Registration", () => {
   });
 
   it("TC-PLUG-3: plugin version matches expected", () => {
-    // Version should match semantic versioning
-    expect(plugin.version).toMatch(/^5\.\d+\.\d+$/);
+    // v6.4.0: Version should match semantic versioning
+    expect(plugin.version).toMatch(/^6\.\d+\.\d+$/);
   });
 
   it("TC-PLUG-4: engine factory returns valid engine", () => {

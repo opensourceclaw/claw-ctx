@@ -1,5 +1,17 @@
 # Changelog
 
+## v6.4.0 (2026-08-13)
+
+### Added
+
+- **Tool Registration**: ctx_compact / ctx_build / ctx_inject OpenClaw tools
+- **ContextCapability.inject**: directed context injection (replace degrades to append)
+- **contracts.tools** in openclaw.plugin.json
+
+### Changed
+
+- Version: 6.3.0 → 6.4.0
+
 ## v6.0.0 (2026-08-01)
 
 ### Added

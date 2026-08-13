@@ -60,16 +60,18 @@ describe("ProactiveCompactionController", () => {
 
     it("should respect session compaction limit", () => {
       const sessionId = "limit-test";
+      // v6.4.0: use zero cooldown so the limit check (not cooldown) is exercised
+      const limitController = new ProactiveCompactionController(undefined, { cooldownMs: 0 });
 
       // Perform max compactions
       for (let i = 0; i < DEFAULT_COMPACTION_TRIGGER_CONFIG.maxCompactionsPerSession; i++) {
-        const result = controller.shouldCompact(sessionId, "deepseek-v3", 110000);
+        const result = limitController.shouldCompact(sessionId, "deepseek-v3", 110000);
         expect(result.shouldCompact).toBe(true);
-        controller.recordCompaction(sessionId, 110000, 70000);
+        limitController.recordCompaction(sessionId, 110000, 70000);
       }
 
       // Next compaction should be blocked
-      const result = controller.shouldCompact(sessionId, "deepseek-v3", 110000);
+      const result = limitController.shouldCompact(sessionId, "deepseek-v3", 110000);
       expect(result.shouldCompact).toBe(false);
       expect(result.reason).toContain("limit reached");
     });

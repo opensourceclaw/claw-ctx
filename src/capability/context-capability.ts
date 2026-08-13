@@ -4,7 +4,7 @@ import { ClawContextEngine } from "../engine.js";
 import type {
   IContextCapability, BootstrapParams, BootstrapResult,
   IngestParams, AssembleParams, AssembleResult,
-  CompactParams, CompactResult,
+  CompactParams, CompactResult, InjectParams, InjectResult,
 } from "./types.js";
 
 const noopLogger = {
@@ -71,6 +71,23 @@ export class ContextCapability implements IContextCapability {
   async closeSession(sessionId: string): Promise<void> {
     this.checkDisposed();
     await this.engine.closeSession(sessionId);
+  }
+
+  // v6.4.0: Inject content into a target session via ingest path
+  async inject(params: InjectParams): Promise<InjectResult> {
+    this.checkDisposed();
+    if (params.position === "replace") {
+      await this.engine.ingest({
+        sessionId: params.targetSessionId,
+        message: { role: "user", content: params.content },
+      } as any);
+      return { injected: true, reason: "replace degraded to append (no replace semantics)" };
+    }
+    await this.engine.ingest({
+      sessionId: params.targetSessionId,
+      message: { role: "user", content: params.content },
+    } as any);
+    return { injected: true };
   }
 
   async healthCheck(): Promise<{ status: string; score: number }> {

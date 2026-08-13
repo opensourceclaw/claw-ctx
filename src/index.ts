@@ -190,6 +190,7 @@ export type {
   IngestParams,
   AssembleParams, AssembleResult,
   CompactParams, CompactResult,
+  InjectParams, InjectResult,
 } from "./capability/index.js";
 
 export default plugin;

@@ -140,21 +140,24 @@ export class ProactiveCompactionController {
     if (currentTokens >= threshold) {
       shouldCompact = true;
       reason = `Token count ${currentTokens} exceeds threshold ${threshold}`;
+    } else if (currentTokens < this.config.minTokens) {
+      // v6.4.0 fix: report below-minimum even when threshold not exceeded
+      reason = `Token count below minimum (${currentTokens} < ${this.config.minTokens})`;
     }
 
-    // 2. Check cooldown
+    // 2. Check session compaction limit (before cooldown — limit is a hard cap, v6.4.0)
+    if (shouldCompact && state.compactionCount >= this.config.maxCompactionsPerSession) {
+      shouldCompact = false;
+      reason = `Session compaction limit reached (${state.compactionCount}/${this.config.maxCompactionsPerSession})`;
+    }
+
+    // 3. Check cooldown
     if (shouldCompact && state.lastCompactionTime !== null) {
       const elapsed = Date.now() - state.lastCompactionTime;
       if (elapsed < this.config.cooldownMs) {
         shouldCompact = false;
         reason = `Cooldown active (${Math.floor((this.config.cooldownMs - elapsed) / 1000)}s remaining)`;
       }
-    }
-
-    // 3. Check session compaction limit
-    if (shouldCompact && state.compactionCount >= this.config.maxCompactionsPerSession) {
-      shouldCompact = false;
-      reason = `Session compaction limit reached (${state.compactionCount}/${this.config.maxCompactionsPerSession})`;
     }
 
     // 4. Check minimum tokens
@@ -190,12 +193,16 @@ export class ProactiveCompactionController {
     tokensBefore: number,
     tokensAfter: number
   ): void {
-    const state = this.sessionStates.get(sessionId);
-    if (state) {
-      state.lastCompactionTime = Date.now();
-      state.compactionCount++;
-      state.lastTokenCount = tokensAfter;
+    // get-or-create: recording a compaction before any shouldCompact call
+    // must still track state (v6.4.0 fix)
+    let state = this.sessionStates.get(sessionId);
+    if (!state) {
+      state = { lastCompactionTime: null, compactionCount: 0, lastTokenCount: 0 };
+      this.sessionStates.set(sessionId, state);
     }
+    state.lastCompactionTime = Date.now();
+    state.compactionCount++;
+    state.lastTokenCount = tokensAfter;
   }
 
   /**

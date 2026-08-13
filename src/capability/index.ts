@@ -7,4 +7,5 @@ export type {
   IngestParams,
   AssembleParams, AssembleResult,
   CompactParams, CompactResult,
+  InjectParams, InjectResult,
 } from "./types.js";

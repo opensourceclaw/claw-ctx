@@ -59,6 +59,18 @@ export interface CompactResult {
   duration?: number;
 }
 
+// v6.4.0: Inject capability
+export interface InjectParams {
+  targetSessionId: string;
+  content: string;
+  position?: "prepend" | "append" | "replace";
+}
+
+export interface InjectResult {
+  injected: boolean;
+  reason?: string;
+}
+
 export interface IContextCapability {
   readonly name: "context";
   readonly version: string;
@@ -67,6 +79,7 @@ export interface IContextCapability {
   ingest(params: IngestParams): Promise<{ ingested: boolean }>;
   assemble(params: AssembleParams): Promise<AssembleResult>;
   compact(params: CompactParams): Promise<CompactResult>;
+  inject(params: InjectParams): Promise<InjectResult>;
   closeSession(sessionId: string): Promise<void>;
   healthCheck(): Promise<{ status: string; score: number }>;
   dispose(): Promise<void>;
