@@ -10,6 +10,7 @@
 import { ModelAwareOptimizer, type OptimizationHint } from "./model-aware-optimizer.js";
 import { MecwEstimator } from "./mecw/MecwEstimator.js";
 import { ContextTaskType } from "./context/ContextBudgetManager.js";
+import { ContextEfficiencyMetrics, contextEfficiencyMetrics } from "./efficiency/ContextEfficiencyMetrics.js";
 
 /**
  * Compaction trigger configuration
@@ -84,13 +85,17 @@ export class ProactiveCompactionController {
   private optimizer: ModelAwareOptimizer;
   private config: CompactionTriggerConfig;
   private sessionStates: Map<string, SessionState> = new Map();
+  // v6.6.0: pure-observability metrics — injected for tests, defaults to singleton.
+  private metrics: ContextEfficiencyMetrics;
 
   constructor(
     optimizer?: ModelAwareOptimizer,
-    config?: Partial<CompactionTriggerConfig>
+    config?: Partial<CompactionTriggerConfig>,
+    metrics?: ContextEfficiencyMetrics,
   ) {
     this.optimizer = optimizer ?? new ModelAwareOptimizer();
     this.config = { ...DEFAULT_COMPACTION_TRIGGER_CONFIG, ...config };
+    this.metrics = metrics ?? contextEfficiencyMetrics;
   }
 
   /**
@@ -178,6 +183,9 @@ export class ProactiveCompactionController {
       ? Math.floor(threshold * 0.7)
       : currentTokens;
 
+    // v6.6.0: efficiency checkpoint (pure observation — no decision impact)
+    this.metrics.recordCheckpoint(sessionId, modelId, currentTokens, threshold, taskType);
+
     return {
       shouldCompact,
       reason,
@@ -198,7 +206,10 @@ export class ProactiveCompactionController {
   recordCompaction(
     sessionId: string,
     tokensBefore: number,
-    tokensAfter: number
+    tokensAfter: number,
+    // v6.6.0: optional observability inputs (no semantic change when omitted)
+    targetTokens?: number,
+    threshold?: number,
   ): void {
     // get-or-create: recording a compaction before any shouldCompact call
     // must still track state (v6.4.0 fix)
@@ -210,6 +221,9 @@ export class ProactiveCompactionController {
     state.lastCompactionTime = Date.now();
     state.compactionCount++;
     state.lastTokenCount = tokensAfter;
+
+    // v6.6.0: waste observation (pure observation — no decision impact)
+    this.metrics.recordCompaction(sessionId, tokensBefore, tokensAfter, targetTokens, threshold);
   }
 
   /**

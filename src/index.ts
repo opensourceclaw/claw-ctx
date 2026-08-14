@@ -280,4 +280,8 @@ export type {
 export { MecwEstimator, DEFAULT_COMPLEXITY_FACTORS } from "./mecw/index.js";
 export type { MecwEstimate } from "./mecw/index.js";
 
+// v6.6.0: Context Efficiency Metrics (pure observability)
+export { ContextEfficiencyMetrics, contextEfficiencyMetrics } from "./efficiency/index.js";
+export type { EfficiencyMetric, WasteMetric, EfficiencyReport } from "./efficiency/index.js";
+
 export default plugin;

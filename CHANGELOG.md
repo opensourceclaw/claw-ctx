@@ -1,5 +1,18 @@
 # Changelog
 
+## v6.6.0 (2026-08-14)
+
+### Added
+
+- **Context Efficiency Metrics** (`src/efficiency/`): measure compaction effectiveness and context budget utilization, the observational foundation for future adaptive thresholds
+  - `ContextEfficiencyMetrics` — records utilization (currentTokens / effectiveBudget), waste (compactionDeltaRate + triggerGap), and cache-hit-rate correlation
+  - `EfficiencyReport` — per-session (`getSessionReport`) and cross-session (`getAggregateReport`) aggregation
+  - Integrated into `ProactiveCompactionController` via injectable metrics (pure observation, zero decision impact)
+
+### Changed
+
+- Version: 6.5.1 → 6.6.0
+
 ## v6.5.1 (2026-08-14)
 
 ### Fixed
