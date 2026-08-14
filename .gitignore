@@ -8,3 +8,10 @@ docs/api/
 .DS_Store
 .claw-mem-index/
 src/version.ts.npmrc
+
+# Local agent notes / session transcripts / backups (not part of the repo)
+memory/
+transcripts/
+*.bak
+.devclaw/*.bak
+devclaw.json.bak-*
