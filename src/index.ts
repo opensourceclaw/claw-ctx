@@ -25,6 +25,7 @@
 import { VERSION } from "./version.js";
 import { createClawContextEngine } from "./engine.js";
 import { modelProfileRegistry } from "./model-profile.js";
+import { ContextCapability } from "./capability/index.js";
 
 // v5.17.0 Context Budget API
 export { ContextBudgetManager, ContextTaskType } from "./context/ContextBudgetManager.js";
@@ -155,6 +156,88 @@ const plugin = {
       api.logger.info(`[claw-ctx] v${VERSION} registered`);
     } catch (e) {
       api.logger.warn("[claw-ctx] registration failed:", e);
+    }
+
+    // v6.5.1: register contract tools — names must match openclaw.plugin.json
+    // contracts.tools exactly. Implements the real ContextCapability API.
+    if (typeof (api as any).registerTool === "function") {
+      const capability = new ContextCapability();
+
+      (api as any).registerTool(() => ({
+        name: "ctx_compact",
+        label: "Compact Context",
+        description: "Manually trigger context compaction for a session",
+        parameters: {
+          type: "object",
+          properties: {
+            sessionId: { type: "string", description: "Target session ID" },
+            strategy: { type: "string", enum: ["aggressive", "balanced", "conservative"], description: "Compaction strategy" },
+            threshold: { type: "number", description: "Target token budget (context window size in tokens)" },
+            force: { type: "boolean", description: "Force compaction" },
+          },
+          required: ["sessionId"],
+        },
+        execute: async (_toolCallId: string, params: any) => {
+          const result = await capability.compact({
+            sessionId: params.sessionId,
+            strategy: params.strategy ?? "balanced",
+            targetBudget: params.threshold,
+            force: params.force ?? false,
+          });
+          return result;
+        },
+      }), { names: ["ctx_compact"] });
+
+      (api as any).registerTool(() => ({
+        name: "ctx_build",
+        label: "Build Context",
+        description: "Assemble context according to configuration",
+        parameters: {
+          type: "object",
+          properties: {
+            sessionId: { type: "string", description: "Target session ID" },
+            budget: { type: "number", description: "Token budget" },
+            model: { type: "string", description: "Target model" },
+          },
+          required: ["sessionId"],
+        },
+        execute: async (_toolCallId: string, params: any) => {
+          const result = await capability.assemble({
+            sessionId: params.sessionId,
+            tokenBudget: params.budget,
+            model: params.model,
+          });
+          return {
+            estimatedTokens: result.estimatedTokens,
+            messageCount: result.messages.length,
+            confidenceReport: result.confidenceReport,
+            autoCompact: result.autoCompact,
+          };
+        },
+      }), { names: ["ctx_build"] });
+
+      (api as any).registerTool(() => ({
+        name: "ctx_inject",
+        label: "Inject Context",
+        description: "Inject content into a target session context",
+        parameters: {
+          type: "object",
+          properties: {
+            targetSessionId: { type: "string", description: "Target session ID" },
+            content: { type: "string", description: "Content to inject" },
+            position: { type: "string", enum: ["prepend", "append", "replace"], description: "Injection position" },
+          },
+          required: ["targetSessionId", "content"],
+        },
+        execute: async (_toolCallId: string, params: any) => {
+          const result = await capability.inject({
+            targetSessionId: params.targetSessionId,
+            content: params.content,
+            position: params.position ?? "append",
+          });
+          return result;
+        },
+      }), { names: ["ctx_inject"] });
     }
   },
 };

@@ -1,5 +1,17 @@
 # Changelog
 
+## v6.5.1 (2026-08-14)
+
+### Fixed
+
+- **Tool registration missing**: `ctx_compact` / `ctx_build` / `ctx_inject` were declared in `contracts.tools` but never registered at runtime (the registration code lived only in an unreferenced orphan file `openclaw_plugin/index.ts`). Registered the three tools in `src/index.ts`'s `plugin.register(api)` via `api.registerTool`, aligned with the real `ContextCapability` API.
+- Update 2 version assertions (6.4.0 → 6.5.0) that were not synced at v6.5.0 release.
+
+### Changed
+
+- Version: 6.5.0 → 6.5.1
+- `openclaw_plugin/index.ts` marked `@deprecated` (kept as audit trail; not build output, incorrect registration pattern).
+
 ## v6.5.0 (2026-08-14)
 
 ### Added
