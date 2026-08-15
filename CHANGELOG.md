@@ -1,3 +1,18 @@
+## v6.6.1 (2026-08-15)
+
+### Fixed
+
+- **Version assertion drift**: 2 tests (version-bump / plugin-contract) expected 6.5.1 but actual was 6.6.0 — v6.6.0 released with these failing; assertions synced to 6.6.0 in `0673ea2`
+- **js-yaml security upgrade**: devDependency bumped 4.3.0 → 4.3.1 (PR #7, dependabot npm_and_yarn group)
+
+### Changed
+
+- Version: 6.6.0 → 6.6.1
+
+### Tests
+
+- 92 files / 1172 tests / 5 skipped / 0 failed (assertion-sync verification)
+
 # Changelog
 
 ## v6.6.0 (2026-08-14)
