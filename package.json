@@ -5,7 +5,8 @@
   "main": "dist/index.js",
   "type": "module",
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com/"
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
   },
   "bin": {
     "claw-ctx": "./dist/cli.js"
