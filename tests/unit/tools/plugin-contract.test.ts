@@ -7,6 +7,6 @@ describe("plugin contract", () => {
     expect(p.contracts.tools).toContain("ctx_compact");
     expect(p.contracts.tools).toContain("ctx_build");
     expect(p.contracts.tools).toContain("ctx_inject");
-    expect(p.version).toBe("6.6.0");
+    expect(p.version).toBe("6.6.1");
   });
 });
