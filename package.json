@@ -19,7 +19,8 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./pi": "./pi_plugin/index.ts"
   },
   "files": [
     "dist/",
@@ -45,6 +46,8 @@
     "docs": "typedoc"
   },
   "devDependencies": {
+    "@earendil-works/pi-agent-core": "^0.84.2",
+    "@sinclair/typebox": "^0.34.52",
     "@types/node": "^20.0.0",
     "@vitest/coverage-v8": "^4.1.8",
     "eslint": "^9.39.4",
@@ -62,5 +65,8 @@
   "license": "Apache-2.0",
   "dependencies": {
     "js-tiktoken": "^1.0.21"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "^0.84.2"
   }
 }
