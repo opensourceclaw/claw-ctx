@@ -1,3 +1,9 @@
+## [6.7.0] - 2026-08-22
+
+### Added
+
+- **pi agent adapter** (`pi_plugin/`): tools wrapped as pi `AgentTool` definitions（TypeBox schema），`package.json` exports `./pi`，`tsconfig.pi.json` 隔离类型检查。依赖 `@earendil-works/pi-agent-core >= 0.84.2`（peer），`@sinclair/typebox`（dev）。
+
 ## v6.6.1 (2026-08-15)
 
 ### Fixed
