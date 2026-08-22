@@ -15,3 +15,7 @@ transcripts/
 *.bak
 .devclaw/*.bak
 devclaw.json.bak-*
+
+# Internal collaboration dirs (do not commit to public repo)
+inbox/
+.devclaw/
