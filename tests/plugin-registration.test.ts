@@ -3,6 +3,7 @@
 // Tests plugin registration with mock OpenClaw API
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import fs from "node:fs";
 import plugin from "../src/index.js";
 
 describe("Plugin Registration", () => {
@@ -37,15 +38,21 @@ describe("Plugin Registration", () => {
   it("TC-PLUG-2: plugin exports expected interface", () => {
     expect(plugin).toHaveProperty("id");
     expect(plugin).toHaveProperty("name");
-    expect(plugin).toHaveProperty("version");
+    expect(plugin).toHaveProperty("configSchema");
     expect(plugin).toHaveProperty("register");
     expect(plugin.id).toBe("claw-ctx");
     expect(plugin.name).toBe("Claw Context Engine");
   });
 
-  it("TC-PLUG-3: plugin version matches expected", () => {
-    // v6.4.0: Version should match semantic versioning
-    expect(plugin.version).toMatch(/^6\.\d+\.\d+$/);
+  it("TC-PLUG-3: manifest version matches package version", () => {
+    // Modern entry has no version field; manifest is authoritative
+    const manifest = JSON.parse(
+      fs.readFileSync(new URL("../openclaw.plugin.json", import.meta.url), "utf-8")
+    ) as { version: string };
+    const pkg = JSON.parse(
+      fs.readFileSync(new URL("../package.json", import.meta.url), "utf-8")
+    ) as { version: string };
+    expect(manifest.version).toBe(pkg.version);
   });
 
   it("TC-PLUG-4: engine factory returns valid engine", () => {

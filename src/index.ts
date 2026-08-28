@@ -1,7 +1,7 @@
 /**
  * claw-ctx — Context Engine for OpenClaw
  *
- * Copyright 2026 OpenSourceClaw Contributors
+ * Copyright 2026 Peter Cheng
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,8 @@ import { VERSION } from "./version.js";
 import { createClawContextEngine } from "./engine.js";
 import { modelProfileRegistry } from "./model-profile.js";
 import { ContextCapability } from "./capability/index.js";
+import { Type } from "@sinclair/typebox";
+import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 
 // v5.17.0 Context Budget API
 export { ContextBudgetManager, ContextTaskType } from "./context/ContextBudgetManager.js";
@@ -135,23 +137,22 @@ export {
 // v5.16.0 CLI entry point (run via: claw-ctx <command>)
 // CLI is available via bin entry in package.json
 
-const plugin = {
+const plugin: ReturnType<typeof definePluginEntry> = definePluginEntry({
   id: "claw-ctx",
   name: "Claw Context Engine",
   description: "Context Engine with C2 gating, RL injection, governance signals, cross-domain injection, CI/CD signals, and self-refinement for OpenClaw agents",
-  version: VERSION,
-  kind: "context-engine",
 
   register(api: any) {
-    const config = {
-      workspaceDir: api.pluginConfig?.workspaceDir || api.config?.workspaceDir,
-      topK: api.pluginConfig?.topK ?? 10,
-      debug: api.pluginConfig?.debug ?? false,
+    const pluginConfig = (api as { pluginConfig?: Record<string, unknown> }).pluginConfig ?? {};
+    const config: { workspaceDir?: string; topK: number; debug: boolean } = {
+      workspaceDir: typeof pluginConfig.workspaceDir === "string" ? pluginConfig.workspaceDir : undefined,
+      topK: typeof pluginConfig.topK === "number" ? (pluginConfig.topK as number) : 10,
+      debug: pluginConfig.debug === true,
     };
 
     try {
       (api as any).registerContextEngine("claw-ctx", (_ctx: any) => {
-        return createClawContextEngine(config, api.logger);
+        return createClawContextEngine(config as any, api.logger);
       });
       api.logger.info(`[claw-ctx] v${VERSION} registered`);
     } catch (e) {
@@ -163,21 +164,16 @@ const plugin = {
     if (typeof (api as any).registerTool === "function") {
       const capability = new ContextCapability();
 
-      (api as any).registerTool(() => ({
+      (api as any).registerTool({
         name: "ctx_compact",
-        label: "Compact Context",
         description: "Manually trigger context compaction for a session",
-        parameters: {
-          type: "object",
-          properties: {
-            sessionId: { type: "string", description: "Target session ID" },
-            strategy: { type: "string", enum: ["aggressive", "balanced", "conservative"], description: "Compaction strategy" },
-            threshold: { type: "number", description: "Target token budget (context window size in tokens)" },
-            force: { type: "boolean", description: "Force compaction" },
-          },
-          required: ["sessionId"],
-        },
-        execute: async (_toolCallId: string, params: any) => {
+        parameters: Type.Object({
+          sessionId: Type.String({ description: "Target session ID" }),
+          strategy: Type.Optional(Type.Union([Type.Literal("aggressive"), Type.Literal("balanced"), Type.Literal("conservative")], { description: "Compaction strategy" })),
+          threshold: Type.Optional(Type.Number({ description: "Target token budget (context window size in tokens)" })),
+          force: Type.Optional(Type.Boolean({ description: "Force compaction" })),
+        }),
+        async execute(_toolCallId: string, params: { sessionId: string; strategy?: "aggressive" | "balanced" | "conservative"; threshold?: number; force?: boolean }) {
           const result = await capability.compact({
             sessionId: params.sessionId,
             strategy: params.strategy ?? "balanced",
@@ -186,22 +182,17 @@ const plugin = {
           });
           return result;
         },
-      }), { names: ["ctx_compact"] });
+      });
 
-      (api as any).registerTool(() => ({
+      (api as any).registerTool({
         name: "ctx_build",
-        label: "Build Context",
         description: "Assemble context according to configuration",
-        parameters: {
-          type: "object",
-          properties: {
-            sessionId: { type: "string", description: "Target session ID" },
-            budget: { type: "number", description: "Token budget" },
-            model: { type: "string", description: "Target model" },
-          },
-          required: ["sessionId"],
-        },
-        execute: async (_toolCallId: string, params: any) => {
+        parameters: Type.Object({
+          sessionId: Type.String({ description: "Target session ID" }),
+          budget: Type.Optional(Type.Number({ description: "Token budget" })),
+          model: Type.Optional(Type.String({ description: "Target model" })),
+        }),
+        async execute(_toolCallId: string, params: { sessionId: string; budget?: number; model?: string }) {
           const result = await capability.assemble({
             sessionId: params.sessionId,
             tokenBudget: params.budget,
@@ -214,22 +205,17 @@ const plugin = {
             autoCompact: result.autoCompact,
           };
         },
-      }), { names: ["ctx_build"] });
+      });
 
-      (api as any).registerTool(() => ({
+      (api as any).registerTool({
         name: "ctx_inject",
-        label: "Inject Context",
         description: "Inject content into a target session context",
-        parameters: {
-          type: "object",
-          properties: {
-            targetSessionId: { type: "string", description: "Target session ID" },
-            content: { type: "string", description: "Content to inject" },
-            position: { type: "string", enum: ["prepend", "append", "replace"], description: "Injection position" },
-          },
-          required: ["targetSessionId", "content"],
-        },
-        execute: async (_toolCallId: string, params: any) => {
+        parameters: Type.Object({
+          targetSessionId: Type.String({ description: "Target session ID" }),
+          content: Type.String({ description: "Content to inject" }),
+          position: Type.Optional(Type.Union([Type.Literal("prepend"), Type.Literal("append"), Type.Literal("replace")], { description: "Injection position" })),
+        }),
+        async execute(_toolCallId: string, params: { targetSessionId: string; content: string; position?: "prepend" | "append" | "replace" }) {
           const result = await capability.inject({
             targetSessionId: params.targetSessionId,
             content: params.content,
@@ -237,10 +223,10 @@ const plugin = {
           });
           return result;
         },
-      }), { names: ["ctx_inject"] });
+      });
     }
   },
-};
+});
 
 // v5.16.5 Model Config Sync API
 export interface ModelConfig {

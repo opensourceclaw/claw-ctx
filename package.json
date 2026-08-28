@@ -17,7 +17,8 @@
   "exports": {
     ".": {
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js"
     },
     "./package.json": "./package.json",
     "./pi": "./pi_plugin/index.ts"
@@ -67,6 +68,7 @@
     "js-tiktoken": "^1.0.21"
   },
   "peerDependencies": {
-    "@earendil-works/pi-agent-core": "^0.84.2"
+    "@earendil-works/pi-agent-core": "^0.84.2",
+    "openclaw": ">=2026.3.28"
   }
 }

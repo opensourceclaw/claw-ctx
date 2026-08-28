@@ -39,5 +39,6 @@
       "ctx_build",
       "ctx_inject"
     ]
-  }
+  },
+  "license": "Apache-2.0"
 }

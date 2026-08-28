@@ -1,4 +1,4 @@
-// Copyright 2026 OpenSourceClaw Contributors
+// Copyright 2026 Peter Cheng
 // Licensed under the Apache License, Version 2.0
 
 import type { SessionSnapshot, CheckpointConfig } from "./types.js";

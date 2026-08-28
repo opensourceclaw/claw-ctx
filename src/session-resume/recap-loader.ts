@@ -9,7 +9,7 @@
  * - Improved time sorting with better null handling
  * - Added detailed logging for debugging
  *
- * Copyright 2026 OpenSourceClaw Contributors
+ * Copyright 2026 Peter Cheng
  * Licensed under the Apache License, Version 2.0
  */
 
