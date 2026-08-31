@@ -52,7 +52,7 @@
     "@sinclair/typebox": "^0.34.52",
     "@types/node": "^20.0.0",
     "@vitest/coverage-v8": "^4.1.8",
-    "eslint": "^9.39.4",
+    "eslint": "^10.9.1",
     "typedoc": "^0.28.19",
     "typescript": "^5.0.0",
     "typescript-eslint": "^8.61.1",
