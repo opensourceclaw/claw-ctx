@@ -1,3 +1,23 @@
+# Changelog
+
+## [6.8.0] - 2026-08-31
+
+### Added
+
+- **Role-Aware Injection (ADR: role-aware-injection)**: five-role context package semantics (Authority > Exemplar > Constraint > Rubric > Metadata) from arXiv 2604.04258v1 applied to the injection pipeline. Injection segments now carry `role + priority`; assembly orders by priority (Authority first) and records same-topic conflicts instead of joining by injection order — low-priority signals (RL experience, CI signals) can no longer override high-priority governance constraints.
+- `src/context-role.ts`: `RoleHint`, source→role classification, `sortRoleHints`, `detectRoleConflicts` (conservative: both segments retained, conflict logged), `roleBreakdown`, `resolveRoleAssembly`.
+- Engine injectors emit `RoleHint[]`; `_assembleRoleAware` at the assembly layer (after cache lookups); `ctx_build` returns `roleConflicts` / `roleBreakdown` (observational, non-breaking). `_rlGovernanceCache` / `_crossDomainCache` keys untouched; hot-cache string entries wrapped as metadata (content never dropped).
+- `ContextQualityEvaluator.evaluate` accepts optional `rubricBlocks?` and reports `metadata.rubricCount`; behavior unchanged when omitted (backward-compatible).
+- Config: `roleAwareInjection` (default true) and `roleOverrides`.
+
+### Reference
+
+- Paper review: `docs/research/papers/2026-08-31-Context-Engineering.md` (arXiv 2604.04258v1).
+
+### Tests
+
+- 1168 -> 1195 (+23): `context-role.test.ts` (17) + `role-aware-injection.test.ts` (6); benchmarks 22/22 PASS; dependency audit 0 vulnerabilities (openclaw 2026.8.1).
+
 ## [6.7.0] - 2026-08-22
 
 ### Added
