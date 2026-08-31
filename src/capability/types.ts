@@ -39,6 +39,9 @@ export interface AssembleResult {
   driftScore?: number;
   autoCompact?: boolean;
   newSessionSuggestion?: boolean;
+  // v6.8.0: Role-aware injection reports (observational, non-blocking)
+  roleConflicts?: unknown;
+  roleBreakdown?: unknown;
 }
 
 export interface CompactParams {

@@ -76,6 +76,8 @@ export interface ContextQualityReport {
     duplicateLineCount: number;
     /** Total line count */
     totalLineCount: number;
+    /** v6.8.0: Rubric-role blocks participating in the evaluation */
+    rubricCount: number;
   };
 }
 
@@ -98,12 +100,15 @@ export class ContextQualityEvaluator {
    * @param entries - History entries being injected
    * @param formatted - Formatted context string
    * @param query - Original user query (optional)
+   * @param rubricBlocks - v6.8.0: rubric-role injection blocks (e.g. drift
+   *   quality signals) participating in the evaluation; counted in metadata
    * @returns ContextQualityReport
    */
   evaluate(
     entries: HistoryEntry[],
     formatted: string,
-    query?: string
+    query?: string,
+    rubricBlocks?: string[]
   ): ContextQualityReport {
     const startTime = Date.now();
 
@@ -136,6 +141,7 @@ export class ContextQualityEvaluator {
         coveredKeywordCount: coverage.coveredKeywordCount,
         duplicateLineCount: redundancy.duplicateLineCount,
         totalLineCount: redundancy.totalLineCount,
+        rubricCount: rubricBlocks?.length ?? 0,
       },
     };
   }
