@@ -94,6 +94,15 @@ import {
 import { PromptStyleEngine } from "./prompt-style/engine.js";
 import { resolveStyle } from "./prompt-style/config.js";
 import type { PromptStyle } from "./prompt-style/types.js";
+// v6.8.0: Role-aware injection (ADR: role-aware-injection)
+import {
+  toRoleHint,
+  joinRoleHints,
+  resolveRoleAssembly,
+  type RoleHint,
+  type RoleConflictRecord,
+  type RoleBreakdown,
+} from "./context-role.js";
 // v5.0.0-rc.2: Predictive context
 import { ContextPredictor } from "./predictive/context-predictor.js";
 import { PreloadManager } from "./predictive/preload-manager.js";
@@ -101,7 +110,7 @@ import { PreloadManager } from "./predictive/preload-manager.js";
 // v4.3.0: Global token counter instance for precise counting
 const globalTokenCounter = createTokenCounter("cl100k_base");
 
-interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean; compactThreshold?: number; reserveRatio?: number; compressionStrategy?: "semantic" | "legacy"; sessionResume?: Partial<SessionResumeConfig> | false }
+interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean; compactThreshold?: number; reserveRatio?: number; compressionStrategy?: "semantic" | "legacy"; sessionResume?: Partial<SessionResumeConfig> | false; roleAwareInjection?: boolean; roleOverrides?: import("./context-role.js").RoleOverrides }
 interface ClawCtxLogger { info: (...a: any[]) => void; error: (...a: any[]) => void; warn: (...a: any[]) => void; debug?: (...a: any[]) => void }
 
 function extractText(msg: any): string {
@@ -263,7 +272,9 @@ export class ClawContextEngine {
   private _memorySearchCache: LRUCache<string, { query: string; block: string; ts: number }> = new LRUCache({ maxSize: 32, ttlMs: 30_000 });
   // v5.2.1: RL/Governance session-level cache
   // v5.11.0: Replaced manual LRU logic with LRUCache (maxSize=10)
-  private _rlGovernanceCache: LRUCache<string, { result: string[]; ts: number }> = new LRUCache({ maxSize: 10 });
+  // v6.8.0: Cache key/value layout unchanged; result elements may be RoleHint
+  // (string kept for hot-cache compatibility with pre-v6.8.0 sessions)
+  private _rlGovernanceCache: LRUCache<string, { result: Array<string | RoleHint>; ts: number }> = new LRUCache({ maxSize: 10 });
   // v5.2.1: Cross-domain context with pillar/intent change detection
   // v5.11.0: Replaced manual LRU logic with LRUCache (maxSize=10)
   private _crossDomainCache: LRUCache<string, {
@@ -412,7 +423,7 @@ export class ClawContextEngine {
     return { ingestedCount: n };
   }
 
-  async assemble(p: { sessionId: string; sessionKey?: string; messages: any[]; tokenBudget?: number; availableTools?: Set<string>; citationsMode?: string; model?: string; prompt?: string; confidenceThreshold?: number; confidenceMode?: ConfidenceMode; crossDomain?: { enabled: boolean; currentPillar?: string; currentIntent?: string; timeRange?: string; maxSignals?: number }; ci?: { enabled: boolean; project?: string; includeBuildStatus?: boolean; includeTestResults?: boolean; includeDeployStatus?: boolean; maxSignals?: number } }): Promise<{ messages: any[]; estimatedTokens: number; systemPromptAddition?: string; promptAuthority?: string; confidenceReport?: ConfidenceReport; crossDomainReport?: { signalsInjected: number; totalTokens: number; correlations: InjectedSignal[] }; ciReport?: { signalsInjected: number; totalTokens: number; signals: CISignal[] }; driftScore?: number; autoCompact?: boolean; newSessionSuggestion?: string }> {
+  async assemble(p: { sessionId: string; sessionKey?: string; messages: any[]; tokenBudget?: number; availableTools?: Set<string>; citationsMode?: string; model?: string; prompt?: string; confidenceThreshold?: number; confidenceMode?: ConfidenceMode; crossDomain?: { enabled: boolean; currentPillar?: string; currentIntent?: string; timeRange?: string; maxSignals?: number }; ci?: { enabled: boolean; project?: string; includeBuildStatus?: boolean; includeTestResults?: boolean; includeDeployStatus?: boolean; maxSignals?: number } }): Promise<{ messages: any[]; estimatedTokens: number; systemPromptAddition?: string; promptAuthority?: string; confidenceReport?: ConfidenceReport; crossDomainReport?: { signalsInjected: number; totalTokens: number; correlations: InjectedSignal[] }; ciReport?: { signalsInjected: number; totalTokens: number; signals: CISignal[] }; driftScore?: number; autoCompact?: boolean; newSessionSuggestion?: string; roleConflicts?: RoleConflictRecord[]; roleBreakdown?: RoleBreakdown }> {
     if (this.config.debug) this.logger.info(`[claw-ctx] assemble() called, sessionId=${p.sessionId}, messages=${p.messages?.length ?? 0}, tokenBudget=${p.tokenBudget ?? 0}`);
     this._session(p.sessionId);
 
@@ -467,12 +478,14 @@ export class ClawContextEngine {
     if (!mems.length) { try { const r = await this.manager.search(q, undefined, this.config.topK ?? 10); mems = (r as any)?.memories ?? r ?? []; if (Array.isArray(mems)) this.cache.set(q, mems); } catch (e) { this.logger.warn("[claw-ctx] search fail:", e); } }
     if (!Array.isArray(mems) || mems.length === 0) {
       // v5.2.1: Still inject RL/governance/cross-domain/CI even without memories (cached)
+      // v6.8.0: role-aware ordering + conflict arbitration at the assembly layer
       const additions = await this._cachedExternalContext(p.sessionId);
       const crossDomainResult = await this._cachedCrossDomain(p);
-      if (crossDomainResult) additions.push(crossDomainResult.block);
+      if (crossDomainResult) additions.push(crossDomainResult.hint);
       const ciResult = await this.injectCIContext(p);
-      if (ciResult) additions.push(ciResult.block);
-      let sys = additions.length ? additions.join("\n\n") : undefined;
+      if (ciResult) additions.push(ciResult.hint);
+      const assembled = this._assembleRoleAware(additions);
+      let sys = assembled.text;
       sys = this._injectSessionResume(sys);
       return {
         messages: p.messages,
@@ -483,6 +496,8 @@ export class ClawContextEngine {
           : undefined,
         crossDomainReport: crossDomainResult?.report,
         ciReport: ciResult?.report,
+        roleConflicts: assembled.roleConflicts,
+        roleBreakdown: assembled.roleBreakdown,
       };
     }
 
@@ -505,7 +520,8 @@ export class ClawContextEngine {
 
     // v5.2.0: Separate stable prefix from dynamic suffix for cache optimization
     const stableAdditions: string[] = [];
-    const dynamicAdditions: string[] = [];
+    // v6.8.0: Dynamic suffix segments carry role hints for conflict arbitration
+    const dynamicAdditions: RoleHint[] = [];
 
     // === STABLE PREFIX (cached by DeepSeek) ===
 
@@ -560,30 +576,30 @@ export class ClawContextEngine {
 
     // v5.2.1: Cross-domain signal injection with pillar/intent change detection
     const crossDomainResult = await this._cachedCrossDomain(p);
-    if (crossDomainResult) dynamicAdditions.push(crossDomainResult.block);
+    if (crossDomainResult) dynamicAdditions.push(crossDomainResult.hint);
 
     // CI/CD signal injection (v4.0.0)
     const ciResult = await this.injectCIContext(p);
-    if (ciResult) dynamicAdditions.push(ciResult.block);
+    if (ciResult) dynamicAdditions.push(ciResult.hint);
 
     // Build stable prefix
     const stablePrefix = stableAdditions.length ? stableAdditions.join("\n\n") : undefined;
 
-    // Build dynamic suffix with drift, strategy, warnings
-    let dynamicSuffix = dynamicAdditions.length ? dynamicAdditions.join("\n\n") : undefined;
+    // Build dynamic suffix with drift, strategy, warnings (v6.8.0: role hints)
+    let dynamicSuffix: string | undefined;
+    let roleConflicts: RoleConflictRecord[] | undefined;
+    let roleBreakdown: RoleBreakdown | undefined;
 
-    // v5.0.0: Include drift alerts in system prompt
+    // v5.0.0: Include drift alerts in system prompt (rubric role, P4)
     if (this.driftAlerts.length > 0) {
       const recent = this.driftAlerts.slice(-2);
       const driftBlock = recent
         .map((a) => `[Drift ${a.level.toUpperCase()}] Score: ${a.driftScore.toFixed(2)} — ${a.suggestedActions.map((act) => act.description).join("; ")}`)
         .join("\n");
-      dynamicSuffix = dynamicSuffix
-        ? `${dynamicSuffix}\n\n[Drift Monitor]\n${driftBlock}`
-        : `[Drift Monitor]\n${driftBlock}`;
+      dynamicAdditions.push(toRoleHint("drift", `[Drift Monitor]\n${driftBlock}`, this.config.roleOverrides));
     }
 
-    // v4.16.0: Prompt strategy injection
+    // v4.16.0: Prompt strategy injection (metadata role, P5)
     try {
       const lastUserMsg = [...p.messages].reverse().find((m: any) => m.role === "user");
       const taskContent = extractText(lastUserMsg || p.messages[p.messages.length - 1] || "");
@@ -591,30 +607,27 @@ export class ClawContextEngine {
       const strategy = this._promptStrategy.selectStrategy({ taskType, content: taskContent });
       const strategyAddition = this._promptStrategy.getSystemPromptAddition(strategy);
       if (strategyAddition) {
-        dynamicSuffix = dynamicSuffix
-          ? `${dynamicSuffix}\n\n${strategyAddition}`
-          : strategyAddition;
+        dynamicAdditions.push(toRoleHint("prompt-strategy", strategyAddition, this.config.roleOverrides));
       }
     } catch {
       // prompt strategy failure is non-blocking
     }
 
-    // v4.18.0: Multimodal content detection
+    // v4.18.0: Multimodal content detection (metadata role, P5)
     try {
       const multimodalItems = this._multimodalHandler.prioritize(p.messages);
       for (const item of multimodalItems.slice(0, 5)) {
         const text = this._multimodalHandler.modalityToText(item);
         if (text) {
-          dynamicSuffix = dynamicSuffix
-            ? `${dynamicSuffix}\n${text}`
-            : text;
+          // v4.18.0 joined with single "\n"; preserved via separator for v6.7.3 equivalence
+          dynamicAdditions.push(toRoleHint("multimodal", text, this.config.roleOverrides, "\n"));
         }
       }
     } catch {
       // multimodal failure is non-blocking
     }
 
-    // v4.17.0: Structured context detection and position optimization
+    // v4.17.0: Structured context detection and position optimization (metadata role, P5)
     try {
       // Detect and verbalize structured data in recent messages
       const recentUserMsgs = p.messages.filter((m: any) => m.role === "user").slice(-2);
@@ -624,14 +637,21 @@ export class ClawContextEngine {
         if (dataType && dataType !== "sql-result") {
           const verbalized = this._structuredHandler.verbalize(text, dataType);
           if (verbalized !== text) {
-            dynamicSuffix = dynamicSuffix
-              ? `${dynamicSuffix}\n\n${verbalized}`
-              : verbalized;
+            dynamicAdditions.push(toRoleHint("structured", verbalized, this.config.roleOverrides));
           }
         }
       }
     } catch {
       // structured context failure is non-blocking
+    }
+
+    // v6.8.0: Assemble dynamic suffix — priority ordering + conflict arbitration
+    // when roleAwareInjection is enabled; otherwise byte-identical to v6.7.3.
+    {
+      const assembled = this._assembleRoleAware(dynamicAdditions);
+      dynamicSuffix = assembled.text;
+      roleConflicts = assembled.roleConflicts;
+      roleBreakdown = assembled.roleBreakdown;
     }
 
     // v4.17.0: Position optimization for long sequences
@@ -649,7 +669,7 @@ export class ClawContextEngine {
     const budgetLimit = p.tokenBudget ?? 8000;
     if (tokens > budgetLimit * 0.75 && !this._tokenWarningEmitted) {
       const overflowWarn = `[Token Budget Warning: ${tokens}/${budgetLimit} tokens used (${Math.round(tokens / budgetLimit * 100)}%) — consider compaction]`;
-      dynamicSuffix = dynamicSuffix ? `${dynamicSuffix}\n\n${overflowWarn}` : overflowWarn;
+      dynamicAdditions.push(toRoleHint("token-warning", overflowWarn, this.config.roleOverrides));
       this._tokenWarningEmitted = true;
     }
 
@@ -662,9 +682,7 @@ export class ClawContextEngine {
       this._autoSessionSuggested = true;
       newSessionSuggestion = this._autoSession.generateSuggestion();
       // Append suggestion to system prompt as well
-      dynamicSuffix = dynamicSuffix
-        ? `${dynamicSuffix}\n\n[Auto-Session] ${newSessionSuggestion}`
-        : `[Auto-Session] ${newSessionSuggestion}`;
+      dynamicAdditions.push(toRoleHint("auto-session", `[Auto-Session] ${newSessionSuggestion}`, this.config.roleOverrides));
       this.logger.debug?.(`[claw-ctx] Auto-session suggestion triggered: ${newSessionSuggestion}`);
     }
 
@@ -677,7 +695,7 @@ export class ClawContextEngine {
       finalSys = stablePrefix ?? dynamicSuffix;
     }
 
-    return { messages: resultMessages, estimatedTokens: tokens, systemPromptAddition: finalSys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report, driftScore, autoCompact, newSessionSuggestion };
+    return { messages: resultMessages, estimatedTokens: tokens, systemPromptAddition: finalSys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report, driftScore, autoCompact, newSessionSuggestion, roleConflicts, roleBreakdown };
   }
 
   async compact(p: { sessionId: string; sessionKey?: string; sessionFile: string; tokenBudget?: number; force?: boolean; currentTokenCount?: number; compactionTarget?: string; customInstructions?: string; abortSignal?: AbortSignal; reserveForCrossDomain?: number; reserveForCI?: number; runtimeContext?: any }): Promise<{ ok: boolean; compacted: boolean; reason?: string; result?: { summary?: string; tokensBefore: number; tokensAfter?: number; details?: unknown } }> {
@@ -1346,9 +1364,9 @@ export class ClawContextEngine {
     return this.budgetManager;
   }
 
-  /** Inject RL, governance, and cross-domain context additions */
-  private async injectExternalContext(sessionId: string): Promise<string[]> {
-    const additions: string[] = [];
+  /** Inject RL, governance, and cross-domain context additions (v6.8.0: RoleHint-wrapped) */
+  private async injectExternalContext(sessionId: string): Promise<RoleHint[]> {
+    const additions: RoleHint[] = [];
 
     if (this.rlInjector) {
       const rlResult = await this.rlInjector.inject({
@@ -1357,7 +1375,7 @@ export class ClawContextEngine {
       });
       if (rlResult.experiences.length > 0) {
         const rlBlock = this.rlInjector.formatForContext(rlResult.experiences);
-        if (rlBlock) additions.push(rlBlock);
+        if (rlBlock) additions.push(toRoleHint("rl", rlBlock, this.config.roleOverrides));
       }
     }
 
@@ -1367,18 +1385,18 @@ export class ClawContextEngine {
       });
       if (govResult.signals.length > 0) {
         const govBlock = this.governanceInjector.formatForContext(govResult.signals);
-        if (govBlock) additions.push(govBlock);
+        if (govBlock) additions.push(toRoleHint("governance", govBlock, this.config.roleOverrides));
       }
     }
 
     return additions;
   }
 
-  /** Inject cross-domain signals (v3.0.0) */
+  /** Inject cross-domain signals (v3.0.0; v6.8.0: RoleHint-wrapped) */
   private async injectCrossDomainContext(p: {
     sessionId: string;
     crossDomain?: { enabled: boolean; currentPillar?: string; currentIntent?: string; timeRange?: string; maxSignals?: number };
-  }): Promise<{ block: string; report: { signalsInjected: number; totalTokens: number; correlations: InjectedSignal[] } } | null> {
+  }): Promise<{ hint: RoleHint; report: { signalsInjected: number; totalTokens: number; correlations: InjectedSignal[] } } | null> {
     if (!p.crossDomain?.enabled || !p.crossDomain.currentPillar) return null;
 
     if (!this.crossDomainInjector) {
@@ -1398,7 +1416,7 @@ export class ClawContextEngine {
     const block = this.crossDomainInjector.formatForContext(result.signals);
 
     return {
-      block,
+      hint: toRoleHint("crossdomain", block, this.config.roleOverrides),
       report: {
         signalsInjected: result.signals.length,
         totalTokens: result.totalTokens,
@@ -1407,11 +1425,11 @@ export class ClawContextEngine {
     };
   }
 
-  /** Inject CI/CD signals (v4.0.0) */
+  /** Inject CI/CD signals (v4.0.0; v6.8.0: RoleHint-wrapped) */
   private async injectCIContext(p: {
     sessionId: string;
     ci?: { enabled: boolean; project?: string; includeBuildStatus?: boolean; includeTestResults?: boolean; includeDeployStatus?: boolean; maxSignals?: number };
-  }): Promise<{ block: string; report: { signalsInjected: number; totalTokens: number; signals: CISignal[] } } | null> {
+  }): Promise<{ hint: RoleHint; report: { signalsInjected: number; totalTokens: number; signals: CISignal[] } } | null> {
     if (!p.ci?.enabled) return null;
 
     if (!this.ciInjector) {
@@ -1432,7 +1450,7 @@ export class ClawContextEngine {
     const block = this.ciInjector.formatForContext(result.signals);
 
     return {
-      block,
+      hint: toRoleHint("ci", block, this.config.roleOverrides),
       report: {
         signalsInjected: result.signals.length,
         totalTokens: result.totalTokens,
@@ -1569,12 +1587,14 @@ export class ClawContextEngine {
    * @param sessionId - Current session identifier
    * @returns Array of external context blocks (cached or freshly injected)
    */
-  private async _cachedExternalContext(sessionId: string): Promise<string[]> {
+  private async _cachedExternalContext(sessionId: string): Promise<RoleHint[]> {
     // Check cache first
     const cached = this._rlGovernanceCache.get(sessionId);
     if (cached) {
       this.logger.debug?.(`[claw-ctx] RL/Governance cache hit for session ${sessionId}`);
-      return cached.result;
+      // v6.8.0: Hot-cache compatibility — pre-v6.8.0 entries hold raw strings;
+      // classify them as metadata (P5) so content is never dropped.
+      return cached.result.map((r) => typeof r === "string" ? toRoleHint("unknown", r) : r);
     }
 
     // Cache miss: inject and cache result
@@ -1596,7 +1616,7 @@ export class ClawContextEngine {
    */
   private async _cachedCrossDomain(
     p: { sessionId: string; crossDomain?: { currentPillar?: string; currentIntent?: string; [key: string]: any } }
-  ): Promise<{ block: string; report: any } | null> {
+  ): Promise<{ hint: RoleHint; report: any } | null> {
     const pillar = p.crossDomain?.currentPillar ?? "";
     const intent = p.crossDomain?.currentIntent ?? "";
     const cacheKey = `${p.sessionId}:cd:${pillar}:${intent}`;
@@ -1605,7 +1625,8 @@ export class ClawContextEngine {
     const cached = this._crossDomainCache.get(cacheKey);
     if (cached) {
       this.logger.debug?.(`[claw-ctx] Cross-domain cache hit for session ${p.sessionId} (pillar=${pillar}, intent=${intent})`);
-      return { block: cached.block, report: cached.report };
+      // v6.8.0: cache stores raw block; role wrapping happens at the assembly layer
+      return { hint: toRoleHint("crossdomain", cached.block, this.config.roleOverrides), report: cached.report };
     }
 
     // Cache miss or pillar/intent changed
@@ -1617,7 +1638,7 @@ export class ClawContextEngine {
     // Cache result (even if null, to avoid repeated calls)
     if (result) {
       this._crossDomainCache.set(cacheKey, {
-        block: result.block,
+        block: result.hint.block,
         report: result.report,
         ts: Date.now(),
         pillar,
@@ -1626,6 +1647,28 @@ export class ClawContextEngine {
     }
 
     return result;
+  }
+
+  /**
+   * v6.8.0: Assemble role hints into the dynamic suffix.
+   * roleAwareInjection=true: order by priority (P1 first), detect same-topic
+   * conflicts, report breakdown. false: byte-identical to v6.7.3 (injection
+   * order preserved, per-segment separator semantics kept).
+   */
+  private _assembleRoleAware(hints: RoleHint[]): {
+    text: string | undefined;
+    roleConflicts?: RoleConflictRecord[];
+    roleBreakdown?: RoleBreakdown;
+  } {
+    if (this.config.roleAwareInjection === false) {
+      return { text: joinRoleHints(hints) || undefined };
+    }
+    const { ordered, conflicts, breakdown } = resolveRoleAssembly(hints);
+    return {
+      text: joinRoleHints(ordered) || undefined,
+      roleConflicts: conflicts,
+      roleBreakdown: breakdown,
+    };
   }
 
   /**

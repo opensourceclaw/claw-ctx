@@ -203,6 +203,9 @@ const plugin: ReturnType<typeof definePluginEntry> = definePluginEntry({
             messageCount: result.messages.length,
             confidenceReport: result.confidenceReport,
             autoCompact: result.autoCompact,
+            // v6.8.0: Role-aware injection reports (new fields, non-breaking)
+            ...(result.roleConflicts !== undefined ? { roleConflicts: result.roleConflicts } : {}),
+            ...(result.roleBreakdown !== undefined ? { roleBreakdown: result.roleBreakdown } : {}),
           };
         },
       });

@@ -1312,13 +1312,17 @@ describe('ClawContextEngine', () => {
         await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
 
         // Access internal method via any cast
-        const injectSpy = vi.spyOn(engine as any, 'injectExternalContext').mockResolvedValue(['RL signal']);
+        // v6.8.0: injectExternalContext now returns RoleHint[] (string kept for
+        // hot-cache compatibility; wrapped as metadata)
+        const injectSpy = vi.spyOn(engine as any, 'injectExternalContext').mockResolvedValue([
+          { role: 'metadata', priority: 5, source: 'unknown', block: 'RL signal' },
+        ]);
 
         const result1 = await (engine as any)._cachedExternalContext('session-1');
         const result2 = await (engine as any)._cachedExternalContext('session-1');
 
-        expect(result1).toEqual(['RL signal']);
-        expect(result2).toEqual(['RL signal']);
+        expect(result1.map((h: any) => h.block)).toEqual(['RL signal']);
+        expect(result2.map((h: any) => h.block)).toEqual(['RL signal']);
         expect(injectSpy).toHaveBeenCalledTimes(1);
       });
 
@@ -1366,8 +1370,9 @@ describe('ClawContextEngine', () => {
         const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
         await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
 
+        // v6.8.0: injectCrossDomainContext returns { hint, report }
         const injectSpy = vi.spyOn(engine as any, 'injectCrossDomainContext').mockResolvedValue({
-          block: 'cross-domain block',
+          hint: { role: 'constraint', priority: 3, source: 'crossdomain', block: 'cross-domain block' },
           report: { signalsInjected: 1 }
         });
 
@@ -1376,8 +1381,8 @@ describe('ClawContextEngine', () => {
         const result1 = await (engine as any)._cachedCrossDomain(p);
         const result2 = await (engine as any)._cachedCrossDomain(p);
 
-        expect(result1.block).toBe('cross-domain block');
-        expect(result2.block).toBe('cross-domain block');
+        expect(result1.hint.block).toBe('cross-domain block');
+        expect(result2.hint.block).toBe('cross-domain block');
         expect(injectSpy).toHaveBeenCalledTimes(1);
       });
 
@@ -1386,7 +1391,7 @@ describe('ClawContextEngine', () => {
         await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
 
         const injectSpy = vi.spyOn(engine as any, 'injectCrossDomainContext').mockResolvedValue({
-          block: 'cross-domain block',
+          hint: { role: 'constraint', priority: 3, source: 'crossdomain', block: 'cross-domain block' },
           report: { signalsInjected: 1 }
         });
 
@@ -1402,7 +1407,7 @@ describe('ClawContextEngine', () => {
         await engine.bootstrap({ sessionId: 'test', sessionFile: '/tmp/test.md' });
 
         const injectSpy = vi.spyOn(engine as any, 'injectCrossDomainContext').mockResolvedValue({
-          block: 'cross-domain block',
+          hint: { role: 'constraint', priority: 3, source: 'crossdomain', block: 'cross-domain block' },
           report: { signalsInjected: 1 }
         });
 
