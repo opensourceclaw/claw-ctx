@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Context Engine for OpenClaw**
+**Context Engine for Agent**
 
 *Intelligent Context Assembly for OpenClaw*
 
@@ -17,7 +17,7 @@
 
 ## Project Overview
 
-claw-ctx is the **Context Engine** for OpenClaw. It intelligently assembles context from multiple sources including memory, conversation history, and external signals to provide AI agents with the right information at the right time.
+claw-ctx is the **Context Engine** for Agent. It intelligently assembles context from multiple sources including memory, conversation history, and external signals to provide AI agents with the right information at the right time.
 
 ### Core Features
 
