@@ -235,6 +235,23 @@ add to your OpenClaw configuration:
 }
 ```
 
+### As Pi Agent Plugin
+
+claw-ctx also ships as a **pi agent** plugin (`pi_plugin/`, since v6.7.0). The three context tools are wrapped as pi agent `AgentTool` definitions and execute through the same `ContextCapability` path that the OpenClaw plugin uses (`src/capability/context-capability.ts`) — so behavior is identical across both runtimes.
+
+```json
+{
+  "plugins": {
+    "allow": ["opensourceclaw-claw-ctx"],
+    "contextEngine": "claw-ctx"
+  }
+}
+```
+
+- **Entry**: `pi_plugin/index.ts`, exported as `./pi` from the package.
+- **Peer dependency**: `@earendil-works/pi-agent-core >= 0.84.2`.
+- **Tools**: `ctx_compact`, `ctx_build`, `ctx_inject` (parameters mirror the OpenClaw plugin JSON Schema; isolates pi type-checking via `tsconfig.pi.json`).
+
 ### Verify Installation
 
 ```bash
