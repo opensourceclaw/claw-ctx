@@ -7,7 +7,7 @@
 *Intelligent Context Assembly for OpenClaw*
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Version](https://img.shields.io/badge/Version-6.6.1-blue.svg)](https://github.com/opensourceclaw/claw-ctx/releases/tag/v6.6.1)
+[![Version](https://img.shields.io/badge/Version-6.8.0-blue.svg)](https://github.com/opensourceclaw/claw-ctx/releases/tag/v6.8.0)
 [![CI](https://github.com/opensourceclaw/claw-ctx/actions/workflows/ci.yml/badge.svg)](https://github.com/opensourceclaw/claw-ctx/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/opensourceclaw/claw-ctx/branch/main/graph/badge.svg)](https://codecov.io/gh/opensourceclaw/claw-ctx)
 
@@ -36,6 +36,7 @@ claw-ctx is the **Context Engine** for Agent. It intelligently assembles context
 | **Self-Refinement**      | Continuous context quality improvement                         |
 | **Semantic Compression** | Reduces context size without losing meaning                  |
 | **Drift Detection**      | Automatically detects topic shifts                           |
+| **Role-Aware Injection** | Five-role package semantics (Authority > Exemplar > Constraint > Rubric > Metadata); priority-ordered assembly with conflict logging |
 
 ### Why claw-ctx?
 
@@ -164,7 +165,17 @@ These characteristics make claw-ctx ideal for OpenClaw ecosystem users, token-co
 
 | Version     | Date    | Theme                             | Status       |
 | ----------- | ------- | --------------------------------- | ------------ |
-| **v5.0.0** | 2026-06 | Context Engineering v2             | Current      |
+| **v6.8.0** | 2026-08-31 | Role-Aware Injection (five-role priority assembly) | Current |
+| v6.7.3 | 2026-08-30 | Registry tarball fix (root plugin manifest) | |
+| v6.7.2 | 2026-08-29 | Version fact source sync (corrective) | |
+| v6.7.1 | 2026-08-29 | definePluginEntry migration | |
+| v6.7.0 | 2026-08-22 | pi agent adapter (pi_plugin) | |
+| v6.6.1 | 2026-08-15 | Release-lag assertions fix + js-yaml security | |
+| v6.6.0 | 2026-08-14 | Context Efficiency Metrics | |
+| v6.5.1 | 2026-08-14 | Tool registration fix (ctx_compact/build/inject) | |
+| v6.5.0 | 2026-08-13 | MECW-Aware Compaction | |
+| v6.4.0 | 2026-08-13 | Tool Registration (3 OpenClaw tools) | |
+| v5.0.0  | 2026-06 | Context Engineering v2             |              |
 | **v4.26.0** | 2026-06 | Engineering Quality and Docs       |              |
 | **v4.24.0** | 2026-06 | Self-Refinement Module            |              |
 | **v4.23.0** | 2026-06 | Session-Resume plus CJK Support   |              |
