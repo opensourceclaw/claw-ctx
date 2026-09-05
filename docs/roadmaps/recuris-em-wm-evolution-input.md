@@ -64,3 +64,11 @@
 - [ ] claw-mem 下一轮 PLAN:T-A/T-B(组件归因 + 验证门)优先
 - [ ] claw-ctx 下一轮 PLAN:T-D(状态驱动检索)优先;T-E 并入既有 compaction-digest 规划
 - [ ] 与 claw-rsi 错误模式卡体系对齐:组件归因字段共用一套枚举(rsi 产卡、mem 存储)
+
+---
+
+## 增补(2026-09-05 22:51):MUSE 分层注入启示(与 claw-mem 同步)
+
+**证据源**: ACL 2026 Findings(MUSE)——三层记忆差异化注入:Strategic 全量进 system prompt(小而稳,每任务后合并精炼防膨胀)/ Procedural 两级索引轻载(启动只载索引,按需查详情,+98s/任务)/ Tool 执行时取。
+
+**落点**:ctx_inject 把「按抽象层级差异化注入」提升为一等策略,与 Recuris 启示 T-D(状态驱动检索)正交互补:**状态决定取什么层,层级决定注入多少**。claw-mem 侧对应增补见其仓同日文档。
