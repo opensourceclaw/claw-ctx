@@ -10,6 +10,31 @@
 import type { OptimizationStrategy } from "../model-profile.js";
 
 /**
+ * v6.9.0: Compaction event payloads (ADR-4, design §5.1).
+ * Event name + payload fields form the contract with claw-obs consumers.
+ */
+export interface CompactionCompletedEventData {
+  timestamp: number;
+  sessionId: string;
+  triggerReason: "explicit" | "auto" | "force";
+  tokensBefore: number;
+  tokensAfter: number;
+  removedMessages: number;
+  keptMessages: number;
+  durationMs: number;
+  digestRounds?: number;
+  digestTokens?: number;
+}
+
+export interface CompactionSkippedEventData {
+  timestamp: number;
+  sessionId: string;
+  triggerReason: "explicit" | "auto" | "force";
+  reason: string;
+  tokensBefore: number;
+}
+
+/**
  * Event types emitted by OptimizerObserver
  */
 export interface OptimizerEvents {
@@ -19,6 +44,8 @@ export interface OptimizerEvents {
   "ctx.tokens.saved": { tokens: number; modelId?: string; timestamp: number };
   "ctx.budget.allocated": { modelId: string; totalBudget: number; stable: number; dynamic: number; reserve: number; timestamp: number };
   "ctx.compression.triggered": { modelId: string; tokensBefore: number; threshold: number; timestamp: number };
+  "ctx.compaction.completed": CompactionCompletedEventData;
+  "ctx.compaction.skipped": CompactionSkippedEventData;
 }
 
 export type OptimizerEventName = keyof OptimizerEvents;
@@ -117,6 +144,26 @@ export class OptimizerObserver {
     this.eventBus.emit("ctx.compression.triggered", {
       modelId, tokensBefore, threshold, timestamp: Date.now()
     });
+  }
+
+  // v6.9.0: Compaction result events (ADR-4). Failure to emit must never
+  // break the compaction flow, hence the try/catch around each emit.
+  emitCompactionCompleted(data: Omit<CompactionCompletedEventData, "timestamp">): void {
+    if (!this.enabled) return;
+    try {
+      this.eventBus.emit("ctx.compaction.completed", { ...data, timestamp: Date.now() });
+    } catch {
+      // observe only — never break compaction
+    }
+  }
+
+  emitCompactionSkipped(data: Omit<CompactionSkippedEventData, "timestamp">): void {
+    if (!this.enabled) return;
+    try {
+      this.eventBus.emit("ctx.compaction.skipped", { ...data, timestamp: Date.now() });
+    } catch {
+      // observe only — never break compaction
+    }
   }
 
   emit<E extends OptimizerEventName>(event: E, data: OptimizerEventData<E>): void {

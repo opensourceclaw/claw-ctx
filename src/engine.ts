@@ -68,6 +68,7 @@ import { SessionStateExtractor, type SessionState, type Entity } from "./session
 import { runStructuralDigest, type DigestSourceMessage } from "./structural-digest/extract.js";
 import { parseDigest, serializeDigest } from "./structural-digest/serialize.js";
 import { DIGEST_PREFIX, STRUCTURAL_DIGEST_ENABLED } from "./structural-digest/constants.js";
+import { optimizerObserver } from "./obs/optimizer-observer.js";
 import { CIInjector, type CISignal, type CIProvider } from "./ci_injector.js";
 import { LongTermDependencyTracker } from "./long-term-dependency-tracker.js";
 import { SelfRefiner } from "./self_refiner.js";
@@ -706,6 +707,10 @@ export class ClawContextEngine {
     if (p.abortSignal?.aborted) return { ok: false, compacted: false, reason: "aborted" };
     this._session(p.sessionId);
 
+    // v6.9.0 (ADR-4 §5.2): explicit ctx_compact defaults to "force" when forcing,
+    // afterTurn self-trigger passes "auto" explicitly.
+    const triggerReason = p.triggerReason ?? (p.force ? "force" : "explicit");
+
     const sessionFile = p.sessionFile;
     if (!sessionFile || !fs.existsSync(sessionFile)) {
       const cur = p.currentTokenCount ?? 50000;
@@ -714,6 +719,12 @@ export class ClawContextEngine {
       const ciReserve = p.reserveForCI ?? 0;
       const effectiveThreshold = baseThreshold - crossDomainReserve - ciReserve;
       if (!p.force && cur < effectiveThreshold) {
+        optimizerObserver.emitCompactionSkipped({
+          sessionId: p.sessionId,
+          triggerReason,
+          reason: `below threshold (${cur} < ${effectiveThreshold})`,
+          tokensBefore: cur,
+        });
         return { ok: true, compacted: false, reason: `below threshold (${cur} < ${effectiveThreshold})`, result: { tokensBefore: cur, tokensAfter: cur } };
       }
       return { ok: false, compacted: false, reason: "session file not found" };
@@ -738,8 +749,15 @@ export class ClawContextEngine {
         this.logger.warn("[claw-ctx] pre-compaction memory flush skipped (claw-mem unavailable)");
       }
 
+      const compactStart = Date.now();
       const result = await this._executeCompaction(sessionFile, targetTokens, p.sessionId);
       if (!result.compacted) {
+        optimizerObserver.emitCompactionSkipped({
+          sessionId: p.sessionId,
+          triggerReason,
+          reason: result.reason ?? "unknown",
+          tokensBefore: result.tokensBefore ?? 0,
+        });
         return { ok: true, compacted: false, reason: result.reason, result: { tokensBefore: result.tokensBefore ?? 0, tokensAfter: result.tokensBefore ?? 0 } };
       }
       // v5.1.1: Reset token warning flag after successful compaction
@@ -791,6 +809,18 @@ export class ClawContextEngine {
       } catch (e: any) {
         this.logger.warn(`[claw-ctx] post-compact state sync failed (non-blocking): ${e?.message ?? e}`);
       }
+      // v6.9.0 (ADR-4 §5.2): successful compaction outcome event
+      const details = (result.details ?? {}) as { removedCount?: number };
+      optimizerObserver.emitCompactionCompleted({
+        sessionId: p.sessionId,
+        triggerReason,
+        tokensBefore: result.tokensBefore ?? 0,
+        tokensAfter: result.tokensAfter ?? 0,
+        removedMessages: details.removedCount ?? 0,
+        keptMessages: result.keptMsgs?.length ?? 0,
+        durationMs: Date.now() - compactStart,
+        ...(result.digest ? { digestRounds: result.digest.rounds, digestTokens: result.digest.tokens } : {}),
+      });
       return {
         ok: true,
         compacted: true,
@@ -1166,6 +1196,8 @@ export class ClawContextEngine {
             sessionFile: p.sessionFile,
             tokenBudget: p.tokenBudget,
             currentTokenCount: estTokens,
+            // v6.9.0 (ADR-4): self-triggered — compaction result events carry "auto"
+            triggerReason: "auto",
           });
           if (result.compacted) {
             this.logger.info(`[claw-ctx] afterTurn self-compaction: ${result.result?.tokensBefore} -> ${result.result?.tokensAfter} tokens`);
