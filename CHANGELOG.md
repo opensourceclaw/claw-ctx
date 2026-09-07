@@ -1,5 +1,21 @@
 # Changelog
 
+## [6.9.0] - 2026-09-07
+
+### Added
+
+- **Compaction Structural Digest（结构保护带，ADR-1/2/3/4）**：压缩时以规则提取（非 LLM、零 LLM 面）从被移除消息中识别三类结构信息——已确认决策/事实（confirmed）、已否决方案（rejected）、API 契约与坑（pitfalls），合并跨轮持久化条目后以一条准 header 消息注入压缩后上下文，保证结构信息跨压缩轮存活（swamp 稀释可审计）。
+  - 双语 pattern 成对（EN+ZH）逐句提取；置信门控 `CONFIDENCE_FLOOR = 0.75`（强信号 0.85+，弱信号仅含因果连词可升 0.75），压制词（maybe/也许 等）与疑问句零捕获；`provenance {msgId, snippet≤200, round}` 行尾 `[src ...]` 可回指源条目。
+  - 容量保护：`DIGEST_MAX_TOKENS = 2048`；截断优先级 rejected > confirmed > pitfalls，类内低置信先裁、旧轮先裁；`cutRank` 纯函数导出供测试锁定。
+  - 序列化文本 `[STRUCTURAL-DIGEST v1]` 三节（已确认/已否决/API 契约与坑），parse 有损重建（confidence 回底、round 归零）保证再序列化幂等且新提取胜旧条目（保守语义）。
+  - 新模块 `src/structural-digest/`（types/constants/patterns/extract/serialize）；引擎 `_executeCompaction` 接线（digest 剔除/合并/写入 + `newTokens` 记账 + 异常回退现版输出）。
+  - 纯增量红线：无结构信息时输出与 v6.8.0 逐字节一致；`ctx_compact` 工具签名不变（`engine.compact` 仅加可选内部参数 `triggerReason`）。
+- **Compaction 事件暴露（ADR-4）**：`OptimizerEvents` 追加 `ctx.compaction.completed` / `ctx.compaction.skipped`（payload schema 锁 §5.1：sessionId/triggerReason/tokensBefore/tokensAfter/removedMessages/keptMessages/durationMs + 可选 digestRounds/digestTokens；skipped 带 reason）；observer 新增 `emitCompactionCompleted/emitCompactionSkipped`，走既有 `IEventBus`（NoOp 降级，发射失败不影响主流程）。发射点：skipped（below-threshold 早退 / compacted=false）、completed（成功 return 前）；triggerReason 由 afterTurn 自触发传 `"auto"`、工具面默认 `force/explicit`；既有 `ctx.compression.triggered` 语义不变。
+
+### Tests
+
+- 94 files / 1195 passed（基线）→ **97 files / 1234 passed / 0 failed**（+39：structural-digest extract 18、serialize 12、压缩集成 9 含跨轮 round 递增与事件 schema 断言）。
+
 ## [6.8.0] - 2026-08-31
 
 ### Added

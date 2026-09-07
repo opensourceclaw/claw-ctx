@@ -7,7 +7,7 @@
 *Intelligent Context Assembly for OpenClaw*
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Version](https://img.shields.io/badge/Version-6.8.0-blue.svg)](https://github.com/opensourceclaw/claw-ctx/releases/tag/v6.8.0)
+[![Version](https://img.shields.io/badge/Version-6.9.0-blue.svg)](https://github.com/opensourceclaw/claw-ctx/releases/tag/v6.9.0)
 [![CI](https://github.com/opensourceclaw/claw-ctx/actions/workflows/ci.yml/badge.svg)](https://github.com/opensourceclaw/claw-ctx/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/opensourceclaw/claw-ctx/branch/main/graph/badge.svg)](https://codecov.io/gh/opensourceclaw/claw-ctx)
 
@@ -37,6 +37,7 @@ claw-ctx is the **Context Engine** for Agent. It intelligently assembles context
 | **Semantic Compression** | Reduces context size without losing meaning                  |
 | **Drift Detection**      | Automatically detects topic shifts                           |
 | **Role-Aware Injection** | Five-role package semantics (Authority > Exemplar > Constraint > Rubric > Metadata); priority-ordered assembly with conflict logging |
+| **Structural Digest** | Rule-extracted protected zone: decisions, rejected approaches and API pitfalls survive compaction as one traceable entry |
 
 ### Why claw-ctx?
 
@@ -165,7 +166,8 @@ These characteristics make claw-ctx ideal for OpenClaw ecosystem users, token-co
 
 | Version     | Date    | Theme                             | Status       |
 | ----------- | ------- | --------------------------------- | ------------ |
-| **v6.8.0** | 2026-08-31 | Role-Aware Injection (five-role priority assembly) | Current |
+| **v6.9.0** | 2026-09-07 | Compaction Structural Digest (rule-extracted protected zone) | Current |
+| v6.8.0 | 2026-08-31 | Role-Aware Injection (five-role priority assembly) | |
 | v6.7.3 | 2026-08-30 | Registry tarball fix (root plugin manifest) | |
 | v6.7.2 | 2026-08-29 | Version fact source sync (corrective) | |
 | v6.7.1 | 2026-08-29 | definePluginEntry migration | |
