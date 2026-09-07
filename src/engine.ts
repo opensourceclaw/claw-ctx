@@ -64,6 +64,10 @@ import { TiktokenCounter, FallbackCounter, createTokenCounter, type TokenCounter
 import { DriftDetector, type DriftAlert, type DriftReport, type DriftConfig } from "./drift-detector.js";
 import { SmartBudgetAllocator, type TaskType, type BudgetAllocation as SmartBudgetAllocation, type AllocationHistory } from "./smart-budget-allocator.js";
 import { SessionStateExtractor, type SessionState, type Entity } from "./session-state-extractor.js";
+// v6.9.0: Structural digest protected zone (ADR-1/ADR-2/ADR-3)
+import { runStructuralDigest, type DigestSourceMessage } from "./structural-digest/extract.js";
+import { parseDigest, serializeDigest } from "./structural-digest/serialize.js";
+import { DIGEST_PREFIX, STRUCTURAL_DIGEST_ENABLED } from "./structural-digest/constants.js";
 import { CIInjector, type CISignal, type CIProvider } from "./ci_injector.js";
 import { LongTermDependencyTracker } from "./long-term-dependency-tracker.js";
 import { SelfRefiner } from "./self_refiner.js";
@@ -698,7 +702,7 @@ export class ClawContextEngine {
     return { messages: resultMessages, estimatedTokens: tokens, systemPromptAddition: finalSys, confidenceReport, crossDomainReport: crossDomainResult?.report, ciReport: ciResult?.report, driftScore, autoCompact, newSessionSuggestion, roleConflicts, roleBreakdown };
   }
 
-  async compact(p: { sessionId: string; sessionKey?: string; sessionFile: string; tokenBudget?: number; force?: boolean; currentTokenCount?: number; compactionTarget?: string; customInstructions?: string; abortSignal?: AbortSignal; reserveForCrossDomain?: number; reserveForCI?: number; runtimeContext?: any }): Promise<{ ok: boolean; compacted: boolean; reason?: string; result?: { summary?: string; tokensBefore: number; tokensAfter?: number; details?: unknown } }> {
+  async compact(p: { sessionId: string; sessionKey?: string; sessionFile: string; tokenBudget?: number; force?: boolean; currentTokenCount?: number; compactionTarget?: string; customInstructions?: string; abortSignal?: AbortSignal; reserveForCrossDomain?: number; reserveForCI?: number; runtimeContext?: any; triggerReason?: "explicit" | "auto" | "force" }): Promise<{ ok: boolean; compacted: boolean; reason?: string; result?: { summary?: string; tokensBefore: number; tokensAfter?: number; details?: unknown } }> {
     if (p.abortSignal?.aborted) return { ok: false, compacted: false, reason: "aborted" };
     this._session(p.sessionId);
 
@@ -734,7 +738,7 @@ export class ClawContextEngine {
         this.logger.warn("[claw-ctx] pre-compaction memory flush skipped (claw-mem unavailable)");
       }
 
-      const result = await this._executeCompaction(sessionFile, targetTokens);
+      const result = await this._executeCompaction(sessionFile, targetTokens, p.sessionId);
       if (!result.compacted) {
         return { ok: true, compacted: false, reason: result.reason, result: { tokensBefore: result.tokensBefore ?? 0, tokensAfter: result.tokensBefore ?? 0 } };
       }
@@ -809,8 +813,9 @@ export class ClawContextEngine {
    */
   private async _executeCompaction(
     sessionFile: string,
-    targetTokens: number
-  ): Promise<{ compacted: boolean; reason?: string; summary: string; tokensBefore: number; tokensAfter?: number; details?: unknown; keptMsgs?: Array<{ line: string; type: string; message?: any }>; summaryBlock?: string }> {
+    targetTokens: number,
+    sessionId: string
+  ): Promise<{ compacted: boolean; reason?: string; summary: string; tokensBefore: number; tokensAfter?: number; details?: unknown; keptMsgs?: Array<{ line: string; type: string; message?: any }>; summaryBlock?: string; digest?: { rounds: number; tokens: number } }> {
     const lines = fs.readFileSync(sessionFile, "utf-8").split("\n").filter(l => l.trim());
     const entries: Array<{ line: string; type: string; message?: any }> = [];
 
@@ -827,6 +832,21 @@ export class ClawContextEngine {
     const headerTypes = new Set(["session", "model_change", "thinking_level_change", "custom", "custom_message"]);
     const headers = entries.filter(e => headerTypes.has(e.type));
     const msgEntries = entries.filter(e => e.type === "message");
+
+    // v6.9.0: Pull persisted structural-digest entries out of consumption —
+    // they are quasi-headers (rewritten every round, never kept/counted/tokenized).
+    // Content is a string starting with the digest prefix (see _executeCompaction writer).
+    let oldDigestText: string | null = null;
+    if (STRUCTURAL_DIGEST_ENABLED) {
+      for (let i = msgEntries.length - 1; i >= 0; i--) {
+        const c = msgEntries[i].message?.content;
+        if (typeof c === "string" && c.startsWith(DIGEST_PREFIX)) {
+          const line = msgEntries[i];
+          msgEntries.splice(i, 1);
+          if (oldDigestText === null) oldDigestText = c;
+        }
+      }
+    }
 
     if (msgEntries.length === 0) {
       return { compacted: false, reason: "no messages to compact", summary: "", tokensBefore: 0 };
@@ -850,6 +870,7 @@ export class ClawContextEngine {
     let keptMsgs: Array<{ line: string; type: string; message?: any }>;
     let summaryBlock: string;
     let removedCount: number;
+    let removedMsgs: Array<{ line: string; type: string; message?: any }> = [];
 
     if (useSemantic) {
       // v4.22.0: Semantic compression — preserve important messages
@@ -862,6 +883,8 @@ export class ClawContextEngine {
         return { compacted: false, reason: `too few messages to remove (${removedCount})`, summary: "", tokensBefore: totalMsgTokens };
       }
       summaryBlock = result.summary;
+      const keptSet = new Set(result.keptIndices);
+      removedMsgs = msgEntries.filter((_, i) => !keptSet.has(i));
     } else {
       // Legacy: walk from newest to oldest
       let acc = 0;
@@ -881,34 +904,68 @@ export class ClawContextEngine {
 
       const oldMsgs = msgEntries.slice(0, removedCount);
       summaryBlock = this._buildSummary(oldMsgs, removedCount);
+      removedMsgs = oldMsgs;
       keptMsgs = msgEntries.slice(removedCount);
     }
     const lastHeader = headers.length > 0 ? headers[headers.length - 1] : entries[0];
     let lastHeaderId = "root";
     try { lastHeaderId = JSON.parse(lastHeader.line).id ?? "root"; } catch { /* ok */ }
 
-    const newLines: string[] = [
-      ...headers.map(h => h.line),
+    // v6.9.0: structural digest — extract structure from removed messages, merge
+    // with the persisted digest (spliced out above), write back as a protected
+    // quasi-header entry before the summary. Any failure reverts to the
+    // pre-v6.9.0 output (pure-incremental contract).
+    let digestEntryLine: string | null = null;
+    let digestInfo: { rounds: number; tokens: number } | null = null;
+    if (STRUCTURAL_DIGEST_ENABLED) {
+      try {
+        const sources: DigestSourceMessage[] = removedMsgs.map((e) => {
+          let id = "unknown";
+          try { id = JSON.parse(e.line).id ?? "unknown"; } catch { /* keep unknown */ }
+          const msg = e.message ?? {};
+          return { id, role: msg.role, content: msg.content };
+        });
+        const oldDigest = oldDigestText ? parseDigest(oldDigestText) : null;
+        const round = (oldDigest?.rounds ?? 0) + 1;
+        const digest = runStructuralDigest(sources, oldDigest, sessionId, round);
+        if (digest) {
+          const text = serializeDigest(digest);
+          if (text) {
+            digestEntryLine = JSON.stringify({ type: "message", id: this._makeId(), parentId: lastHeaderId, timestamp: new Date().toISOString(), message: { role: "user", content: text } });
+            digestInfo = { rounds: digest.rounds, tokens: estimateTokens(text) };
+          }
+        }
+      } catch (e: any) {
+        this.logger.warn(`[claw-ctx] structural digest extraction skipped (fallback to plain compaction): ${e?.message ?? e}`);
+        digestEntryLine = null;
+        digestInfo = null;
+      }
+    }
+
+    const newLines: string[] = [...headers.map(h => h.line)];
+    if (digestEntryLine) newLines.push(digestEntryLine);
+    newLines.push(
       JSON.stringify({ type: "message", id: this._makeId(), parentId: lastHeaderId, timestamp: new Date().toISOString(), message: { role: "user", content: summaryBlock } }),
       ...keptMsgs.map(m => m.line),
-    ];
+    );
 
     // Atomic write
     const tmpFile = sessionFile + ".compact.tmp";
     fs.writeFileSync(tmpFile, newLines.join("\n") + "\n", "utf-8");
     fs.renameSync(tmpFile, sessionFile);
 
-    const newTokens = keptMsgs.reduce((sum, _m, i) => sum + msgTokens[removedCount + i], 0) + estimateTokens(summaryBlock);
-    this.logger.info(`[claw-ctx] COMPACT: ${msgEntries.length} msgs → ${keptMsgs.length + 1} msgs, ${totalMsgTokens} → ≈${newTokens} tokens`);
+    const newTokens = keptMsgs.reduce((sum, _m, i) => sum + msgTokens[removedCount + i], 0) + estimateTokens(summaryBlock) + (digestInfo?.tokens ?? 0);
+    this.logger.info(`[claw-ctx] COMPACT: ${msgEntries.length} msgs → ${keptMsgs.length + 1} msgs, ${totalMsgTokens} → ≈${newTokens} tokens${digestInfo ? ` (digest r${digestInfo.rounds}, ${digestInfo.tokens}t)` : ""}`);
 
     return {
       compacted: true,
       summary: `Removed ${removedCount} old messages (kept ${keptMsgs.length} recent + 1 summary). Tokens: ${totalMsgTokens} → ≈${newTokens}`,
       tokensBefore: totalMsgTokens,
       tokensAfter: newTokens,
-      details: { messagesBefore: msgEntries.length, messagesAfter: keptMsgs.length + 1, removedCount, tokensBefore: totalMsgTokens, tokensAfter: newTokens },
+      details: { messagesBefore: msgEntries.length, messagesAfter: keptMsgs.length + 1, removedCount, tokensBefore: totalMsgTokens, tokensAfter: newTokens, digest: digestInfo },
       keptMsgs,
       summaryBlock,
+      digest: digestInfo ?? undefined,
     };
   }
 
