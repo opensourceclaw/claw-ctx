@@ -867,13 +867,24 @@ export class ClawContextEngine {
     // they are quasi-headers (rewritten every round, never kept/counted/tokenized).
     // Content is a string starting with the digest prefix (see _executeCompaction writer).
     let oldDigestText: string | null = null;
+    let oldDigestRound: number | null = null;
     if (STRUCTURAL_DIGEST_ENABLED) {
       for (let i = msgEntries.length - 1; i >= 0; i--) {
         const c = msgEntries[i].message?.content;
         if (typeof c === "string" && c.startsWith(DIGEST_PREFIX)) {
           const line = msgEntries[i];
           msgEntries.splice(i, 1);
-          if (oldDigestText === null) oldDigestText = c;
+          if (oldDigestText === null) {
+            oldDigestText = c;
+            // Engine-private round counter lives on the JSON line (digestRound),
+            // not in the text form (v1 is intentionally round-less; parseDigest
+            // rebuilds rounds at 0). Absent counter → restart count at 1.
+            try {
+              oldDigestRound = (JSON.parse(line.line).digestRound as number) ?? null;
+            } catch {
+              oldDigestRound = null;
+            }
+          }
         }
       }
     }
@@ -956,12 +967,12 @@ export class ClawContextEngine {
           return { id, role: msg.role, content: msg.content };
         });
         const oldDigest = oldDigestText ? parseDigest(oldDigestText) : null;
-        const round = (oldDigest?.rounds ?? 0) + 1;
+        const round = (oldDigestRound ?? oldDigest?.rounds ?? 0) + 1;
         const digest = runStructuralDigest(sources, oldDigest, sessionId, round);
         if (digest) {
           const text = serializeDigest(digest);
           if (text) {
-            digestEntryLine = JSON.stringify({ type: "message", id: this._makeId(), parentId: lastHeaderId, timestamp: new Date().toISOString(), message: { role: "user", content: text } });
+            digestEntryLine = JSON.stringify({ type: "message", id: this._makeId(), parentId: lastHeaderId, timestamp: new Date().toISOString(), digestRound: round, message: { role: "user", content: text } });
             digestInfo = { rounds: digest.rounds, tokens: estimateTokens(text) };
           }
         }
