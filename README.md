@@ -229,7 +229,6 @@ add to your OpenClaw configuration:
 ```json
 {
   "plugins": {
-    "allow": ["opensourceclaw-claw-ctx"],
     "slots": {
       "contextEngine": "claw-ctx"
     }
@@ -244,7 +243,6 @@ claw-ctx also ships as a **pi agent** plugin (`pi_plugin/`, since v6.7.0). The t
 ```json
 {
   "plugins": {
-    "allow": ["opensourceclaw-claw-ctx"],
     "contextEngine": "claw-ctx"
   }
 }
@@ -331,7 +329,7 @@ cat package.json | grep version
 ### Basic API
 
 ```typescript
-import { ContextEngine } from './dist/index.js';
+import { ContextEngine } from 'claw-ctx';
 
 const ctx = new ContextEngine({
   maxTokens: 80000,
