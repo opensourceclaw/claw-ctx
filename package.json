@@ -57,7 +57,7 @@
     "typedoc": "^0.28.19",
     "typescript": "^5.0.0",
     "typescript-eslint": "^8.61.1",
-    "vitest": "^4.1.6"
+    "vitest": "^5.0.0"
   },
   "keywords": [
     "openclaw",
