@@ -67,6 +67,7 @@ import { SessionStateExtractor, type SessionState, type Entity } from "./session
 // v6.9.0: Structural digest protected zone (ADR-1/ADR-2/ADR-3)
 import { runStructuralDigest, type DigestSourceMessage } from "./structural-digest/extract.js";
 import { parseDigest, serializeDigest } from "./structural-digest/serialize.js";
+import { ERROR_CARD_BLOCK_MAX_TOKENS } from "./structural-digest/constants.js";
 import { DIGEST_PREFIX, STRUCTURAL_DIGEST_ENABLED } from "./structural-digest/constants.js";
 import { optimizerObserver } from "./obs/optimizer-observer.js";
 import { CIInjector, type CISignal, type CIProvider } from "./ci_injector.js";
@@ -201,6 +202,31 @@ function estimateTokens(text: string): number {
 
 interface ScoredItem { content: string; score: number }
 
+/**
+ * v6.10.0 — task status signal for error-card retrieval (joint design §3.1).
+ * All fields optional: a missing dimension simply does not participate in the
+ * retrieval key (never guessed). ctx never interprets error semantics —
+ * recentErrorIds are opaque strings passed through to claw-mem.
+ */
+export interface TaskStatusSignal {
+  /** Task type; falls back to the existing _taskTypeDetector detection when absent. */
+  taskType?: string;
+  /** Task stage label (host-supplied, pass-through). */
+  stage?: string;
+  /** Recent error event identifiers (opaque, ≤5 kept). */
+  recentErrorIds?: string[];
+}
+
+/** Deterministic retrieval key from a status signal (same input → same key → cacheable). */
+export function statusSignalKey(signal: TaskStatusSignal | undefined, fallbackTaskType?: string): string {
+  const parts = [
+    signal?.taskType || fallbackTaskType || "",
+    signal?.stage || "",
+    ...(signal?.recentErrorIds ?? []).slice(0, 5),
+  ].filter(Boolean);
+  return parts.join(" ");
+}
+
 function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   if (items.length === 0) return [];
   const sorted = [...items].sort((a, b) => b.score - a.score);
@@ -275,6 +301,12 @@ export class ClawContextEngine {
   // v5.2.0: Memory search cache for stable prefix
   // v5.11.0: Replaced unbounded Map with LRUCache (maxSize=32, ttl=30s)
   private _memorySearchCache: LRUCache<string, { query: string; block: string; ts: number }> = new LRUCache({ maxSize: 32, ttlMs: 30_000 });
+  // v6.10.0: error-card reminder cache (same layout/TTL discipline as memory search;
+  // cache key folds the deterministic status-signal retrieval key)
+  private _errorCardCache: LRUCache<string, { key: string; block: string; ts: number }> = new LRUCache({ maxSize: 32, ttlMs: 30_000 });
+  // v6.10.0: last detected task type (from _taskTypeDetector) — fallback dimension
+  // for the error-card retrieval key when the host provides no statusSignal
+  private _lastDetectedTaskType: string | undefined;
   // v5.2.1: RL/Governance session-level cache
   // v5.11.0: Replaced manual LRU logic with LRUCache (maxSize=10)
   // v6.8.0: Cache key/value layout unchanged; result elements may be RoleHint
@@ -428,7 +460,7 @@ export class ClawContextEngine {
     return { ingestedCount: n };
   }
 
-  async assemble(p: { sessionId: string; sessionKey?: string; messages: any[]; tokenBudget?: number; availableTools?: Set<string>; citationsMode?: string; model?: string; prompt?: string; confidenceThreshold?: number; confidenceMode?: ConfidenceMode; crossDomain?: { enabled: boolean; currentPillar?: string; currentIntent?: string; timeRange?: string; maxSignals?: number }; ci?: { enabled: boolean; project?: string; includeBuildStatus?: boolean; includeTestResults?: boolean; includeDeployStatus?: boolean; maxSignals?: number } }): Promise<{ messages: any[]; estimatedTokens: number; systemPromptAddition?: string; promptAuthority?: string; confidenceReport?: ConfidenceReport; crossDomainReport?: { signalsInjected: number; totalTokens: number; correlations: InjectedSignal[] }; ciReport?: { signalsInjected: number; totalTokens: number; signals: CISignal[] }; driftScore?: number; autoCompact?: boolean; newSessionSuggestion?: string; roleConflicts?: RoleConflictRecord[]; roleBreakdown?: RoleBreakdown }> {
+  async assemble(p: { sessionId: string; sessionKey?: string; messages: any[]; tokenBudget?: number; availableTools?: Set<string>; citationsMode?: string; model?: string; prompt?: string; confidenceThreshold?: number; confidenceMode?: ConfidenceMode; statusSignal?: TaskStatusSignal; crossDomain?: { enabled: boolean; currentPillar?: string; currentIntent?: string; timeRange?: string; maxSignals?: number }; ci?: { enabled: boolean; project?: string; includeBuildStatus?: boolean; includeTestResults?: boolean; includeDeployStatus?: boolean; maxSignals?: number } }): Promise<{ messages: any[]; estimatedTokens: number; systemPromptAddition?: string; promptAuthority?: string; confidenceReport?: ConfidenceReport; crossDomainReport?: { signalsInjected: number; totalTokens: number; correlations: InjectedSignal[] }; ciReport?: { signalsInjected: number; totalTokens: number; signals: CISignal[] }; driftScore?: number; autoCompact?: boolean; newSessionSuggestion?: string; roleConflicts?: RoleConflictRecord[]; roleBreakdown?: RoleBreakdown }> {
     if (this.config.debug) this.logger.info(`[claw-ctx] assemble() called, sessionId=${p.sessionId}, messages=${p.messages?.length ?? 0}, tokenBudget=${p.tokenBudget ?? 0}`);
     this._session(p.sessionId);
 
@@ -484,7 +516,11 @@ export class ClawContextEngine {
     if (!Array.isArray(mems) || mems.length === 0) {
       // v5.2.1: Still inject RL/governance/cross-domain/CI even without memories (cached)
       // v6.8.0: role-aware ordering + conflict arbitration at the assembly layer
+      // v6.10.0: error-card reminder rides the no-memory path too — prevention
+      // reminders are independent of generic recall (joint design §3.2)
       const additions = await this._cachedExternalContext(p.sessionId);
+      const errorCardEarly = this._cachedErrorCardSearch(q, p.statusSignal);
+      if (errorCardEarly) additions.unshift(toRoleHint("error-card", errorCardEarly));
       const crossDomainResult = await this._cachedCrossDomain(p);
       if (crossDomainResult) additions.push(crossDomainResult.hint);
       const ciResult = await this.injectCIContext(p);
@@ -541,6 +577,7 @@ export class ClawContextEngine {
         const lastMessage = messages[messages.length - 1];
         const query = this._extractTextFromMessage(lastMessage);
         const taskSignature = this._taskTypeDetector.detect(query ?? "");
+        this._lastDetectedTaskType = taskSignature.type; // v6.10.0: error-card retrieval fallback dimension
 
         this._lastAssemblyResult = await this._contextAssembler.assemble(
           p.sessionId,
@@ -565,6 +602,15 @@ export class ClawContextEngine {
     const sessionResumeBlock = this._buildStableSessionResume(p.sessionId);
     if (sessionResumeBlock) {
       stableAdditions.push(sessionResumeBlock);
+    }
+
+    // v6.10.0: error-pattern-card reminder block (status-driven retrieval, joint
+    // design §3). Pushed BEFORE the memory block (ruling: prevention reminders
+    // outrank generic recall). mem missing/erroring → block absent, main flow
+    // untouched (graceful discipline shared with the claw-mem import seam).
+    const errorCardBlock = this._cachedErrorCardSearch(q, p.statusSignal);
+    if (errorCardBlock) {
+      stableAdditions.push(errorCardBlock);
     }
 
     // v5.2.0: Memory search (cached)
@@ -1677,6 +1723,54 @@ export class ClawContextEngine {
       this._memorySearchCache.set(cacheKey, { query, block, ts: Date.now() });
     }
 
+    return block;
+  }
+
+  /**
+   * v6.10.0: Cached error-card reminder search for the stable prefix (joint
+   * design §3.2). Retrieval key = deterministic statusSignalKey; block is
+   * produced by claw-mem (findCardsForInjection + formatCardsAsReminder) and
+   * capped at ERROR_CARD_BLOCK_MAX_TOKENS (chars/4 token estimate, whole-card
+   * drop + suppressed trailer inside mem's formatter). Any failure — claw-mem
+   * absent (CI/mock path), older mem without the v7.7.0 methods, query throw —
+   * yields NO block; the main flow is never blocked (graceful discipline).
+   */
+  private _cachedErrorCardSearch(
+    query: string,
+    signal?: TaskStatusSignal,
+  ): string | undefined {
+    const cacheKey = this.sid ?? "default";
+    const fallbackTaskType = this._lastDetectedTaskType ?? undefined;
+    const key = statusSignalKey(signal, fallbackTaskType);
+    // Neither a status signal nor a detectable task type → nothing to retrieve with.
+    if (!key) return undefined;
+    const cached = this._errorCardCache.get(cacheKey);
+    if (cached && cached.key === key && Date.now() - cached.ts < 30000) {
+      return cached.block;
+    }
+    let block: string | undefined;
+    try {
+      // this.manager is the constructor-injected claw-mem handle (graceful mock
+      // fallback in CI). Probe the v7.7.0 methods: an older mem / mock yields
+      // no block instead of a crash.
+      const manager = this.manager as any;
+      if (manager && typeof manager.findCardsForInjection === "function" && typeof manager.formatCardsAsReminder === "function") {
+        const cards = manager.findCardsForInjection({
+          triggerQuery: [key, query].filter(Boolean).join(" "),
+        });
+        if (Array.isArray(cards) && cards.length > 0) {
+          block = manager.formatCardsAsReminder(cards, {
+            maxChars: ERROR_CARD_BLOCK_MAX_TOKENS * 4, // chars/4 token estimate, repo convention
+          });
+        }
+      }
+    } catch (error) {
+      if (this.config.debug) this.logger.warn("[claw-ctx] error-card search failed (block skipped):", error);
+      block = undefined;
+    }
+    if (block) {
+      this._errorCardCache.set(cacheKey, { key, block, ts: Date.now() });
+    }
     return block;
   }
 

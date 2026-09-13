@@ -33,6 +33,13 @@
  * by confidence desc, then newer round first). Parse is lossy by design:
  * confidence/round rebuild at floor/0 so re-serialization stays idempotent and
  * fresh extractions win over persisted entries on equal claims (conservative).
+ *
+ * v6.10.0: the error-card reminder block is a separate stable-prefix block with
+ * its own budget (ERROR_CARD_BLOCK_MAX_TOKENS, joint design §3.3). In the
+ * protected-region priority order it slots as
+ * rejected > error-cards > confirmed > pitfalls — whole-block drop at budget.
+ * This serializer itself never emits card blocks; digest behavior is unchanged
+ * (frozen surface).
  */
 
 import {

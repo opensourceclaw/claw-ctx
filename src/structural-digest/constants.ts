@@ -55,3 +55,12 @@ export const PARSE_REBUILD_ROUND = 0;
 export const SECTION_CONFIRMED = "-- 已确认 --";
 export const SECTION_REJECTED = "-- 已否决 --";
 export const SECTION_PITFALLS = "-- API 契约与坑 --";
+
+// ── v6.10.0: error-pattern-card reminder block (joint design §3.3) ──────
+
+/** Error-card reminder block budget inside the protected region (待校准).
+ *  Protected-region truncation priority gains one tier:
+ *  rejected > error-cards > confirmed > pitfalls — the card block is a
+ *  probability reminder (below rejected's settled history, above confirmed
+ *  facts); over budget the WHOLE block drops (a half warning is noise). */
+export const ERROR_CARD_BLOCK_MAX_TOKENS = 256;
