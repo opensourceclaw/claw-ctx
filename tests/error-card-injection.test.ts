@@ -187,8 +187,9 @@ describe("capacity & frozen surfaces (§3.3 / §6)", () => {
   });
 
   it("#12 contract §3 timing documented + host-silent path has no fabricated data", async () => {
+    // 跨仓原件在 CI 单仓 checkout 下不可达 → 快照 vendored 至 tests/fixtures/（同步责任见快照头注）
     const contract = fs.readFileSync(
-      new URL("../../claw-mem/docs/contracts/error-card-injection-contract.md", import.meta.url),
+      new URL("./fixtures/error-card-injection-contract.snapshot.md", import.meta.url),
       "utf8"
     );
     expect(contract).toContain("avoided");
