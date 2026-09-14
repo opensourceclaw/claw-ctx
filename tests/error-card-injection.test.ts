@@ -210,6 +210,20 @@ describe("capacity & frozen surfaces (§3.3 / §6)", () => {
     });
     expect(manager.recordErrorPatternHit).not.toHaveBeenCalled(); // ctx never auto-writes back
   });
+
+  it("#13 re-vendored snapshot carries the v7.8.0 §6 face (cardType dimension; additive lock)", () => {
+    // ctx passes mem-produced blocks through verbatim (engine.ts) — §6 is
+    // mem-side additive; this lock only keeps the vendored copy honest.
+    const contract = fs.readFileSync(
+      new URL("./fixtures/error-card-injection-contract.snapshot.md", import.meta.url),
+      "utf8"
+    );
+    expect(contract).toContain("## 6. v7.8.0 additive extension");
+    expect(contract).toContain('cardType?: "error-pattern" | "success-strategy"');
+    expect(contract).toContain("[Experience Cards]");
+    expect(contract).toContain("lifecycle");
+    expect(contract).toContain("Verdict authority = the host"); // v7.7.0 base face preserved
+  });
 });
 
 /** Minimal digest fixture for #10 (serializer input shape). */
