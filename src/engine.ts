@@ -88,6 +88,8 @@ import { HistoryLoader } from "./session-resume/history-loader.js";
 import { TaskTypeDetector } from "./adaptive/task-type-detector.js";
 // v5.16.0: Model-aware context optimization
 import { ModelAwareOptimizer, modelAwareOptimizer, type OptimizationHint } from "./model-aware-optimizer.js";
+// v6.10.1: window/reserve startup validation (warn-only)
+import { validateWindowStartup } from "./model-profile.js";
 
 // v4.11.0: RL-driven memory strategy selection
 import {
@@ -330,6 +332,9 @@ export class ClawContextEngine {
   // v5.16.0: Model-aware context optimizer
   private _modelOptimizer: ModelAwareOptimizer;
   private _lastOptimizationHint: OptimizationHint | null = null;
+  // v6.10.1: pre-trim evaluation invariant + window validation dedup
+  private _lastEvaluationView: { sessionId: string; preTrimTokens: number } | null = null;
+  private _windowValidatedModels: Set<string> = new Set();
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -383,6 +388,16 @@ export class ClawContextEngine {
     );
     // v5.16.0: Model-aware context optimizer
     this._modelOptimizer = modelAwareOptimizer;
+
+    // v6.10.1: startup window/reserve validation (warn-only, no hard failure)
+    for (const w of validateWindowStartup({ reserve: config.reserveRatio })) {
+      console.warn(`[claw-ctx] ${w}`);
+    }
+  }
+
+  /** v6.10.1: pre-trim view the trigger evaluation saw (for invariant tests). */
+  get lastEvaluationView(): { sessionId: string; preTrimTokens: number } | null {
+    return this._lastEvaluationView;
   }
 
   private _session(id: string): void { if (this.sid !== id) { this.sid = id; this.manager.sessionId = id; } }
@@ -472,6 +487,14 @@ export class ClawContextEngine {
       }
     } else {
       this._lastOptimizationHint = null;
+    }
+
+    // v6.10.1: window validation on first sight of a model (warn-only, deduped)
+    if (p.model && p.tokenBudget && !this._windowValidatedModels.has(p.model)) {
+      this._windowValidatedModels.add(p.model);
+      for (const w of validateWindowStartup({ modelId: p.model, contextWindow: p.tokenBudget })) {
+        console.warn(`[claw-ctx] ${w}`);
+      }
     }
 
     // Apply confidence mode if specified
@@ -948,6 +971,10 @@ export class ClawContextEngine {
       totalMsgTokens += t;
     }
 
+    // v6.10.1: record the pre-trim view the evaluation saw — must happen
+    // before any mutation so the trigger never observes a trimmed volume.
+    this._lastEvaluationView = { sessionId, preTrimTokens: totalMsgTokens };
+
     if (totalMsgTokens <= targetTokens) {
       return { compacted: false, reason: `already under target (${totalMsgTokens} <= ${targetTokens})`, summary: "", tokensBefore: totalMsgTokens };
     }
@@ -1035,6 +1062,16 @@ export class ClawContextEngine {
       JSON.stringify({ type: "message", id: this._makeId(), parentId: lastHeaderId, timestamp: new Date().toISOString(), message: { role: "user", content: summaryBlock } }),
       ...keptMsgs.map(m => m.line),
     );
+
+    // v6.10.1: invariant — trigger evaluation must see the pre-trim volume;
+    // a mismatch means the evaluate step was reordered after mutation.
+    if (
+      !this._lastEvaluationView ||
+      this._lastEvaluationView.sessionId !== sessionId ||
+      this._lastEvaluationView.preTrimTokens !== totalMsgTokens
+    ) {
+      throw new Error("[claw-ctx] compaction invariant violated: evaluate must run before trim (pre-trim view)");
+    }
 
     // Atomic write
     const tmpFile = sessionFile + ".compact.tmp";

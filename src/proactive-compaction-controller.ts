@@ -11,6 +11,7 @@ import { ModelAwareOptimizer, type OptimizationHint } from "./model-aware-optimi
 import { MecwEstimator } from "./mecw/MecwEstimator.js";
 import { ContextTaskType } from "./context/ContextBudgetManager.js";
 import { ContextEfficiencyMetrics, contextEfficiencyMetrics } from "./efficiency/ContextEfficiencyMetrics.js";
+import type { MergedUsage } from "./usage/usage-ledger.js";
 
 /**
  * Compaction trigger configuration
@@ -62,6 +63,9 @@ export interface CompactionRecommendation {
   /** Recommended target tokens after compaction */
   targetTokens: number;
 
+  /** v6.10.1: caliber of the trigger input — reported (host usage) vs estimated */
+  caliber: "reported" | "estimated";
+
   /** Model-specific hint */
   modelHint?: OptimizationHint;
 }
@@ -103,15 +107,24 @@ export class ProactiveCompactionController {
    * 
    * @param sessionId - Session identifier
    * @param modelId - Model identifier (e.g., "deepseek-v3", "gpt-4o")
-   * @param currentTokens - Current token count
+   * @param currentTokens - Current (estimated) token count
+   * @param taskType - Optional task type for MECW-aware threshold
+   * @param actual - v6.10.1: host-reported merged usage (input + cacheRead +
+   *   cacheCreation). When present the decision uses this real caliber
+   *   instead of the estimate; absent → legacy estimate path (zero breaking).
    * @returns Compaction recommendation
    */
   shouldCompact(
     sessionId: string,
     modelId: string,
     currentTokens: number,
-    taskType?: ContextTaskType
+    taskType?: ContextTaskType,
+    actual?: MergedUsage
   ): CompactionRecommendation {
+    // v6.10.1: reported caliber wins over estimate when host usage is available
+    const caliber: "reported" | "estimated" = actual ? "reported" : "estimated";
+    const effectiveTokens = actual ? actual.mergedTotal : currentTokens;
+
     // Get or create session state
     let state = this.sessionStates.get(sessionId);
     if (!state) {
@@ -149,12 +162,12 @@ export class ProactiveCompactionController {
     let reason = "";
 
     // 1. Check token threshold
-    if (currentTokens >= threshold) {
+    if (effectiveTokens >= threshold) {
       shouldCompact = true;
-      reason = `Token count ${currentTokens} exceeds threshold ${threshold}`;
-    } else if (currentTokens < this.config.minTokens) {
+      reason = `Token count ${effectiveTokens} exceeds threshold ${threshold}`;
+    } else if (effectiveTokens < this.config.minTokens) {
       // v6.4.0 fix: report below-minimum even when threshold not exceeded
-      reason = `Token count below minimum (${currentTokens} < ${this.config.minTokens})`;
+      reason = `Token count below minimum (${effectiveTokens} < ${this.config.minTokens})`;
     }
 
     // 2. Check session compaction limit (before cooldown — limit is a hard cap, v6.4.0)
@@ -173,25 +186,26 @@ export class ProactiveCompactionController {
     }
 
     // 4. Check minimum tokens
-    if (shouldCompact && currentTokens < this.config.minTokens) {
+    if (shouldCompact && effectiveTokens < this.config.minTokens) {
       shouldCompact = false;
-      reason = `Token count below minimum (${currentTokens} < ${this.config.minTokens})`;
+      reason = `Token count below minimum (${effectiveTokens} < ${this.config.minTokens})`;
     }
 
     // Calculate target tokens (70% of threshold for safety margin)
     const targetTokens = shouldCompact
       ? Math.floor(threshold * 0.7)
-      : currentTokens;
+      : effectiveTokens;
 
     // v6.6.0: efficiency checkpoint (pure observation — no decision impact)
-    this.metrics.recordCheckpoint(sessionId, modelId, currentTokens, threshold, taskType);
+    this.metrics.recordCheckpoint(sessionId, modelId, effectiveTokens, threshold, taskType);
 
     return {
       shouldCompact,
       reason,
-      currentTokens,
+      currentTokens: effectiveTokens,
       threshold,
       targetTokens,
+      caliber,
       modelHint,
     };
   }

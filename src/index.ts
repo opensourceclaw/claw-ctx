@@ -94,9 +94,24 @@ export {
   ModelProfileRegistry,
   BUILTIN_MODEL_PROFILES,
   modelProfileRegistry,
+  validateWindowStartup,
   type ModelProfile,
   type OptimizationStrategy,
 } from "./model-profile.js";
+
+// v6.10.1 Usage ledger (merged input + cacheRead + cacheCreation caliber)
+export {
+  UsageLedger,
+  usageLedger,
+  createUsageWriteback,
+  type UsageInput,
+  type MergedUsage,
+  type UsageRecord,
+  type TriggerEvaluation,
+  type UsageLedgerOptions,
+  type UsageWriteback,
+  type UsageWritebackOptions,
+} from "./usage/usage-ledger.js";
 export {
   ModelAwareOptimizer,
   modelAwareOptimizer,

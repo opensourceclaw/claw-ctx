@@ -613,3 +613,33 @@ export class ModelProfileRegistry {
 
 // Singleton instance
 export const modelProfileRegistry = new ModelProfileRegistry();
+
+/**
+ * v6.10.1: startup window/reserve validation (warn-only, never hard-fails).
+ *
+ * Returns warning strings for:
+ * - configured contextWindow differing from the resolved model profile maxTokens
+ * - reserve = 0 (no headroom for non-message overhead)
+ */
+export function validateWindowStartup(opts: {
+  modelId?: string;
+  contextWindow?: number;
+  reserve?: number;
+}): string[] {
+  const warnings: string[] = [];
+
+  if (opts.modelId && opts.contextWindow) {
+    const profile = modelProfileRegistry.resolve(opts.modelId);
+    if (profile && opts.contextWindow !== profile.context.maxTokens) {
+      warnings.push(
+        `configured contextWindow ${opts.contextWindow} differs from model profile "${profile.id}" maxTokens ${profile.context.maxTokens}`
+      );
+    }
+  }
+
+  if (opts.reserve === 0) {
+    warnings.push("reserve is 0 — no headroom for non-message overhead");
+  }
+
+  return warnings;
+}

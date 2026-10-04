@@ -20,6 +20,8 @@ import {
   modelAwareOptimizer,
   DEFAULT_STRATEGY_CONFIGS,
 } from "./model-aware-optimizer.js";
+// v6.10.1: doctor --usage diagnostics
+import { UsageLedger } from "./usage/usage-ledger.js";
 
 interface ParsedArgs {
   command: string;
@@ -64,6 +66,7 @@ Usage:
 
 Commands:
   model       Model profile management
+  doctor      Diagnostics (--usage: per-turn usage + last trigger evaluation)
   help        Show this help message
 
 Model Subcommands:
@@ -259,11 +262,64 @@ function cmdModelBuiltin(options: Record<string, string>): void {
   console.log("");
 }
 
+function cmdDoctorUsage(options: Record<string, string>): void {
+  // v6.10.1: read persisted usage ledger written by the host writeback hook
+  const file =
+    options.file ?? path.join(process.cwd(), ".claw-ctx", "usage-ledger.jsonl");
+
+  if (!fs.existsSync(file)) {
+    console.log(`No usage ledger found at ${file}`);
+    console.log("Hosts feed data via createUsageWriteback() (see src/usage/usage-ledger.ts).");
+    return;
+  }
+
+  const ledger = new UsageLedger({ persistPath: file });
+  const sessions = ledger.getSessionIds();
+
+  if (sessions.length === 0) {
+    console.log(`Usage ledger at ${file} contains no usage records.`);
+    return;
+  }
+
+  for (const sessionId of sessions) {
+    console.log(`\nSession: ${sessionId}`);
+    console.log("  turn  inputTokens  cacheRead  cacheCreation  mergedTotal  outputTokens");
+    console.log("  ".padEnd(74, "-"));
+    for (const r of ledger.getRecords(sessionId)) {
+      console.log(
+        `  ${String(r.turn).padEnd(6)}` +
+        `${String(r.inputTokens).padEnd(12)}` +
+        `${String(r.cacheReadTokens).padEnd(11)}` +
+        `${String(r.cacheCreationTokens).padEnd(15)}` +
+        `${String(r.mergedTotal).padEnd(13)}` +
+        `${r.outputTokens}`
+      );
+    }
+
+    const ev = ledger.getLastEvaluation(sessionId);
+    if (ev) {
+      console.log(
+        `  Last trigger evaluation: input=${ev.inputTokens} shouldCompact=${ev.shouldCompact} caliber=${ev.caliber}` +
+        `${ev.threshold !== undefined ? ` threshold=${ev.threshold}` : ""} reason="${ev.reason}"`
+      );
+    } else {
+      console.log("  Last trigger evaluation: none recorded");
+    }
+  }
+  console.log("");
+}
+
 function main(): void {
   const { command, subCommand, options } = parseArgs(process.argv.slice(2));
 
   if (command === "help" || (command === "model" && subCommand === "help")) {
     printHelp();
+    return;
+  }
+
+  if (command === "doctor") {
+    // v6.10.1: only --usage diagnostics for now
+    cmdDoctorUsage(options);
     return;
   }
 
