@@ -80,7 +80,16 @@ describe("compaction pre-trim evaluation invariant (v6.10.1)", () => {
       force: true,
       triggerReason: "force",
     });
-    expect(engine.lastEvaluationView!.preTrimTokens).toBe(second.result?.tokensBefore ?? first);
-    expect(engine.lastEvaluationView!.preTrimTokens).toBeLessThanOrEqual(first);
+    // v6.10.2 E1: precondition — the second compact must actually succeed
+    // (verified against the real engine.compact() return shape: {ok, compacted, result})
+    expect(second.compacted).toBe(true);
+    expect(second.result).toBeDefined();
+
+    // v6.10.2 E1: independent expected value — no ?? fallback to mask failures
+    const expectedSecond = second.result!.tokensBefore;
+    expect(engine.lastEvaluationView!.preTrimTokens).toBe(expectedSecond);
+
+    // v6.10.2 E1: strictly smaller than the first pre-trim volume
+    expect(engine.lastEvaluationView!.preTrimTokens).toBeLessThan(first);
   });
 });
