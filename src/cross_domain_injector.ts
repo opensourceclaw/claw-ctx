@@ -19,7 +19,8 @@
 /**
  * claw-ctx v3.0.0 — Cross-Domain Signal Injector
  *
- * Injects neoclaw cross-domain signals (from claw-mem) into context assembly.
+ * Injects cross-domain signals into context assembly (sourced from claw-mem,
+ * the retrieval side; no consumer layer is assumed).
  * Supports the multi-Pillar architecture where agents share contextual signals.
  */
 export interface InjectedSignal {

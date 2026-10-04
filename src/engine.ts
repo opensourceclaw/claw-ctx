@@ -1317,7 +1317,7 @@ export class ClawContextEngine {
     }
   }
 
-  /** Set a custom governance provider (e.g., bridge to neoclaw) */
+  /** Set a custom governance provider (e.g., a host-supplied bridge) */
   setGovernanceProvider(provider: GovernanceProvider): void {
     if (!this.governanceInjector) {
       this.governanceInjector = new GovernanceInjector(provider);

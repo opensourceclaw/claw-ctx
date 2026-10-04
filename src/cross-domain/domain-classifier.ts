@@ -14,6 +14,8 @@ export interface ClassifiedSignal extends RawSignal {
   confidence: number;
 }
 
+// Recognition keywords over signal.source (data-source features, not dependencies);
+// the consumer-layer token below only matches signals that literally carry it.
 const RULES: Array<{ domain: SignalDomain; match: (s: RawSignal) => boolean }> = [
   { domain: "memory", match: (s) => /memory|mem_|claw-mem/i.test(s.source) },
   { domain: "governance", match: (s) => /governance|gov_|policy|rule/i.test(s.source) },

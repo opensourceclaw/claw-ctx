@@ -41,6 +41,7 @@ const DECISION_PATTERNS: RegExp[] = [
   /\b(✅|✔️|☑️|✓|done|completed?|resolved?|fixed?)\b/,
 ];
 
+// Entity-name recognition keywords for natural-language extraction (not dependencies).
 const ENTITY_PATTERNS: RegExp[] = [
   /\b(?:claw-ctx|claw-mem|claw|openclaw|gateway|plugin|neoclaw|edith|friday|jarvis)\b/gi,
   /\bv?\d+\.\d+\.\d+\b/g,

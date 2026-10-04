@@ -19,7 +19,8 @@
 /**
  * claw-ctx v2.0.0 — Governance Signal Injector
  *
- * Passes neoclaw L1-L6 governance signals into the context assembly pipeline.
+ * Passes host-supplied L1-L6 governance signals into the context assembly
+ * pipeline (provider-injected; ctx stays host-agnostic).
  */
 
 export type GovernanceLayer = "L1" | "L2" | "L3" | "L4" | "L5" | "L6";
@@ -54,7 +55,7 @@ const LAYER_LABELS: Record<GovernanceLayer, string> = {
 
 /**
  * Governance signal provider interface.
- * In production, connects to neoclaw via OpenClaw bridge.
+ * Hosts inject a provider (e.g. via an OpenClaw bridge); ctx stays host-agnostic.
  */
 export interface GovernanceProvider {
   getSignals(params: {
@@ -110,7 +111,7 @@ export class GovernanceInjector {
   }
 
   /**
-   * Inject governance signals from neoclaw into context.
+   * Inject host-supplied governance signals into context.
    */
   async inject(params: GovernanceInjectRequest): Promise<GovernanceInjectResponse> {
     const signals = await this.provider.getSignals({
