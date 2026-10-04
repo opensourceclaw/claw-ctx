@@ -170,4 +170,55 @@ describe("ProactiveCompactionController", () => {
       expect(config.proactiveRatio).toBe(0.8);
     });
   });
+
+  describe("v6.10.1 reported caliber (actual usage)", () => {
+    it("marks caliber=estimated when no actual usage is provided", () => {
+      const result = controller.shouldCompact("cal-est", "deepseek-v3", 30000);
+      expect(result.caliber).toBe("estimated");
+      expect(result.currentTokens).toBe(30000);
+    });
+
+    it("uses merged reported value for the decision when actual provided", () => {
+      const actual = {
+        inputTokens: 60000,
+        cacheReadTokens: 40000,
+        cacheCreationTokens: 15000,
+        outputTokens: 1000,
+        mergedTotal: 115000,
+      };
+      // Estimate says 30000 (below minimum) but reported merged is over threshold
+      const result = controller.shouldCompact("cal-rep", "deepseek-v3", 30000, undefined, actual);
+      expect(result.caliber).toBe("reported");
+      expect(result.currentTokens).toBe(115000);
+      expect(result.shouldCompact).toBe(true);
+      expect(result.reason).toContain("115000");
+    });
+
+    it("lag-by-one scenario: low post-compaction estimate, then re-expansion", () => {
+      // Data 1: right after compaction the estimate is low → no trigger (legacy path misses it)
+      const afterCompaction = controller.shouldCompact("lag-est", "deepseek-v3", 30000);
+      expect(afterCompaction.shouldCompact).toBe(false);
+      expect(afterCompaction.caliber).toBe("estimated");
+
+      // Data 2: next turn the context re-expanded — host reports real merged usage
+      const reExpanded = {
+        inputTokens: 70000,
+        cacheReadTokens: 35000,
+        cacheCreationTokens: 10000,
+        outputTokens: 0,
+        mergedTotal: 115000,
+      };
+      const reported = controller.shouldCompact("lag-rep", "deepseek-v3", 30000, undefined, reExpanded);
+      expect(reported.caliber).toBe("reported");
+      expect(reported.shouldCompact).toBe(true);
+      expect(reported.currentTokens).toBe(115000);
+    });
+
+    it("estimated path behavior is unchanged (zero breaking)", () => {
+      const legacy = controller.shouldCompact("legacy", "deepseek-v3", 110000);
+      expect(legacy.shouldCompact).toBe(true);
+      expect(legacy.caliber).toBe("estimated");
+      expect(legacy.currentTokens).toBe(110000);
+    });
+  });
 });
