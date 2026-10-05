@@ -5,9 +5,77 @@
  * Tracks strategy usage, model calls, and performance indicators.
  *
  * v5.16.1: Initial implementation
+ * v6.11.0: + compaction quality domain (P4): proactive rate,
+ *           missing-critical-state %, missing-next-action % (keyword screening).
  */
 
 import type { OptimizationStrategy } from "../model-profile.js";
+
+// ── v6.11.0 P4: compaction quality ──────────────────────────────────────────
+
+/**
+ * Keyword tables for summary screening (paper-aligned, bilingual).
+ * Exported for doctor/manual verification; changes require design review.
+ */
+export const CRITICAL_STATE_KEYWORDS = [
+  "decided", "decision", "resolved", "fixed", "root cause", "blocked",
+  "error", "failed", "regression", "breaking", "depends on", "invariant",
+  "结论", "决定", "已解决", "修复", "阻塞", "失败", "回归", "依赖", "状态",
+] as const;
+
+export const NEXT_ACTION_KEYWORDS = [
+  "next step", "next action", "todo", "follow-up", "will ", "should ",
+  "plan to", "continue", "run ", "deploy", "verify",
+  "下一步", "继续", "待办", "需要", "执行", "验证", "发布",
+] as const;
+
+/** One compaction outcome, recorded at the compact() success branch. */
+export interface CompactionQualityRecord {
+  at: number;
+  sessionId: string;
+  triggerReason: "explicit" | "auto" | "force";
+  /** triggerReason === "auto" — engine self-triggered (paper: proactive) */
+  proactive: boolean;
+  /** The summary text actually written — keyword screening input */
+  summaryText: string;
+  removedCount: number;
+  consistency: "pass" | "rejected" | "degraded";
+}
+
+export interface CompactionQualityReport {
+  sampleCount: number;
+  /** proactiveCount / sampleCount, 0 when sampleCount === 0 */
+  proactiveRate: number;
+  /** % of records whose summary matched no CRITICAL_STATE_KEYWORDS */
+  missingCriticalStatePct: number;
+  /** % of records whose summary matched no NEXT_ACTION_KEYWORDS */
+  missingNextActionPct: number;
+  consistency: {
+    pass: number;
+    rejected: number;
+    degraded: number;
+    violationRate: number;
+  };
+  window: { start: number; end: number };
+  /** true when FIFO/LRU caps trimmed the detail store */
+  capped: boolean;
+}
+
+const MAX_RECORDS_PER_SESSION = 50;
+const MAX_SESSIONS = 500;
+
+/** Three-section schema heads — stripped before screening so the schema
+ *  itself (literal "Next Action:") never swallows the missing-% counters. */
+const SECTION_HEAD_RE = /(?:Recorded Findings|Workspace State|Next Action):/g;
+
+function scrubSectionHeads(text: string): string {
+  return text.replace(SECTION_HEAD_RE, " ");
+}
+
+function matchesAnyKeyword(text: string, keywords: readonly string[]): boolean {
+  const lower = scrubSectionHeads(text).toLowerCase();
+  return keywords.some((k) => lower.includes(k));
+}
 
 /**
  * Strategy usage statistics
@@ -46,6 +114,8 @@ export interface OptimizerMetrics {
   performance: PerformanceStat;
   timeRange: { start: number; end: number };
   totalCalls: number;
+  /** v6.11.0: present once compaction quality domain has data (or is queried) */
+  compactionQuality?: CompactionQualityReport;
 }
 
 /**
@@ -61,6 +131,21 @@ interface InternalMetrics {
   startTime: number;
   lastUpdateTime: number;
   totalCalls: number;
+  // v6.11.0: compaction quality store (per-session FIFO, LRU by insert)
+  compactionBySession: Map<string, CompactionQualityRecord[]>;
+  compactionOrder: string[];
+  compactionTotals: {
+    total: number;
+    proactive: number;
+    missingState: number;
+    missingNext: number;
+    consistencyPass: number;
+    consistencyRejected: number;
+    consistencyDegraded: number;
+    firstAt: number;
+    lastAt: number;
+  };
+  compactionCapped: boolean;
 }
 
 /**
@@ -85,6 +170,20 @@ export class OptimizerMetricsCollector {
       startTime: Date.now(),
       lastUpdateTime: Date.now(),
       totalCalls: 0,
+      compactionBySession: new Map(),
+      compactionOrder: [],
+      compactionTotals: {
+        total: 0,
+        proactive: 0,
+        missingState: 0,
+        missingNext: 0,
+        consistencyPass: 0,
+        consistencyRejected: 0,
+        consistencyDegraded: 0,
+        firstAt: 0,
+        lastAt: 0,
+      },
+      compactionCapped: false,
     };
   }
 
@@ -139,6 +238,72 @@ export class OptimizerMetricsCollector {
     this.metrics.lastUpdateTime = Date.now();
   }
 
+  /**
+   * v6.11.0 P4: record one compaction outcome.
+   * Aggregate counters are lifetime-true (FIFO trimming affects only the
+   * per-session detail store, not the three headline metrics).
+   */
+  recordCompactionQuality(r: Omit<CompactionQualityRecord, "at">): void {
+    if (!this.enabled) return;
+
+    const rec: CompactionQualityRecord = { ...r, at: Date.now() };
+    const t = this.metrics.compactionTotals;
+
+    t.total++;
+    if (rec.proactive) t.proactive++;
+    if (!matchesAnyKeyword(rec.summaryText, CRITICAL_STATE_KEYWORDS)) t.missingState++;
+    if (!matchesAnyKeyword(rec.summaryText, NEXT_ACTION_KEYWORDS)) t.missingNext++;
+    if (rec.consistency === "pass") t.consistencyPass++;
+    else if (rec.consistency === "rejected") t.consistencyRejected++;
+    else t.consistencyDegraded++;
+    if (t.firstAt === 0) t.firstAt = rec.at;
+    t.lastAt = rec.at;
+
+    let list = this.metrics.compactionBySession.get(rec.sessionId);
+    if (!list) {
+      list = [];
+      this.metrics.compactionBySession.set(rec.sessionId, list);
+      this.metrics.compactionOrder.push(rec.sessionId);
+      if (this.metrics.compactionOrder.length > MAX_SESSIONS) {
+        const evicted = this.metrics.compactionOrder.shift();
+        if (evicted !== undefined) this.metrics.compactionBySession.delete(evicted);
+        this.metrics.compactionCapped = true;
+      }
+    }
+    list.push(rec);
+    if (list.length > MAX_RECORDS_PER_SESSION) {
+      list.shift();
+      this.metrics.compactionCapped = true;
+    }
+
+    this.metrics.lastUpdateTime = rec.at;
+  }
+
+  /** v6.11.0 P4: headline report (design §3 formulas). */
+  getCompactionQuality(): CompactionQualityReport {
+    const t = this.metrics.compactionTotals;
+    const total = t.total;
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+
+    return {
+      sampleCount: total,
+      proactiveRate: total > 0 ? t.proactive / total : 0,
+      missingCriticalStatePct:
+        total > 0 ? round2((100 * t.missingState) / total) : 0,
+      missingNextActionPct:
+        total > 0 ? round2((100 * t.missingNext) / total) : 0,
+      consistency: {
+        pass: t.consistencyPass,
+        rejected: t.consistencyRejected,
+        degraded: t.consistencyDegraded,
+        violationRate:
+          total > 0 ? (t.consistencyRejected + t.consistencyDegraded) / total : 0,
+      },
+      window: { start: t.firstAt, end: t.lastAt },
+      capped: this.metrics.compactionCapped,
+    };
+  }
+
   getReport(): OptimizerMetrics {
     const { strategyCounts, modelCalls, optimizeDurations, cacheHits, cacheMisses, tokensSavedTotal, startTime, lastUpdateTime, totalCalls } = this.metrics;
 
@@ -179,6 +344,8 @@ export class OptimizerMetricsCollector {
       },
       timeRange: { start: startTime, end: lastUpdateTime },
       totalCalls,
+      // v6.11.0 P4: always present in report (zero-sample report is valid)
+      compactionQuality: this.getCompactionQuality(),
     };
   }
 
