@@ -53,13 +53,13 @@
     "@earendil-works/pi-agent-core": "^0.84.2",
     "@sinclair/typebox": "^0.34.52",
     "@types/node": "^20.0.0",
-    "@vitest/coverage-v8": "^4.1.8",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.39.4",
-    "openclaw": "^2026.8.1",
+    "openclaw": "^2026.9.2",
     "typedoc": "^0.28.19",
     "typescript": "^5.0.0",
     "typescript-eslint": "^8.61.1",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.11"
   },
   "keywords": [
     "openclaw",
