@@ -158,7 +158,17 @@ check_tag() {
     echo "[pre-push] PUSH REJECTED (stage-gate) for $tag: gates.json unreadable at $GATES_FILE (fail-closed)" >&2
     return 1
   fi
-  seg=$(grep -o '"release-approval-gate"[[:space:]]*:[[:space:]]*{[^}]*}' "$GATES_FILE" 2>/dev/null | head -1)
+  # CX-7: production gates.json is pretty-printed multi-line; flatten to a
+  # single stream first so the segment regex is format-independent (the
+  # old line-bound grep never matched multi-line files → false rejects).
+  # Assumption (schema unchanged): the gate object's metadata is flat, so
+  # the first closing brace covers gateId/status/metadata.version.
+  flat=$(tr -d '\n' < "$GATES_FILE" 2>/dev/null)
+  if [ -z "$flat" ]; then
+    echo "[pre-push] PUSH REJECTED (stage-gate) for $tag: gates.json empty/unreadable at $GATES_FILE (fail-closed)" >&2
+    return 1
+  fi
+  seg=$(printf '%s' "$flat" | grep -o '"release-approval-gate"[[:space:]]*:[[:space:]]*{[^}]*}' | head -1)
   if [ -z "$seg" ]; then
     echo "[pre-push] PUSH REJECTED (stage-gate) for $tag: no release-approval-gate record in gates.json" >&2
     return 1

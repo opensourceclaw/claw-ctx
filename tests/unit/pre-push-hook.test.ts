@@ -239,6 +239,48 @@ describe("pre-push stage-gate hook", () => {
     expect(r.out).toContain("no release-approval-gate record");
   });
 
+  // --- CX-7: production gates.json is pretty-printed multi-line --------------
+  // (the old single-line-only grep never matched it → tag pushes were
+  // falsely rejected; fixtures must mirror the production format)
+  const GATES_PRETTY = JSON.stringify(JSON.parse(GATES_OK), null, 2);
+
+  it("CX-7: pretty-printed multi-line gates.json allows a matching tag push", () => {
+    expect(GATES_PRETTY).toContain("\n"); // fixture really is multi-line
+    fs.writeFileSync(gatesFile, GATES_PRETTY);
+    const r = runHook(repo, head(repo), "refs/tags/v6.10.3", ZERO, {
+      OPENCLAW_GATES_FILE: gatesFile,
+    });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("stage-gate OK: v6.10.3");
+  });
+
+  it("CX-7: pretty-printed multi-line gates.json still rejects version mismatch", () => {
+    fs.writeFileSync(gatesFile, GATES_PRETTY);
+    const r = runHook(repo, head(repo), "refs/tags/v9.9.9", ZERO, {
+      OPENCLAW_GATES_FILE: gatesFile,
+    });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("!= tag");
+  });
+
+  it("CX-7: pretty-printed multi-line gates.json without the record fails closed", () => {
+    fs.writeFileSync(gatesFile, JSON.stringify({ gates: {} }, null, 2));
+    const r = runHook(repo, head(repo), "refs/tags/v6.10.3", ZERO, {
+      OPENCLAW_GATES_FILE: gatesFile,
+    });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("no release-approval-gate record");
+  });
+
+  it("CX-7: single-line legacy gates.json format stays compatible", () => {
+    fs.writeFileSync(gatesFile, GATES_OK); // single-line
+    const r = runHook(repo, head(repo), "refs/tags/v6.10.3", ZERO, {
+      OPENCLAW_GATES_FILE: gatesFile,
+    });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("stage-gate OK: v6.10.3");
+  });
+
   // --- CX-3: first-push window must not degrade to epoch 0 ------------------
   it("CX-3: first push (remote=ZERO) with a 2020-era receipt is rejected", () => {
     writeResults(repo, true, true);
