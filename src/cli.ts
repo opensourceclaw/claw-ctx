@@ -310,7 +310,7 @@ function cmdDoctorUsage(options: Record<string, string>): void {
 }
 
 function main(): void {
-  const { command, subCommand, options } = parseArgs(process.argv.slice(2));
+  const { command, subCommand, args, options } = parseArgs(process.argv.slice(2));
 
   if (command === "help" || (command === "model" && subCommand === "help")) {
     printHelp();
@@ -329,20 +329,20 @@ function main(): void {
         cmdModelList(options);
         break;
       case "show":
-        if (!options.args[0]) {
+        if (!args[0]) {
           console.error("Error: model ID required");
           console.error("Usage: claw-ctx model show <model-id>");
           process.exit(1);
         }
-        cmdModelShow(options.args[0], options);
+        cmdModelShow(args[0], options);
         break;
       case "strategy":
-        if (!options.args[0]) {
+        if (!args[0]) {
           console.error("Error: model ID required");
           console.error("Usage: claw-ctx model strategy <model-id>");
           process.exit(1);
         }
-        cmdModelStrategy(options.args[0], options);
+        cmdModelStrategy(args[0], options);
         break;
       case "providers":
         cmdModelProviders(options);
