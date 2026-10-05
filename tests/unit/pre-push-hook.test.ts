@@ -238,4 +238,79 @@ describe("pre-push stage-gate hook", () => {
     expect(r.code).not.toBe(0);
     expect(r.out).toContain("no release-approval-gate record");
   });
+
+  // --- CX-3: first-push window must not degrade to epoch 0 ------------------
+  it("CX-3: first push (remote=ZERO) with a 2020-era receipt is rejected", () => {
+    writeResults(repo, true, true);
+    const old = new Date("2020-01-01T00:00:00Z");
+    for (const f of [
+      "inbox/inbox-results/receipt-test-pass.md",
+      "inbox/inbox-plan/peter-release-approval-x.md",
+    ]) {
+      fs.utimesSync(path.join(repo, f), old, old);
+    }
+    // local branch first commit is "now" (2026) → receipts pre-date the repo era
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("newer than batch start");
+    expect(r.out).not.toContain("stage-gate OK");
+  });
+
+  it("CX-3: first push still allows receipts dated within the repo era", () => {
+    writeResults(repo, true, true);
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("stage-gate OK: main");
+  });
+
+  // --- CX-4: artifact separation (receipt vs approval) ----------------------
+  const DUAL_CLAIM = [
+    "# Batch record",
+    "**Stage**: TEST ｜ **PipelineId**: v9.9.9",
+    "**Status**: passed",
+    "- **Approver**: Peter",
+    "- **Verdict**: ✅ APPROVED",
+    "",
+  ].join("\n");
+
+  it("CX-4: single dual-claim file in inbox-results satisfies neither requirement", () => {
+    fs.mkdirSync(path.join(repo, "inbox/inbox-results"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "inbox/inbox-results/dual.md"), DUAL_CLAIM);
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("TEST acceptance receipt");
+    expect(r.out).toContain("Peter RELEASE APPROVED");
+  });
+
+  it("CX-4: single dual-claim file in inbox-plan satisfies neither requirement", () => {
+    fs.mkdirSync(path.join(repo, "inbox/inbox-plan"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "inbox/inbox-plan/dual.md"), DUAL_CLAIM);
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("TEST acceptance receipt");
+    expect(r.out).toContain("Peter RELEASE APPROVED");
+  });
+
+  it("CX-4: approval file in inbox-results does not count (directory separation)", () => {
+    fs.mkdirSync(path.join(repo, "inbox/inbox-results"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "inbox/inbox-results/approval-wrong-dir.md"), PETER_APPROVAL);
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("Peter RELEASE APPROVED");
+  });
+
+  it("CX-4: TEST receipt in inbox-plan does not count (directory separation)", () => {
+    fs.mkdirSync(path.join(repo, "inbox/inbox-plan"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "inbox/inbox-plan/test-wrong-dir.md"), TEST_RECEIPT);
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("TEST acceptance receipt");
+  });
+
+  it("CX-4: separated artifacts across the right directories still allow", () => {
+    writeResults(repo, true, true);
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("stage-gate OK: main");
+  });
 });

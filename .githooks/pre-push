@@ -3,13 +3,22 @@
 #
 # Enforces at process level what the protocol enforces by convention:
 #   - push to refs/heads/main: requires a PASS TEST acceptance receipt in
-#     inbox/inbox-results/ and a Peter APPROVED release record, both dated
-#     no earlier than the oldest commit being pushed (the current batch).
+#     inbox/inbox-results/ AND a Peter APPROVED release record in
+#     inbox/inbox-plan/ or inbox/inbox-release/ (artifact separation — one
+#     file may not satisfy both), each dated no earlier than the batch:
+#     oldest commit in remote..local, or — on first push (remote = ZERO) —
+#     the oldest commit of the local branch.
 #   - push of refs/tags/v*: requires gates.json release-approval-gate with
 #     status=passed and metadata.version matching the tag.
 #   - emergency bypass: OPENCLAW_GATE_BYPASS=<sig> must hit a valid
-#     emergency-bypass record in gates.json; every use is appended to
+#     emergency-bypass record in gates.json; that env channel is appended to
 #     inbox/govern/bypass-log.md.
+#
+# KNOWN BOUNDARY (client-side ceiling, by git design): this hook only runs
+# on a cooperating client — `git push --no-verify` skips it silently with no
+# local trace. Server-side defenses are the backstop: GitHub branch
+# protection on main + tag ruleset (see
+# docs/audits/stage-gate-defense-in-depth.md for the current audit posture).
 #
 # POSIX sh (macOS bash3 compatible). No external dependencies.
 # FAIL-CLOSED: any unreadable prerequisite rejects the push.
@@ -63,7 +72,22 @@ check_main() {
   missing=""
   wstart=0
 
-  if ! is_zero_sha "$remote_sha"; then
+  if is_zero_sha "$remote_sha"; then
+    # CX-3: first push — window starts at the OLDEST commit of the local
+    # branch, so receipts from another repo's era cannot pass wholesale.
+    if ! git cat-file -e "$local_sha" 2>/dev/null; then
+      missing="$missing
+  - local head $local_sha is unreadable locally (fail-closed)"
+    else
+      wstart=$(git log --reverse --format=%ct "$local_sha" 2>/dev/null | head -1)
+      case "$wstart" in ''|*[!0-9]*|0)
+        wstart=0
+        missing="$missing
+  - cannot determine first-commit time of local branch (fail-closed)"
+        ;;
+      esac
+    fi
+  else
     if ! git cat-file -e "$remote_sha" 2>/dev/null; then
       missing="$missing
   - remote head $remote_sha is unreadable locally (fail-closed)"
@@ -73,12 +97,16 @@ check_main() {
     fi
   fi
 
-  # requirement 1: TEST acceptance receipt (PASS) within the batch window
+  # requirement 1: TEST acceptance receipt (PASS) within the batch window.
+  # CX-4: lives only in inbox/inbox-results/, and a file that also carries
+  # "Approver.*Peter" (dual-claim) does not count as a TEST receipt.
   test_ok=0
   if [ -d "$RESULTS_DIR" ]; then
     for f in "$RESULTS_DIR"/*.md; do
       [ -e "$f" ] || continue
-      if grep -q 'Stage.*TEST' "$f" 2>/dev/null && grep -Eiq 'Status.*:.*pass' "$f" 2>/dev/null; then
+      if grep -q 'Stage.*TEST' "$f" 2>/dev/null \
+        && grep -Eiq 'Status.*:.*pass' "$f" 2>/dev/null \
+        && ! grep -q 'Approver.*Peter' "$f" 2>/dev/null; then
         if [ "$(mtime_of "$f")" -ge "$wstart" ]; then
           test_ok=1
           break
@@ -89,13 +117,17 @@ check_main() {
   [ "$test_ok" -eq 1 ] || missing="$missing
   - missing: TEST acceptance receipt (Status PASS) in inbox/inbox-results/ newer than batch start ($(date -u -r "$wstart" 2>/dev/null || date -u -d "@$wstart" 2>/dev/null || echo "t=$wstart"))"
 
-  # requirement 2: Peter RELEASE APPROVED record within the batch window
+  # requirement 2: Peter RELEASE APPROVED record within the batch window.
+  # CX-4: lives only in inbox/inbox-plan/ + inbox/inbox-release/, and a file
+  # that also carries "Stage.*TEST" (dual-claim) does not count as approval.
   approval_ok=0
-  for d in "$ROOT/inbox/inbox-plan" "$ROOT/inbox/inbox-release" "$RESULTS_DIR"; do
+  for d in "$ROOT/inbox/inbox-plan" "$ROOT/inbox/inbox-release"; do
     [ -d "$d" ] || continue
     for f in "$d"/*.md; do
       [ -e "$f" ] || continue
-      if grep -q 'APPROVED' "$f" 2>/dev/null && grep -q 'Approver.*Peter' "$f" 2>/dev/null; then
+      if grep -q 'APPROVED' "$f" 2>/dev/null \
+        && grep -q 'Approver.*Peter' "$f" 2>/dev/null \
+        && ! grep -q 'Stage.*TEST' "$f" 2>/dev/null; then
         if [ "$(mtime_of "$f")" -ge "$wstart" ]; then
           approval_ok=1
           break 2
@@ -104,7 +136,7 @@ check_main() {
     done
   done
   [ "$approval_ok" -eq 1 ] || missing="$missing
-  - missing: Peter RELEASE APPROVED record (Approver: Peter + APPROVED) newer than batch start"
+  - missing: Peter RELEASE APPROVED record (Approver: Peter + APPROVED, in inbox-plan/ or inbox-release/) newer than batch start"
 
   if [ -n "$missing" ]; then
     echo "[pre-push] PUSH REJECTED (stage-gate) for refs/heads/main:" >&2
