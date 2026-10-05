@@ -104,9 +104,13 @@ check_main() {
   if [ -d "$RESULTS_DIR" ]; then
     for f in "$RESULTS_DIR"/*.md; do
       [ -e "$f" ] || continue
+      # CX-8: no substring-level "not an approval" check here. Dual-claim is
+      # structurally prevented: a receipt must carry 'Stage.*TEST' and an
+      # approval must NOT, so one file can never satisfy both branches.
+      # A receipt that merely QUOTES 'Approver: Peter' (e.g. citing gate
+      # output as evidence) must stay valid.
       if grep -q 'Stage.*TEST' "$f" 2>/dev/null \
-        && grep -Eiq 'Status.*:.*pass' "$f" 2>/dev/null \
-        && ! grep -q 'Approver.*Peter' "$f" 2>/dev/null; then
+        && grep -Eiq 'Status.*:.*pass' "$f" 2>/dev/null; then
         if [ "$(mtime_of "$f")" -ge "$wstart" ]; then
           test_ok=1
           break

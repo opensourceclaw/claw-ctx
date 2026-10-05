@@ -273,12 +273,17 @@ describe("pre-push stage-gate hook", () => {
     "",
   ].join("\n");
 
-  it("CX-4: single dual-claim file in inbox-results satisfies neither requirement", () => {
+  it("CX-8: dual-claim file in inbox-results counts as receipt, approval still required", () => {
     fs.mkdirSync(path.join(repo, "inbox/inbox-results"), { recursive: true });
     fs.writeFileSync(path.join(repo, "inbox/inbox-results/dual.md"), DUAL_CLAIM);
     const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    // CX-8: quoting 'Approver: Peter' inside a receipt no longer disqualifies
+    // it (structural dual-claim prevention makes that check redundant and it
+    // false-positived on receipts citing gate output). Security outcome is
+    // unchanged: push is still rejected because a real Peter approval record
+    // (in inbox-plan/ or inbox-release/) is still missing.
     expect(r.code).not.toBe(0);
-    expect(r.out).toContain("TEST acceptance receipt");
+    expect(r.out).not.toContain("TEST acceptance receipt");
     expect(r.out).toContain("Peter RELEASE APPROVED");
   });
 
