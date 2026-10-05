@@ -1,0 +1,181 @@
+#!/bin/sh
+# claw-ctx stage-gate pre-push hook (v6.10.3+)
+#
+# Enforces at process level what the protocol enforces by convention:
+#   - push to refs/heads/main: requires a PASS TEST acceptance receipt in
+#     inbox/inbox-results/ and a Peter APPROVED release record, both dated
+#     no earlier than the oldest commit being pushed (the current batch).
+#   - push of refs/tags/v*: requires gates.json release-approval-gate with
+#     status=passed and metadata.version matching the tag.
+#   - emergency bypass: OPENCLAW_GATE_BYPASS=<sig> must hit a valid
+#     emergency-bypass record in gates.json; every use is appended to
+#     inbox/govern/bypass-log.md.
+#
+# POSIX sh (macOS bash3 compatible). No external dependencies.
+# FAIL-CLOSED: any unreadable prerequisite rejects the push.
+
+set -u
+
+GATES_FILE="${OPENCLAW_GATES_FILE:-$HOME/.openclaw/gates/gates.json}"
+BYPASS_SIG="${OPENCLAW_GATE_BYPASS:-}"
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+RESULTS_DIR="$ROOT/inbox/inbox-results"
+BYPASS_LOG="$ROOT/inbox/govern/bypass-log.md"
+
+is_zero_sha() {
+  case "$1" in
+    *[!0]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+mtime_of() {
+  m=$(stat -f %m "$1" 2>/dev/null) || m=$(stat -c %Y "$1" 2>/dev/null) || m=0
+  echo "${m:-0}"
+}
+
+log_bypass() {
+  mkdir -p "$(dirname "$BYPASS_LOG")" 2>/dev/null
+  ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  printf -- '- %s | bypass | ref=%s local=%s | sig=%s\n' \
+    "$ts" "$1" "$2" "$BYPASS_SIG" >> "$BYPASS_LOG" 2>/dev/null || true
+}
+
+# sig must hit a gateId or authorization value of an emergency-bypass record
+bypass_is_valid() {
+  [ -r "$GATES_FILE" ] || return 1
+  ids=$(grep -o '"emergency-bypass:[^"]*"' "$GATES_FILE" 2>/dev/null | tr -d '"')
+  auths=$(grep -o '"authorization": *"[^"]*"' "$GATES_FILE" 2>/dev/null | sed 's/.*: *"//; s/"$//')
+  printf '%s\n%s\n' "$ids" "$auths" | grep -Fxq -- "$BYPASS_SIG"
+}
+
+bypass_rejected() {
+  echo "[pre-push] PUSH REJECTED (stage-gate): OPENCLAW_GATE_BYPASS sig does not match any valid emergency-bypass record in $GATES_FILE" >&2
+  exit 1
+}
+
+# --- main branch gate -------------------------------------------------------
+# window start = committer time of the OLDEST commit in remote..local
+# (0 for a new branch) — receipts must post-date the batch being pushed.
+check_main() {
+  local_sha="$1"
+  remote_sha="$2"
+  missing=""
+  wstart=0
+
+  if ! is_zero_sha "$remote_sha"; then
+    if ! git cat-file -e "$remote_sha" 2>/dev/null; then
+      missing="$missing
+  - remote head $remote_sha is unreadable locally (fail-closed)"
+    elif [ "$local_sha" != "$remote_sha" ] && git cat-file -e "$local_sha" 2>/dev/null; then
+      wstart=$(git log --format=%ct "$remote_sha..$local_sha" 2>/dev/null | tail -1)
+      case "$wstart" in ''|*[!0-9]*) wstart=0 ;; esac
+    fi
+  fi
+
+  # requirement 1: TEST acceptance receipt (PASS) within the batch window
+  test_ok=0
+  if [ -d "$RESULTS_DIR" ]; then
+    for f in "$RESULTS_DIR"/*.md; do
+      [ -e "$f" ] || continue
+      if grep -q 'Stage.*TEST' "$f" 2>/dev/null && grep -Eiq 'Status.*:.*pass' "$f" 2>/dev/null; then
+        if [ "$(mtime_of "$f")" -ge "$wstart" ]; then
+          test_ok=1
+          break
+        fi
+      fi
+    done
+  fi
+  [ "$test_ok" -eq 1 ] || missing="$missing
+  - missing: TEST acceptance receipt (Status PASS) in inbox/inbox-results/ newer than batch start ($(date -u -r "$wstart" 2>/dev/null || date -u -d "@$wstart" 2>/dev/null || echo "t=$wstart"))"
+
+  # requirement 2: Peter RELEASE APPROVED record within the batch window
+  approval_ok=0
+  for d in "$ROOT/inbox/inbox-plan" "$ROOT/inbox/inbox-release" "$RESULTS_DIR"; do
+    [ -d "$d" ] || continue
+    for f in "$d"/*.md; do
+      [ -e "$f" ] || continue
+      if grep -q 'APPROVED' "$f" 2>/dev/null && grep -q 'Approver.*Peter' "$f" 2>/dev/null; then
+        if [ "$(mtime_of "$f")" -ge "$wstart" ]; then
+          approval_ok=1
+          break 2
+        fi
+      fi
+    done
+  done
+  [ "$approval_ok" -eq 1 ] || missing="$missing
+  - missing: Peter RELEASE APPROVED record (Approver: Peter + APPROVED) newer than batch start"
+
+  if [ -n "$missing" ]; then
+    echo "[pre-push] PUSH REJECTED (stage-gate) for refs/heads/main:" >&2
+    printf '%s\n' "$missing" >&2
+    return 1
+  fi
+  echo "[pre-push] stage-gate OK: main (TEST receipt + Peter approval in batch window)" >&2
+  return 0
+}
+
+# --- version tag gate -------------------------------------------------------
+check_tag() {
+  tag="$1"
+  if [ ! -r "$GATES_FILE" ]; then
+    echo "[pre-push] PUSH REJECTED (stage-gate) for $tag: gates.json unreadable at $GATES_FILE (fail-closed)" >&2
+    return 1
+  fi
+  seg=$(grep -o '"release-approval-gate"[[:space:]]*:[[:space:]]*{[^}]*}' "$GATES_FILE" 2>/dev/null | head -1)
+  if [ -z "$seg" ]; then
+    echo "[pre-push] PUSH REJECTED (stage-gate) for $tag: no release-approval-gate record in gates.json" >&2
+    return 1
+  fi
+  if ! printf '%s' "$seg" | grep -q '"status": *"passed"'; then
+    echo "[pre-push] PUSH REJECTED (stage-gate) for $tag: release-approval-gate status is not passed" >&2
+    return 1
+  fi
+  gate_ver=$(printf '%s' "$seg" | grep -o '"version": *"[^"]*"' | head -1 | sed 's/.*: *"//; s/"$//')
+  tag_ver="${tag#v}"
+  if [ "$gate_ver" != "$tag_ver" ] && [ "$gate_ver" != "$tag" ]; then
+    echo "[pre-push] PUSH REJECTED (stage-gate) for $tag: gates.json version '$gate_ver' != tag '$tag'" >&2
+    return 1
+  fi
+  echo "[pre-push] stage-gate OK: $tag (release-approval-gate passed, version matched)" >&2
+  return 0
+}
+
+# --- main loop over stdin ref lines ----------------------------------------
+if [ -n "$BYPASS_SIG" ]; then
+  bypass_is_valid || bypass_rejected
+fi
+
+rc=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -n "${local_ref:-}" ] || continue
+
+  case "$remote_ref" in
+    refs/heads/main) kind=main ;;
+    refs/tags/v*)    kind=tag ;;
+    *) continue ;;
+  esac
+
+  if [ -n "$BYPASS_SIG" ]; then
+    log_bypass "$remote_ref" "$local_sha"
+    echo "[pre-push] BYPASS (valid emergency-bypass sig) for $remote_ref — logged to inbox/govern/bypass-log.md" >&2
+    continue
+  fi
+
+  # nothing new to push
+  if [ "$local_sha" = "$remote_sha" ]; then
+    continue
+  fi
+  # deleting a ref: nothing to validate
+  if is_zero_sha "$local_sha"; then
+    continue
+  fi
+
+  if [ "$kind" = "main" ]; then
+    check_main "$local_sha" "$remote_sha" || rc=1
+  else
+    check_tag "${remote_ref#refs/tags/}" || rc=1
+  fi
+done
+
+exit $rc
