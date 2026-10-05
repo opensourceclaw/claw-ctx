@@ -22,6 +22,13 @@ import {
 } from "./model-aware-optimizer.js";
 // v6.10.1: doctor --usage diagnostics
 import { UsageLedger } from "./usage/usage-ledger.js";
+// v6.11.0 P4: compaction quality report + keyword tables (review ruling B)
+import {
+  optimizerMetricsCollector,
+  CRITICAL_STATE_KEYWORDS,
+  NEXT_ACTION_KEYWORDS,
+} from "./metrics/optimizer-metrics.js";
+import { VERSION } from "./version.js";
 
 interface ParsedArgs {
   command: string;
@@ -267,25 +274,39 @@ function cmdDoctorUsage(options: Record<string, string>): void {
   const file =
     options.file ?? path.join(process.cwd(), ".claw-ctx", "usage-ledger.jsonl");
 
-  if (!fs.existsSync(file)) {
-    console.log(`No usage ledger found at ${file}`);
-    console.log("Hosts feed data via createUsageWriteback() (see src/usage/usage-ledger.ts).");
+  const ledger = fs.existsSync(file) ? new UsageLedger({ persistPath: file }) : null;
+  const sessions = ledger ? ledger.getSessionIds() : [];
+
+  // v6.11.0 / CX-2: --json emits a structured document (fixes the ignored flag)
+  if (options.json) {
+    const payload = {
+      usage: {
+        ledgerPath: file,
+        sessions: sessions.map((sessionId) => ({
+          sessionId,
+          turns: ledger!.getRecords(sessionId),
+          lastEvaluation: ledger!.getLastEvaluation(sessionId) ?? null,
+        })),
+      },
+      compactionQuality: optimizerMetricsCollector.getCompactionQuality(),
+      version: VERSION,
+    };
+    console.log(JSON.stringify(payload, null, 2));
     return;
   }
 
-  const ledger = new UsageLedger({ persistPath: file });
-  const sessions = ledger.getSessionIds();
-
-  if (sessions.length === 0) {
+  if (!ledger) {
+    console.log(`No usage ledger found at ${file}`);
+    console.log("Hosts feed data via createUsageWriteback() (see src/usage/usage-ledger.ts).");
+  } else if (sessions.length === 0) {
     console.log(`Usage ledger at ${file} contains no usage records.`);
-    return;
   }
 
   for (const sessionId of sessions) {
     console.log(`\nSession: ${sessionId}`);
     console.log("  turn  inputTokens  cacheRead  cacheCreation  mergedTotal  outputTokens");
     console.log("  ".padEnd(74, "-"));
-    for (const r of ledger.getRecords(sessionId)) {
+    for (const r of ledger!.getRecords(sessionId)) {
       console.log(
         `  ${String(r.turn).padEnd(6)}` +
         `${String(r.inputTokens).padEnd(12)}` +
@@ -296,7 +317,7 @@ function cmdDoctorUsage(options: Record<string, string>): void {
       );
     }
 
-    const ev = ledger.getLastEvaluation(sessionId);
+    const ev = ledger!.getLastEvaluation(sessionId);
     if (ev) {
       console.log(
         `  Last trigger evaluation: input=${ev.inputTokens} shouldCompact=${ev.shouldCompact} caliber=${ev.caliber}` +
@@ -306,6 +327,22 @@ function cmdDoctorUsage(options: Record<string, string>): void {
       console.log("  Last trigger evaluation: none recorded");
     }
   }
+
+  // v6.11.0 P4: compaction quality report (in-process collector) + tables
+  const q = optimizerMetricsCollector.getCompactionQuality();
+  console.log(`\nCompaction Quality (P4):`);
+  console.log(
+    `  samples=${q.sampleCount}  proactiveRate=${(q.proactiveRate * 100).toFixed(1)}%` +
+    `  missingState=${q.missingCriticalStatePct}%  missingNext=${q.missingNextActionPct}%`
+  );
+  console.log(
+    `  consistency: pass=${q.consistency.pass} rejected=${q.consistency.rejected}` +
+    ` degraded=${q.consistency.degraded} violationRate=${(q.consistency.violationRate * 100).toFixed(1)}%` +
+    `  capped=${q.capped}`
+  );
+  console.log(`Keyword tables (manual verification):`);
+  console.log(`  CRITICAL_STATE: ${CRITICAL_STATE_KEYWORDS.join(", ")}`);
+  console.log(`  NEXT_ACTION:    ${NEXT_ACTION_KEYWORDS.join(", ")}`);
   console.log("");
 }
 

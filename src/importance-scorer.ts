@@ -512,6 +512,9 @@ export class IncrementalCompressor {
 
   /**
    * Build summary for removed messages.
+   * v6.11.0 note: SECOND summary format variant — unification deferred to
+   * v6.12 (see inbox/inbox-plan/v6110-detailed-design-jarvis.md §7-A; do not
+   * add a fourth shape here).
    */
   private buildSummary(
     removedCount: number,

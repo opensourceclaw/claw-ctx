@@ -54,7 +54,16 @@ export { StructuredContextHandler, type StructuredDataType, type StructuredDataC
 export { MultimodalContextHandler, type MultimodalContent, type MultimodalConfig, type ModalType, DEFAULT_MULTIMODAL_CONFIG } from "./multimodal_context_handler.js";
 export { AutoCompactController, DEFAULT_AUTO_COMPACT_CONFIG, type AutoCompactConfig } from "./auto-compact.js";
 export { AutoSessionController, DEFAULT_AUTO_SESSION_CONFIG, type AutoSessionConfig } from "./auto-session.js";
-export { SemanticCompressor, type MessageImportance, type CompressionResult } from "./semantic-compressor.js";
+export {
+  SemanticCompressor,
+  type MessageImportance,
+  type CompressionResult,
+  // v6.11.0 P2: three-section summary schema
+  type SummarySchema,
+  type SummarySections,
+  type SummaryOutput,
+  type ConsistencyVerdict,
+} from "./semantic-compressor.js";
 // v5.10.0 Performance Optimization
 export {
   TokenCountCache,
@@ -128,6 +137,11 @@ export {
   type StrategyUsageStat,
   type ModelCallStat,
   type PerformanceStat,
+  // v6.11.0 P4: compaction quality
+  CRITICAL_STATE_KEYWORDS,
+  NEXT_ACTION_KEYWORDS,
+  type CompactionQualityRecord,
+  type CompactionQualityReport,
 } from "./metrics/optimizer-metrics.js";
 
 // v5.16.1 Observability (claw-obs integration)

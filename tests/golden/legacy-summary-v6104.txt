@@ -1,0 +1,1 @@
+[Compacted History - 26 msgs] | Topics: fix,release | decisions: "message 0: decided to keep the gate, fixed the parser";"Next step: verify the release";"message 1: decided to keep the gate, fixed the parser";"message 2: decided to keep the gate, fixed the parser";"message 3: decided to keep the gate, fixed the parser"

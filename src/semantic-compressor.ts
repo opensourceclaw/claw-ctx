@@ -23,6 +23,12 @@
  * during compaction, rather than pure token-count truncation.
  */
 
+// v6.11.0 P2: screening tables are the single source of truth (P4 metrics).
+import {
+  CRITICAL_STATE_KEYWORDS,
+  NEXT_ACTION_KEYWORDS,
+} from "./metrics/optimizer-metrics.js";
+
 export interface MessageImportance {
   index: number;
   score: number;
@@ -37,6 +43,153 @@ export interface CompressionResult {
   decisions: string[];
   entities: string[];
   topics: string[];
+  /** v6.11.0: three-section breakdown (only when summarySchema="three-section") */
+  sections?: SummarySections;
+  /** v6.11.0: self-consistency verdict (only when summarySchema="three-section") */
+  consistency?: ConsistencyVerdict;
+}
+
+// ── v6.11.0 P2: three-section summary schema ────────────────────────────────
+
+export type SummarySchema = "legacy" | "three-section";
+
+export interface SummarySections {
+  /** 段1: 已记录的发现/决策/实体 */
+  recordedFindings: string;
+  /** 段2: 工作区状态 */
+  workspaceState: string;
+  /** 段3: 下一步动作 */
+  nextAction: string;
+}
+
+export type ConsistencyVerdict =
+  | { status: "pass" }
+  | { status: "rejected"; reason: string }
+  | { status: "degraded"; reason: string };
+
+export interface SummaryOutput {
+  text: string;
+  sections: SummarySections;
+  consistency: ConsistencyVerdict;
+}
+
+/** Completion-state markers (bilingual; bare 「已」matched conservatively below). */
+const COMPLETION_WORDS = [
+  "done", "completed", "finished", "closed", "resolved",
+  "完成", "关闭", "搞定",
+];
+
+/** English completion words as word-boundary regexes — otherwise "resolved"
+ *  fires inside "unresolved", breaking the degraded-fallback invariant. */
+const COMPLETION_EN_RES = ["done", "completed", "finished", "closed", "resolved"]
+  .map((w) => new RegExp(`\\b${w}\\b`));
+
+/** Conservative 「已」: only before a completion-ish character (design §4.1). */
+const COMPLETION_PATTERNS = [/已(?=[完关成解])/];
+
+/** Unresolved-state markers in workspace state. */
+const UNRESOLVED_WORDS = [
+  "open", "unresolved", "pending", "blocked", "failing", "todo",
+  "未解决", "待", "阻塞", "失败", "未修复",
+];
+
+const MAX_SENTENCE_LEN = 160;
+const MAX_SENTENCES_PER_SECTION = 2;
+const SENTENCE_BOUNDARY_CHARS = ".!?。！？\n";
+
+function boundaryStart(lower: string, i: number): number {
+  let j = i;
+  let steps = 0;
+  while (j > 0 && steps < MAX_SENTENCE_LEN && !SENTENCE_BOUNDARY_CHARS.includes(lower[j - 1])) {
+    j--; steps++;
+  }
+  return j;
+}
+
+function boundaryEnd(lower: string, i: number): number {
+  let j = i;
+  let steps = 0;
+  while (j < lower.length && steps < MAX_SENTENCE_LEN && !SENTENCE_BOUNDARY_CHARS.includes(lower[j])) {
+    j++; steps++;
+  }
+  return j;
+}
+
+// v6.11.0 perf (design §6.5 CPU pairing <2%): ONE combined lazy pass feeds
+// BOTH sections — two full scans of the removed text were the dominant cost
+// on large payloads (profile: gate regexes ≈2.5% self-time each).
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const COMBINED_SCAN_RE = new RegExp(
+  [...CRITICAL_STATE_KEYWORDS, ...NEXT_ACTION_KEYWORDS].map(escapeRe).join("|"),
+  "gi",
+);
+const STATE_SET = new Set<string>(CRITICAL_STATE_KEYWORDS);
+
+function pickBothSentences(
+  text: string,
+  lower: string,
+): { state: string; action: string } {
+  const stateAt = new Set<number>();
+  const actionAt = new Set<number>();
+  const stateHits: string[] = [];
+  const actionHits: string[] = [];
+
+  for (const m of lower.matchAll(COMBINED_SCAN_RE)) {
+    if (
+      stateHits.length >= MAX_SENTENCES_PER_SECTION &&
+      actionHits.length >= MAX_SENTENCES_PER_SECTION
+    ) {
+      break;
+    }
+    const isState = STATE_SET.has(m[0].toLowerCase());
+    const at = isState ? stateAt : actionAt;
+    const hits = isState ? stateHits : actionHits;
+    if (hits.length >= MAX_SENTENCES_PER_SECTION) continue;
+    const b1 = boundaryStart(lower, m.index);
+    if (at.has(b1)) continue;
+    const sent = text
+      .slice(b1, boundaryEnd(lower, m.index + m[0].length))
+      .trim()
+      .replace(/^[-•\s]+/, "");
+    // dedupe by sentence POSITION, not by text — identical wording at
+    // different offsets is still one more sentence (perf + semantics)
+    if (!sent || sent.length > MAX_SENTENCE_LEN) continue;
+    at.add(b1);
+    hits.push(sent);
+  }
+
+  return {
+    state: stateHits.length > 0 ? stateHits.join("; ") : NONE_RECORDED,
+    action: actionHits.length > 0 ? actionHits.join("; ") : NONE_RECORDED,
+  };
+}
+
+/** R1 (design-review 2026-10-05): placeholder must NOT contain any
+ *  NEXT_ACTION_KEYWORDS entry — otherwise the sentinel sample is swallowed
+ *  by its own screening table and missingNextActionPct reads low. */
+const NONE_RECORDED = "(none recorded)";
+
+/** R2(a) (design-review 2026-10-05): degraded fallback keeps the
+ *  "always lands a next step" promise (contains table word "next step"). */
+const DEGRADED_NEXT_ACTION = "Next step: resolve unresolved items";
+
+function matchesAny(text: string, words: readonly string[]): boolean {
+  const lower = text.toLowerCase();
+  return words.some((w) => lower.includes(w));
+}
+
+function isCompletion(text: string): boolean {
+  const lower = text.toLowerCase();
+  const cn = COMPLETION_WORDS.filter((w) => !/^[a-z]/i.test(w));
+  return (
+    COMPLETION_EN_RES.some((p) => p.test(lower)) ||
+    cn.some((w) => lower.includes(w)) ||
+    COMPLETION_PATTERNS.some((p) => p.test(text))
+  );
+}
+
+function isUnresolved(text: string): boolean {
+  return matchesAny(text, UNRESOLVED_WORDS);
 }
 
 const CODE_PATTERNS = [
@@ -144,6 +297,8 @@ export interface SemanticCompressorConfig {
   duplicateWindowSize?: number;
   /** Jaccard threshold above which a message is flagged as duplicate. Default: 0.7. */
   duplicateThreshold?: number;
+  /** v6.11.0 P2: summary schema. Default "legacy" = v6.10.4 byte-equal. */
+  summarySchema?: SummarySchema;
 }
 
 export class SemanticCompressor {
@@ -154,6 +309,7 @@ export class SemanticCompressor {
       minKeep: config?.minKeep ?? 20,
       duplicateWindowSize: config?.duplicateWindowSize ?? 10,
       duplicateThreshold: config?.duplicateThreshold ?? 0.7,
+      summarySchema: config?.summarySchema ?? "legacy",
     };
   }
 
@@ -287,6 +443,74 @@ export class SemanticCompressor {
     return parts.join(" | ");
   }
 
+  /**
+   * v6.11.0 P2: three-section summary with self-consistency state machine
+   * (design §2.1/§4.2). Pure local keyword screening — no LLM calls.
+   */
+  buildSummarySections(
+    messages: Array<{ message?: any }>,
+    count: number,
+    decisions: string[],
+    entities: string[],
+    topics: string[]
+  ): SummaryOutput {
+    const findingsParts: string[] = [];
+    findingsParts.push(
+      topics.length > 0 ? `topics: ${topics.slice(0, 5).join(",")}` : "general discussion"
+    );
+    if (decisions.length > 0) {
+      findingsParts.push(`decisions: ${decisions.slice(0, 5).map((d) => `"${d}"`).join(";")}`);
+    }
+    if (entities.length > 0) {
+      findingsParts.push(`entities: ${entities.slice(0, 8).join(",")}`);
+    }
+    const recordedFindings = findingsParts.join("; ");
+
+    const removedText = messages
+      .map((m) => extractText(m?.message))
+      .join("\n");
+    const removedLower = removedText.toLowerCase();
+    const picked = pickBothSentences(removedText, removedLower);
+
+    let sections: SummarySections = {
+      recordedFindings,
+      workspaceState: picked.state,
+      nextAction: picked.action,
+    };
+
+    // Self-consistency state machine (design §4.2): at most one rejection,
+    // then a degraded fallback that always passes.
+    let consistency: ConsistencyVerdict = { status: "pass" };
+    if (isCompletion(sections.nextAction) && isUnresolved(sections.workspaceState)) {
+      // Rejection #1: re-pick Next Action prefixed with the unresolved线索
+      const regenerated: SummarySections = {
+        ...sections,
+        nextAction: `Revisit: ${sections.workspaceState}`,
+      };
+      if (isCompletion(regenerated.nextAction) && isUnresolved(regenerated.workspaceState)) {
+        sections = { ...regenerated, nextAction: DEGRADED_NEXT_ACTION };
+        consistency = {
+          status: "degraded",
+          reason: "completion-marked next action with unresolved state persisted after one regeneration",
+        };
+      } else {
+        sections = regenerated;
+        consistency = {
+          status: "rejected",
+          reason: "completion-marked next action with unresolved state; regenerated once",
+        };
+      }
+    }
+
+    const text =
+      `[Compacted History - ${count} msgs] ` +
+      `Recorded Findings: ${sections.recordedFindings} | ` +
+      `Workspace State: ${sections.workspaceState} | ` +
+      `Next Action: ${sections.nextAction}`;
+
+    return { text, sections, consistency };
+  }
+
   compress(
     messages: Array<{ message?: any }>,
     msgTokens: number[],
@@ -352,6 +576,20 @@ export class SemanticCompressor {
     const decisions = this.extractDecisions(messages);
     const entities = this.extractEntities(messages);
     const topics = this.extractTopics(messages);
+
+    // v6.11.0 P2: schema branch — default legacy stays byte-equal
+    if (this.config.summarySchema === "three-section") {
+      const out = this.buildSummarySections(
+        removedMsgs, removedIndices.length, decisions, entities, topics
+      );
+      return {
+        keptIndices, removedIndices,
+        summary: out.text, decisions, entities, topics,
+        sections: out.sections,
+        consistency: out.consistency,
+      };
+    }
+
     const summary = this.buildSummary(removedMsgs, removedIndices.length, decisions, entities, topics);
 
     return { keptIndices, removedIndices, summary, decisions, entities, topics };

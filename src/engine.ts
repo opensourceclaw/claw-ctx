@@ -90,6 +90,8 @@ import { TaskTypeDetector } from "./adaptive/task-type-detector.js";
 import { ModelAwareOptimizer, modelAwareOptimizer, type OptimizationHint } from "./model-aware-optimizer.js";
 // v6.10.1: window/reserve startup validation (warn-only)
 import { validateWindowStartup } from "./model-profile.js";
+// v6.11.0 P4: compaction quality metrics (proactive rate / missing %)
+import { optimizerMetricsCollector } from "./metrics/optimizer-metrics.js";
 
 // v4.11.0: RL-driven memory strategy selection
 import {
@@ -118,7 +120,7 @@ import { PreloadManager } from "./predictive/preload-manager.js";
 // v4.3.0: Global token counter instance for precise counting
 const globalTokenCounter = createTokenCounter("cl100k_base");
 
-interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean; compactThreshold?: number; reserveRatio?: number; compressionStrategy?: "semantic" | "legacy"; sessionResume?: Partial<SessionResumeConfig> | false; roleAwareInjection?: boolean; roleOverrides?: import("./context-role.js").RoleOverrides }
+interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean; compactThreshold?: number; reserveRatio?: number; compressionStrategy?: "semantic" | "legacy"; /** v6.11.0 P2: default "legacy" = v6.10.4 byte-equal */ summarySchema?: "legacy" | "three-section"; sessionResume?: Partial<SessionResumeConfig> | false; roleAwareInjection?: boolean; roleOverrides?: import("./context-role.js").RoleOverrides }
 interface ClawCtxLogger { info: (...a: any[]) => void; error: (...a: any[]) => void; warn: (...a: any[]) => void; debug?: (...a: any[]) => void }
 
 function extractText(msg: any): string {
@@ -361,7 +363,9 @@ export class ClawContextEngine {
     // v4.20.0
     this._autoCompact = new AutoCompactController();
     this._autoSession = new AutoSessionController();
-    this._semanticCompressor = new SemanticCompressor();
+    this._semanticCompressor = new SemanticCompressor(
+      config.summarySchema ? { summarySchema: config.summarySchema } : undefined
+    );
     // v5.0.0: Session resume
     if (config.sessionResume !== false) {
       this._sessionResume = new SessionResumeManager(
@@ -890,6 +894,15 @@ export class ClawContextEngine {
         durationMs: Date.now() - compactStart,
         ...(result.digest ? { digestRounds: result.digest.rounds, digestTokens: result.digest.tokens } : {}),
       });
+      // v6.11.0 P4: record compaction quality (proactive rate / missing %)
+      optimizerMetricsCollector.recordCompactionQuality({
+        sessionId: p.sessionId,
+        triggerReason,
+        proactive: triggerReason === "auto",
+        summaryText: result.summary ?? "",
+        removedCount: details.removedCount ?? 0,
+        consistency: result.consistency ?? "pass",
+      });
       return {
         ok: true,
         compacted: true,
@@ -914,7 +927,7 @@ export class ClawContextEngine {
     sessionFile: string,
     targetTokens: number,
     sessionId: string
-  ): Promise<{ compacted: boolean; reason?: string; summary: string; tokensBefore: number; tokensAfter?: number; details?: unknown; keptMsgs?: Array<{ line: string; type: string; message?: any }>; summaryBlock?: string; digest?: { rounds: number; tokens: number } }> {
+  ): Promise<{ compacted: boolean; reason?: string; summary: string; tokensBefore: number; tokensAfter?: number; details?: unknown; keptMsgs?: Array<{ line: string; type: string; message?: any }>; summaryBlock?: string; digest?: { rounds: number; tokens: number }; consistency?: "pass" | "rejected" | "degraded" }> {
     const lines = fs.readFileSync(sessionFile, "utf-8").split("\n").filter(l => l.trim());
     const entries: Array<{ line: string; type: string; message?: any }> = [];
 
@@ -983,6 +996,8 @@ export class ClawContextEngine {
 
     let keptMsgs: Array<{ line: string; type: string; message?: any }>;
     let summaryBlock: string;
+    // v6.11.0 P2: three-section self-consistency verdict (semantic branch only)
+    let consistencyVerdict: "pass" | "rejected" | "degraded" | undefined;
     let removedCount: number;
     let removedMsgs: Array<{ line: string; type: string; message?: any }> = [];
 
@@ -991,6 +1006,8 @@ export class ClawContextEngine {
       const result: CompressionResult = this._semanticCompressor.compress(
         msgEntries, msgTokens, targetTokens
       );
+      // v6.11.0 P2: surface self-consistency verdict for P4 accounting
+      consistencyVerdict = result.consistency?.status;
       keptMsgs = result.keptIndices.map(i => msgEntries[i]);
       removedCount = result.removedIndices.length;
       if (removedCount <= 10) {
@@ -1090,6 +1107,7 @@ export class ClawContextEngine {
       keptMsgs,
       summaryBlock,
       digest: digestInfo ?? undefined,
+      consistency: consistencyVerdict,
     };
   }
 
@@ -1125,6 +1143,9 @@ export class ClawContextEngine {
   }
 
   /** Build a concise summary from old messages */
+  // v6.11.0 note: THIRD summary format variant — unification deferred to v6.12
+  // (see inbox/inbox-plan/v6110-detailed-design-jarvis.md §7-A; do not add a
+  // fourth shape here).
   private _buildSummary(oldMsgs: Array<{ message?: any }>, count: number): string {
     const topics = new Set<string>();
     const keywordSet = new Set([
