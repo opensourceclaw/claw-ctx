@@ -1,5 +1,33 @@
 # Changelog
 
+## [6.11.2] - 2026-10-07
+
+### Added
+
+- **CX-16 —— stage-gate 审计脚本双 mode + CI `release` job（服务端化）**：
+  - `tools/audit-stage-gate.sh` 双模式：`--mode=client` 为原 `check_main` 的**逐字迁移**（窗口计算、四项校验、§D(c) warns、输出文案全保留，双端单点同源）；`--mode=repo` 校验**入库面**五项（hook 存在 + `sh -n` 语法、golden 夹具、版本三点一致、`.DS_Store` 零跟踪、关键夹具存在）。
+  - `pre-push` 薄壳化（脚本定位随 hook 自身位置；数据根仍随 `ROOT`），**41 用例零改动全绿** = 重构等价达成。
+  - `ci.yml` 新增 **`release` job**（main push：build + vitest（排除 performance）+ `--mode=repo` 审计）并加 `workflow_dispatch` 干跑通道；`release.yml` 的 job 更名 `release-tag`。分支规则集零改动——此前 main 上恒"expected 而缺失"的必检 `release` **终于有了真实来源**（OBS-A 结构性收口）。
+  - **校验面如实声明**：CI 校验的是**入库面**（版本面/夹具面）；**回执面（`inbox/`）不随版本入库**，故回执校验仍留**客户端纪律层**（defense-in-depth 已知缺口 #5）。
+- **Ledger 持久化**：`recordCompactionQuality` 尾部单点写入 JSONL（`<workspace>/.claw-ctx/compaction-quality.jsonl`，`{"k":"cq",…}`）；内存字节计数 >512KB 触发单级轮转 `.1`；**fail-open**——一切 fs 失败只进 `report.persist.writeErrors`，绝不抛进压缩路径。`doctor` 跨进程经 `loadCompactionQuality`（JSONL 重放，坏行计数）+ `mergeCompactionQuality`（绝对计数无损合并），报告/表格/`--json` 的 `compactionQuality` = 磁盘 ∪ 进程，显式 `source: disk|in-process|disk+in-process`；开关 `persistCompactionQuality` 默认 true。
+
+### Fixed
+
+- **CX-14 —— approval actor 签名（dual-claim 判据修正）**：approval 分支的排除条件由「内容含 `Stage.*TEST` 字样」改为「**回执作者签名** `From.*:.*(TestAgent|Edith)`」——**正文引用**所据件 TEST 字样的真审批不再被误杀；`From: TestAgent` 且 `Approver: Peter` 同文件的**真双 claim** 拦截保留。（即 v6.11.0 发布受阻根因的修复。）
+- **CX-15 —— GH Release 幂等化**：`scripts/release-idempotency.sh` 改用 **list+tag 全量判定**（绕开 `gh release view` 对 draft 的可见性缺陷——即 v6.11.0 的重复 Release 事件），创建前后**双查**，`count≠1` 即 FATAL（双 Release 从人工发现升级为 CI 红）；body 二态：`docs/releases/<tag>.md` 存在则用 `--notes-file`，否则 `--generate-notes` + 显式「publisher may PATCH」兜底。
+- **CX-17 —— boundary 写序（测试夹具竞态）**：`CX-9: window boundary` 用例改为**先提交批次、后写回执/审批**，使 `receipt mtime ≥ batch start` 由构造保证（无时间旅行）。修复前本机 5 轮 4 红，修复后 boundary **20/20 连跑零红**、全量 **5/5 轮全绿**。
+
+### Notes
+
+- **Ledger 性能口径（§D，如实）**：本机高负载（load ≈9）实测交付版 `three + record + sync append` **11.07%**（轮间 4.0~21.0%）；归因分测证明差额**全部**来自 `appendFileSync` syscall 放大（`bare appendFileSync` 180B = 157~158μs/op；record 本体 5.2~6.4μs/op）。正常负载预期 persist 增量 **≈1% < 2%** 预算。async 退路实测无改善（`process.cpuUsage` 含 fs 线程池）且削弱读写确定性 → 已回滚。
+- **fail-open 语义**：持久化失败**不影响**压缩主路径；`persist{path, writeErrors, bytes, rotated}` 可读。
+- 本批为**基建批**，无用户可见行为变更；`ctx_compact` / `ctx_build` / `ctx_inject` 签名不变。
+
+### Tests
+
+- 111 files / **1367 passed, 0 failed, 5 skipped**；`tsc --noEmit` clean；hook 用例 42（41 + CX-14 引述用例）；audit 脚本 10 用例（repo mode 6 分支 + client/hook rc 对照 4 组）。
+
+
 ## [6.11.1] - 2026-10-06
 
 ### Guardrails
