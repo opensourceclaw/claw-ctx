@@ -508,4 +508,132 @@ describe("pre-push stage-gate hook", () => {
     expect(r.code).not.toBe(0);
     expect(r.out).toContain("friday-review-archived-20261006.md");
   });
+
+  // --- CX-10: handoff checklists must be fulfilled ---------------------------
+  function writeHandoffSource(name: string, lines: string[]): string {
+    const dir = path.join(repo, "inbox/inbox-plan");
+    fs.mkdirSync(dir, { recursive: true });
+    const f = path.join(dir, name);
+    fs.writeFileSync(f, `# Plan\n\n## 后续（handoff 清单）\n${lines.join("\n")}\n\n—— Friday 2026-10-06\n`);
+    return f;
+  }
+
+  function writeHandoffTask(
+    target: string, // e.g. inbox-code/task-x.md
+    refsSource: string,
+    opts: { processed?: boolean; mtime?: Date } = {},
+  ): string {
+    const slash = target.lastIndexOf("/");
+    const dirRel = target.slice(0, slash);
+    const fname = target.slice(slash + 1);
+    const base = opts.processed
+      ? path.join(repo, "inbox", dirRel, "processed")
+      : path.join(repo, "inbox", dirRel);
+    fs.mkdirSync(base, { recursive: true });
+    const f = path.join(base, fname);
+    fs.writeFileSync(f, `# Task\n\n- **依据**: ${refsSource} §1\n- **SubStage**: implement\n`);
+    if (opts.mtime) fs.utimesSync(f, opts.mtime, opts.mtime);
+    return f;
+  }
+
+  it("CX-10: compliant handoff (exists + references + post-dates) allows", () => {
+    writeResults(repo, true, true);
+    writeHandoffSource("plan-handoff-ok.md", [
+      "- [ ] CodeAgent (Jarvis): implement CX-X → inbox-code/task-x.md",
+    ]);
+    writeHandoffTask("inbox-code/task-x.md", "plan-handoff-ok.md");
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("stage-gate OK: main");
+  });
+
+  it("CX-10: promised task file not delivered → rejected", () => {
+    writeResults(repo, true, true);
+    writeHandoffSource("plan-handoff-missing.md", [
+      "- [ ] TestAgent (Edith): verify → inbox-test/task-y.md",
+    ]);
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("handoff task inbox-test/task-y.md");
+    expect(r.out).toContain("task file not delivered");
+  });
+
+  it("CX-10: task exists but does not reference the source → rejected", () => {
+    writeResults(repo, true, true);
+    writeHandoffSource("plan-handoff-noref.md", [
+      "- [ ] CodeAgent (Jarvis): implement → inbox-code/task-noref.md",
+    ]);
+    writeHandoffTask("inbox-code/task-noref.md", "some-other-source.md");
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("does not reference source");
+  });
+
+  it("CX-10: task predating its source doc → rejected", () => {
+    writeResults(repo, true, true);
+    writeHandoffSource("plan-handoff-stale.md", [
+      "- [ ] CodeAgent (Jarvis): implement → inbox-code/task-stale.md",
+    ]);
+    const past = new Date(Date.now() - 3600_000);
+    writeHandoffTask("inbox-code/task-stale.md", "plan-handoff-stale.md", { mtime: past });
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("predates source");
+  });
+
+  it("CX-10: role/dir mismatch (Edith → inbox-code) is malformed", () => {
+    writeResults(repo, true, true);
+    writeHandoffSource("plan-handoff-mismatch.md", [
+      "- [ ] TestAgent (Edith): verify → inbox-code/task-m.md",
+    ]);
+    writeHandoffTask("inbox-code/task-m.md", "plan-handoff-mismatch.md");
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("role/dir mismatch");
+  });
+
+  it("CX-10: doc without anchor heading is not parsed (no free-text inference)", () => {
+    writeResults(repo, true, true);
+    const dir = path.join(repo, "inbox/inbox-plan");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "plan-prose.md"),
+      "# Plan\n\n## 后续\n- Edith should verify something someday (prose, no anchor format)\n",
+    );
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("stage-gate OK: main");
+  });
+
+  it("CX-10: pre-policy source doc (mtime < 2026-10-06) is exempt", () => {
+    fs.rmSync(repo, { recursive: true, force: true });
+    repo = makeRepo("2026-10-05T10:00:00+0800");
+    writeResults(repo, true, true);
+    const f = writeHandoffSource("plan-handoff-old.md", [
+      "- [ ] CodeAgent (Jarvis): implement → inbox-code/task-old.md",
+    ]);
+    const old = new Date("2026-10-05T12:00:00+0800");
+    fs.utimesSync(f, old, old);
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("stage-gate OK: main");
+  });
+
+  it("CX-10: [x] checked but task missing → still rejected (no false handoff)", () => {
+    writeResults(repo, true, true);
+    writeHandoffSource("plan-handoff-checked.md", [
+      "- [x] CodeAgent (Jarvis): implement → inbox-code/task-checked.md",
+    ]);
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("task file not delivered");
+  });
+
+  it("CX-10: anchor section present but empty (0 rows) is legal", () => {
+    writeResults(repo, true, true);
+    writeHandoffSource("plan-handoff-empty.md", []);
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("stage-gate OK: main");
+  });
 });

@@ -186,6 +186,87 @@ check_main() {
     done
   done
 
+  # requirement 4 (CX-10): handoff checklists must be fulfilled.
+  # Anchor heading (## 后续…handoff…清单) opts a document in; docs without
+  # it are not parsed (no free-text inference — CX-8 lesson, Peter-approved).
+  # Each anchor line promises an inbox task that must (1) exist (root or
+  # processed/), (2) reference the source doc in its 依据/Task/Refs header,
+  # and (3) post-date the source. [x] checkboxes are verified the same as
+  # [ ] — a check without a file is a false handoff.
+  for d in "$ROOT/inbox/inbox-plan" "$ROOT/inbox/inbox-design-review" "$ROOT/inbox/inbox-results"; do
+    [ -d "$d" ] || continue
+    for f in $(find "$d" -maxdepth 2 -name '*.md' -type f 2>/dev/null); do
+      [ "$(mtime_of "$f")" -ge "$req_mtime" ] || continue
+      awk 'tolower($0) ~ /^## .*handoff.*清单/ {found=1} END {exit !found}' "$f" 2>/dev/null || continue
+      fname_src=$(basename "$f")
+      src_mtime=$(mtime_of "$f")
+
+      anchor_tmp=$(mktemp 2>/dev/null || echo "/tmp/.cx10-$$.tmp")
+      awk 'tolower($0) ~ /^## .*handoff.*清单/ {f=1; next} /^## /{f=0} f' "$f" 2>/dev/null > "$anchor_tmp"
+
+      while IFS= read -r line || [ -n "$line" ]; do
+        [ -n "$(printf '%s' "$line" | tr -d '[:space:]')" ] || continue
+        # deviation from design (plan-doc evidence, receipt-filed): only lines
+        # carrying a checkbox marker are validated — signatures/prose in the
+        # block are not handoff rows. Checkboxed-but-malformed still fails.
+        printf '%s' "$line" | grep -qE '^[[:space:]]*- \[[ x]\]' || continue
+
+        # legal anchor line? (half/full-width colon, optional backtick target)
+        if ! printf '%s' "$line" | grep -qE '^[[:space:]]*- \[[ x]\][[:space:]]*[^:：]+[:：].*→[[:space:]]*[`]?inbox-[a-z-]+/[A-Za-z0-9._-]+\.md'; then
+          missing="$missing
+  - malformed handoff line in $fname_src: $(printf '%s' "$line" | cut -c1-70)"
+          continue
+        fi
+        target=$(printf '%s' "$line" | grep -oE 'inbox-[a-z-]+/[A-Za-z0-9._-]+\.md' | head -1)
+        role=$(printf '%s' "$line" | sed -E 's/^[[:space:]]*- \[[ x]\][[:space:]]*([^:：]+)[:：].*/\1/' | tr 'A-Z' 'a-z')
+        tdir=${target%%/*}
+
+        # role → expected inbox dirs (five domains; Friday/Peter not receivers)
+        case "$role" in
+          *jarvis*|*codeagent*) expected=" inbox-code " ;;
+          *edith*|*testagent*)  expected=" inbox-test " ;;
+          *karen*|*releaseagent*) expected=" inbox-release inbox-deploy " ;;
+          *deployagent*)        expected=" inbox-deploy " ;;
+          *opsagent*)           expected=" inbox-operate " ;;
+          *) expected="" ;;
+        esac
+        if [ -z "$expected" ] || ! printf '%s' "$expected" | grep -q " $tdir "; then
+          missing="$missing
+  - malformed handoff line in $fname_src (role/dir mismatch): $(printf '%s' "$line" | cut -c1-70)"
+          continue
+        fi
+
+        tname=${target##*/}
+        tdir_rel=${target%/*}
+        tp_root="$ROOT/inbox/$target"
+        tp_proc="$ROOT/inbox/$tdir_rel/processed/$tname"
+
+        # ① target exists (root or processed — archiving after delivery counts)
+        if [ ! -f "$tp_root" ] && [ ! -f "$tp_proc" ]; then
+          missing="$missing
+  - missing: handoff task $target for \"$fname_src\" (task file not delivered)"
+          continue
+        fi
+        tfile=$tp_root
+        [ -f "$tp_root" ] || tfile=$tp_proc
+
+        # ② task header references the source doc (依据 / Task / Refs lines)
+        if ! grep -E '(依据|Task|Refs)' "$tfile" 2>/dev/null | grep -qF "$fname_src"; then
+          missing="$missing
+  - missing: handoff task $target for \"$fname_src\" (task does not reference source)"
+          continue
+        fi
+
+        # ③ task must post-date its source
+        if [ "$(mtime_of "$tfile")" -lt "$src_mtime" ]; then
+          missing="$missing
+  - missing: handoff task $target for \"$fname_src\" (task predates source doc)"
+        fi
+      done < "$anchor_tmp"
+      rm -f "$anchor_tmp"
+    done
+  done
+
   if [ -n "$missing" ]; then
     echo "[pre-push] PUSH REJECTED (stage-gate) for refs/heads/main:" >&2
     printf '%s\n' "$missing" >&2
