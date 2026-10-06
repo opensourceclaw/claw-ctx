@@ -9,7 +9,9 @@ permissions:
   packages: write
 
 jobs:
-  release:
+  # CX-16: renamed so the required context `release` maps to ci.yml's
+  # main-push job (see docs/audits/stage-gate-defense-in-depth.md)
+  release-tag:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
