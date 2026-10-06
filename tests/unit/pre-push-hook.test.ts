@@ -569,7 +569,7 @@ describe("pre-push stage-gate hook", () => {
     expect(r.out).toContain("does not reference source");
   });
 
-  it("CX-10: task predating its source doc → rejected", () => {
+  it("CX-10: task predating its source doc → EXIT 0 with warning only (§D(c))", () => {
     writeResults(repo, true, true);
     writeHandoffSource("plan-handoff-stale.md", [
       "- [ ] CodeAgent (Jarvis): implement → inbox-code/task-stale.md",
@@ -577,8 +577,28 @@ describe("pre-push stage-gate hook", () => {
     const past = new Date(Date.now() - 3600_000);
     writeHandoffTask("inbox-code/task-stale.md", "plan-handoff-stale.md", { mtime: past });
     const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
-    expect(r.code).not.toBe(0);
-    expect(r.out).toContain("predates source");
+    expect(r.code).toBe(0); // warning must NOT block
+    expect(r.out).toContain("warning: handoff task inbox-code/task-stale.md");
+    expect(r.out).toContain("predates source doc");
+    expect(r.out).not.toContain("PUSH REJECTED");
+    expect(r.out).toContain("stage-gate OK: main");
+  });
+
+  it("CX-10: source re-edited after delivery → EXIT 0 with warning (§D(c) landing)", () => {
+    writeResults(repo, true, true);
+    writeHandoffSource("plan-handoff-reedit.md", [
+      "- [ ] CodeAgent (Jarvis): implement → inbox-code/task-reedit.md",
+    ]);
+    writeHandoffTask("inbox-code/task-reedit.md", "plan-handoff-reedit.md");
+    // source doc edited AFTER the task was delivered (mtime refresh) —
+    // the exact Edith CX-14 scenario that used to hard-block the push
+    const later = new Date(Date.now() + 60_000);
+    fs.utimesSync(path.join(repo, "inbox/inbox-plan/plan-handoff-reedit.md"), later, later);
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("warning: handoff task inbox-code/task-reedit.md");
+    expect(r.out).toContain("task predates source doc");
+    expect(r.out).not.toContain("PUSH REJECTED");
   });
 
   it("CX-10: role/dir mismatch (Edith → inbox-code) is malformed", () => {

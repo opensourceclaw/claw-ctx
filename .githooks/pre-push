@@ -70,6 +70,7 @@ check_main() {
   local_sha="$1"
   remote_sha="$2"
   missing=""
+  warns=""   # CX-14 / §D(c): assertion ③ downgraded to warning (no rc impact)
   wstart=0
 
   if is_zero_sha "$remote_sha"; then
@@ -257,15 +258,22 @@ check_main() {
           continue
         fi
 
-        # ③ task must post-date its source
+        # ③ task must post-date its source — WARNING only (§D(c), Friday
+        # ruling; source-doc re-edits must not block an otherwise-compliant
+        # delivery, and mtime cannot distinguish re-edit from re-sign)
         if [ "$(mtime_of "$tfile")" -lt "$src_mtime" ]; then
-          missing="$missing
-  - missing: handoff task $target for \"$fname_src\" (task predates source doc)"
+          warns="$warns
+  warning: handoff task $target for \"$fname_src\" (task predates source doc)"
         fi
       done < "$anchor_tmp"
       rm -f "$anchor_tmp"
     done
   done
+
+  # warnings never affect rc (§D(c)) — printed on both pass and fail paths
+  if [ -n "$warns" ]; then
+    printf '%s\n' "$warns" >&2
+  fi
 
   if [ -n "$missing" ]; then
     echo "[pre-push] PUSH REJECTED (stage-gate) for refs/heads/main:" >&2
