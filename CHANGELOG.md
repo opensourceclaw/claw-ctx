@@ -1,5 +1,37 @@
 # Changelog
 
+## [6.11.0] - 2026-10-06
+
+### Added
+
+- **P4 压缩质量度量（Compaction Quality Metrics）**：`metrics/optimizer-metrics.ts` 新增 `CompactionQualityRecord/Report`、`recordCompactionQuality()` / `getCompactionQuality()`，按 session 记录 `proactiveRate`、`missingCriticalStatePct`、`missingNextActionPct` 三项指标，并汇总 consistency 四态计数与 `violationRate`。明细 store 受 FIFO 50/session + LRU 500 约束（截尾以 `capped` 标记），三指标基于**全量累计计数**、不随明细截尾失真。双语（EN+ZH）关键词表随模块导出。
+- **P2 三段摘要 schema（Three-Section Summary Schema）**：`semantic-compressor.ts` 新增 `summarySchema: "legacy" | "three-section"` 配置（**默认 `legacy`**，逐字节等价 v6.10.4）与 `buildSummarySections()`；三段结构携带状态机，校验打回上限 1 次后降级至 `degraded` 兜底文案。`CompressionResult` 追加可选 `sections/consistency`。
+- **接线**：`engine.compact()` 成功分支埋点（透传 `consistency`、`summarySchema`）；`doctor --usage --json` 与 doctor 表格新增 `Compaction Quality (P4)` 段及关键词表；`index` 导出追加。`ctx_compact` / `ctx_build` / `ctx_inject` 工具签名不变。
+
+### Fixed
+
+- **CX-11（HIGH）质量埋点取样错位**：埋点原取 `result.summary`（「Removed N old messages…」报告行），改为取实际落盘摘要 `result.summaryBlock`——此前关键词型落盘摘要会被误记为 `missingNextActionPct = 100%`。新增真 `compact()` 集成测试 `tests/unit/p4-wiring-integration.test.ts`（4 用例）纳入回归面。
+- **CX-12（MEDIUM）consistency 缺省口径误导**：未启用 three-section 时原按 `pass` 计，改为第四态 **`notMeasured`**（`undefined ≠ pass`）；样本仍入 `sampleCount` 与三指标分母（统计面不缩水），报告/doctor 自文档化呈现。
+
+### Guardrails
+
+- **CX-9 —— stage-gate `pre-push` hook 新增 requirement 3**：进入批次窗口的 adjudication/approval 文档（`inbox-design-review/`、`inbox-plan/` 的 review/approval 件）须在 `inbox-results/` 有 `Refs:` 回执（按文件名匹配，`processed/` 亦扫描），fail-closed。
+- **CX-7 —— hook 解析修正**：`release-approval-gate` 读取改为先展平 json 再取段，兼容 pretty-printed `gates.json`（旧逐行 `grep` 对多行文件永不匹配）；另 `chore: untrack .DS_Store`。
+
+### Performance（如实标注）
+
+- P2+P4 新增 CPU 开销实测 **≈3.2%（profile 口径：gate regex 2.5% + sections 框架 0.6%）**。配对法测得残余差额归因 GC/运行时（对照组噪声底 0.79%、轮间波动 -3.4%~+19.7%），非实现缺陷；**本版不做“零开销”表述**。残余主项 = 对 39KB removed 文本的 33 词正则首扫（物理下限 ≈0.025ms/op）。优化方向（扫描文本限量 / 复用 `scoreImportance` 已算文本，需接口配合）登记 **v6.12**；record 通道配对 +2~4% 现象列 v6.12 观察项。
+
+### Notes
+
+- **`notMeasured` 第四态**：consistency 的“未测量”与“通过/拒绝/降级”四态互斥——**未测量 ≠ 通过**。
+- **CX-9 hook 天花板**：客户端 hook 可被 `git push --no-verify` 静默跳过（git 设计使然）；服务端 branch protection + tag ruleset 为 defense-in-depth backstop（见 hook 头部注释所引 `docs/audits/stage-gate-defense-in-depth.md`）。
+
+### Tests
+
+- 108 files / **1335 passed, 0 failed, 5 skipped**；`tsc --noEmit` clean；golden `tests/golden/legacy-summary-v6104.txt` byte-equal（开关关 = v6.10.4 逐字节等价，源码级零删除行）。
+
+
 ## [6.9.0] - 2026-09-07
 
 ### Added
