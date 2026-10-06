@@ -166,8 +166,12 @@ audit_client() {
   - missing: TEST acceptance receipt (Status PASS) in inbox/inbox-results/ newer than batch start ($(date -u -r "$wstart" 2>/dev/null || date -u -d "@$wstart" 2>/dev/null || echo "t=$wstart"))"
 
   # requirement 2: Peter RELEASE APPROVED record within the batch window.
-  # CX-4: lives only in inbox/inbox-plan/ + inbox/inbox-release/, and a file
-  # that also carries "Stage.*TEST" (dual-claim) does not count as approval.
+  # CX-4: lives only in inbox/inbox-plan/ + inbox/inbox-release/.
+  # CX-14 (actor signature, symmetric to CX-8): dual-claim exclusion keys on
+  # the TEST receipt's AUTHOR signature (From: TestAgent/Edith), not on the
+  # literal "Stage.*TEST" anywhere — an approval that merely QUOTES its
+  # underlying TEST receipt stays valid; a file signed by BOTH actors is
+  # still excluded (true dual-claim).
   approval_ok=0
   for d in "$ROOT/inbox/inbox-plan" "$ROOT/inbox/inbox-release"; do
     [ -d "$d" ] || continue
@@ -175,7 +179,7 @@ audit_client() {
       [ -e "$f" ] || continue
       if grep -q 'APPROVED' "$f" 2>/dev/null \
         && grep -q 'Approver.*Peter' "$f" 2>/dev/null \
-        && ! grep -q 'Stage.*TEST' "$f" 2>/dev/null; then
+        && ! grep -qE 'From.*:.*(TestAgent|Edith)' "$f" 2>/dev/null; then
         if [ "$(mtime_of "$f")" -ge "$wstart" ]; then
           approval_ok=1
           break 2

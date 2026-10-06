@@ -332,8 +332,12 @@ describe("pre-push stage-gate hook", () => {
   });
 
   // --- CX-4: artifact separation (receipt vs approval) ----------------------
+  // CX-14: dual-claim = BOTH actor signatures in one file (TestAgent author
+  // + Peter approver) — quoting "Stage: TEST" without the author signature
+  // is a normal approval citation and must stay valid (see new case below).
   const DUAL_CLAIM = [
     "# Batch record",
+    "**From**: TestAgent (Edith)",
     "**Stage**: TEST ｜ **PipelineId**: v9.9.9",
     "**Status**: passed",
     "- **Approver**: Peter",
@@ -378,6 +382,32 @@ describe("pre-push stage-gate hook", () => {
     const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
     expect(r.code).not.toBe(0);
     expect(r.out).toContain("TEST acceptance receipt");
+  });
+
+  it("CX-14: approval quoting its underlying TEST receipt still counts (actor signature rule)", () => {
+    // TEST receipt only — the QUOTING approval below must be the ONE that
+    // satisfies requirement 2 (otherwise the case cannot detect exclusion)
+    writeResults(repo, true, false);
+    fs.mkdirSync(path.join(repo, "inbox/inbox-plan"), { recursive: true });
+    // a genuine Peter approval that QUOTES the TEST receipt header in prose —
+    // under the old content rule `Stage.*TEST` anywhere excluded it (false kill)
+    fs.writeFileSync(
+      path.join(repo, "inbox/inbox-plan/peter-approval-quoted.md"),
+      [
+        "# Peter Release Approval — v9.9.9",
+        "- **Approver**: Peter",
+        "- **Verdict**: ✅ APPROVED",
+        "依据 Edith 验收: **Stage**: TEST ｜ Status: passed(引用所据件,非本人署名)",
+        "",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(repo, "inbox/inbox-results/ack-pq.md"),
+      "**Stage**: release-approval ｜ **Refs**: peter-approval-quoted.md\n",
+    );
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("stage-gate OK: main");
   });
 
   it("CX-4: separated artifacts across the right directories still allow", () => {
@@ -462,11 +492,13 @@ describe("pre-push stage-gate hook", () => {
   it("CX-9: window boundary — doc older than batch start is not required", () => {
     // batch window = commits after remote (both today); doc mtime today but
     // BEFORE the oldest pushed commit → outside the window → not required
-    writeResults(repo, true, true);
+    // CX-17: commit the batch FIRST, then write receipts — receipt mtime is
+    // always >= batch start by construction (was a same-second race: 4/5 red)
     fs.writeFileSync(path.join(repo, "f.txt"), "y");
     sh(["git", "add", "."], repo);
     sh(["git", "commit", "-qm", "batch"], repo);
     const first = spawnSync("git", ["rev-parse", "HEAD~1"], { cwd: repo, encoding: "utf-8" }).stdout.trim();
+    writeResults(repo, true, true);
     const f = writeAdjudication("friday-review-prebatch-20261006.md", "inbox-design-review");
     const justNow = new Date(Date.now() + 60_000); // will be older than next commit… pin below
     // age the doc before the batch commit timestamp
