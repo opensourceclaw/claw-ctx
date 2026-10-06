@@ -24,6 +24,7 @@
  * v3.0.0 adds: cross-domain signal injection, token budget management.
  */
 import * as fs from "fs";
+import * as path from "path";
 import { createRequire } from "module";
 import { ConfidenceGate, type ConfidenceMode, type ConfidenceReport } from "./confidence_gate.js";
 
@@ -120,7 +121,8 @@ import { PreloadManager } from "./predictive/preload-manager.js";
 // v4.3.0: Global token counter instance for precise counting
 const globalTokenCounter = createTokenCounter("cl100k_base");
 
-interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean; compactThreshold?: number; reserveRatio?: number; compressionStrategy?: "semantic" | "legacy"; /** v6.11.0 P2: default "legacy" = v6.10.4 byte-equal */ summarySchema?: "legacy" | "three-section"; sessionResume?: Partial<SessionResumeConfig> | false; roleAwareInjection?: boolean; roleOverrides?: import("./context-role.js").RoleOverrides }
+interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean; compactThreshold?: number; reserveRatio?: number; compressionStrategy?: "semantic" | "legacy"; /** v6.11.0 P2: default "legacy" = v6.10.4 byte-equal */ summarySchema?: "legacy" | "three-section";
+  /** T3: persist P4 compaction quality to <workspace>/.claw-ctx/*.jsonl (default true) */ persistCompactionQuality?: boolean; sessionResume?: Partial<SessionResumeConfig> | false; roleAwareInjection?: boolean; roleOverrides?: import("./context-role.js").RoleOverrides }
 interface ClawCtxLogger { info: (...a: any[]) => void; error: (...a: any[]) => void; warn: (...a: any[]) => void; debug?: (...a: any[]) => void }
 
 function extractText(msg: any): string {
@@ -396,6 +398,18 @@ export class ClawContextEngine {
     // v6.10.1: startup window/reserve validation (warn-only, no hard failure)
     for (const w of validateWindowStartup({ reserve: config.reserveRatio })) {
       console.warn(`[claw-ctx] ${w}`);
+    }
+
+    // T3 (v6.12.0 checkpoint prerequisite): persist P4 records unless disabled
+    if (config.persistCompactionQuality !== false) {
+      const wd = config.workspaceDir || process.cwd();
+      optimizerMetricsCollector.setPersistPath(
+        path.join(wd, ".claw-ctx", "compaction-quality.jsonl"),
+      );
+    } else {
+      // explicit off must CLEAR a previous engine's path (collector is a
+      // process-wide singleton — otherwise records leak into the old workspace)
+      optimizerMetricsCollector.setPersistPath(undefined);
     }
   }
 

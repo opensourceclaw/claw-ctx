@@ -27,6 +27,9 @@ import {
   optimizerMetricsCollector,
   CRITICAL_STATE_KEYWORDS,
   NEXT_ACTION_KEYWORDS,
+  loadCompactionQuality,
+  mergeCompactionQuality,
+  type CompactionQualityReport,
 } from "./metrics/optimizer-metrics.js";
 import { VERSION } from "./version.js";
 
@@ -269,6 +272,28 @@ function cmdModelBuiltin(options: Record<string, string>): void {
   console.log("");
 }
 
+/**
+ * T3: effective P4 view = persisted history merged with in-process data.
+ * source is explicit so the reader knows which side contributed.
+ */
+function effectiveCompactionQuality(): {
+  q: CompactionQualityReport;
+  source: "disk+in-process" | "in-process" | "disk";
+} {
+  const proc = optimizerMetricsCollector.getCompactionQuality();
+  const diskPath = path.join(process.cwd(), ".claw-ctx", "compaction-quality.jsonl");
+  let disk: CompactionQualityReport | null = null;
+  if (fs.existsSync(diskPath)) {
+    const { collector, loaded } = loadCompactionQuality(diskPath);
+    if (loaded > 0) disk = collector.getCompactionQuality();
+  }
+  if (disk && proc.sampleCount > 0) {
+    return { q: mergeCompactionQuality(disk, proc), source: "disk+in-process" };
+  }
+  if (disk) return { q: disk, source: "disk" };
+  return { q: proc, source: "in-process" };
+}
+
 function cmdDoctorUsage(options: Record<string, string>): void {
   // v6.10.1: read persisted usage ledger written by the host writeback hook
   const file =
@@ -288,7 +313,7 @@ function cmdDoctorUsage(options: Record<string, string>): void {
           lastEvaluation: ledger!.getLastEvaluation(sessionId) ?? null,
         })),
       },
-      compactionQuality: optimizerMetricsCollector.getCompactionQuality(),
+      compactionQuality: { ...effectiveCompactionQuality().q, source: effectiveCompactionQuality().source },
       version: VERSION,
     };
     console.log(JSON.stringify(payload, null, 2));
@@ -328,8 +353,9 @@ function cmdDoctorUsage(options: Record<string, string>): void {
     }
   }
 
-  // v6.11.0 P4: compaction quality report (in-process collector) + tables
-  const q = optimizerMetricsCollector.getCompactionQuality();
+  // v6.11.0 P4 + T3: merged disk history + in-process (source explicit)
+  const eff = effectiveCompactionQuality();
+  const q = eff.q;
   console.log(`\nCompaction Quality (P4):`);
   console.log(
     `  samples=${q.sampleCount}  proactiveRate=${(q.proactiveRate * 100).toFixed(1)}%` +
@@ -343,7 +369,7 @@ function cmdDoctorUsage(options: Record<string, string>): void {
   );
   // OBS-2: this CLI process never hosts the engine — numbers here are the
   // in-process collector's (initial zeros unless the host feeds it)
-  console.log("  note: P4 data is in-process (this CLI process has no engine samples)");
+  console.log(`  source: ${eff.source} (disk history + this CLI process)`);
   console.log(`Keyword tables (manual verification):`);
   console.log(`  CRITICAL_STATE: ${CRITICAL_STATE_KEYWORDS.join(", ")}`);
   console.log(`  NEXT_ACTION:    ${NEXT_ACTION_KEYWORDS.join(", ")}`);
