@@ -142,6 +142,50 @@ check_main() {
   [ "$approval_ok" -eq 1 ] || missing="$missing
   - missing: Peter RELEASE APPROVED record (Approver: Peter + APPROVED, in inbox-plan/ or inbox-release/) newer than batch start"
 
+  # requirement 3 (CX-9): every adjudication/approval doc that entered the
+  # batch window must have a Refs: receipt in inbox-inbox-results/.
+  # Filename-based detection (policy prefers it; content matching caused the
+  # CX-8 false positive). processed/ is scanned too — archiving is not an
+  # escape from the receipt duty (policy clause 3).
+  #
+  # EFFECTIVE = 2026-10-06 00:00 +0800 — receipt policy effective date;
+  # older adjudication docs inside the first managed window are exempt.
+  EFFECTIVE_TS=1791216000
+  req_mtime=$wstart
+  if [ "$EFFECTIVE_TS" -gt "$req_mtime" ]; then req_mtime=$EFFECTIVE_TS; fi
+
+  check_refs_receipt() {
+    _fname="$1"
+    for r in "$RESULTS_DIR"/*.md; do
+      [ -e "$r" ] || continue
+      # match both the bare "Refs:" protocol header and the bolded
+      # "**Refs**:" variant used in practice
+      if grep -E 'Refs\**:' "$r" 2>/dev/null | grep -qF "$_fname"; then
+        return 0
+      fi
+    done
+    return 1
+  }
+
+  for d in "$ROOT/inbox/inbox-design-review" "$ROOT/inbox/inbox-plan"; do
+    [ -d "$d" ] || continue
+    for f in $(find "$d" -maxdepth 2 -name '*.md' -type f 2>/dev/null); do
+      fname=$(basename "$f")
+      case "$d" in
+        *inbox-design-review) : ;;  # whole dir is the adjudication domain
+        *inbox-plan)
+          # only review/approval-named docs in plan (policies/plans excluded)
+          printf '%s' "$fname" | grep -qiE 'review|approval' || continue
+          ;;
+      esac
+      [ "$(mtime_of "$f")" -ge "$req_mtime" ] || continue
+      if ! check_refs_receipt "$fname"; then
+        missing="$missing
+  - missing: Refs receipt for adjudication doc $fname (stage-gate receipt policy 2026-10-06)"
+      fi
+    done
+  done
+
   if [ -n "$missing" ]; then
     echo "[pre-push] PUSH REJECTED (stage-gate) for refs/heads/main:" >&2
     printf '%s\n' "$missing" >&2
