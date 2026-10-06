@@ -27,6 +27,8 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: gh release view ${{ github.ref_name }} && echo "release exists, skip" || gh release create ${{ github.ref_name }} --generate-notes --title "claw-ctx ${{ github.ref_name }}"
+      # CX-15: idempotent create-if-absent by full list lookup + post-verify
+      # (gh release view against drafts was unreliable → double releases, OBS-B)
+      - run: sh scripts/release-idempotency.sh "${{ github.ref_name }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
