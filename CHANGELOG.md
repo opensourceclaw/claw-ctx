@@ -1,5 +1,24 @@
 # Changelog
 
+## [6.11.1] - 2026-10-06
+
+### Guardrails
+
+- **CX-10 —— stage-gate `pre-push` hook 新增 requirement 4：handoff 清单校验**。采用**锚点 opt-in**：只解析标题匹配 `## …handoff…清单` 的文档，无锚点文档一律不解析（不做自由文本推断——CX-8 教训）。锚点块内每条 `- [ ]` / `- [x]` 行（半/全角冒号、可带反引号目标）承诺一份 inbox 任务单，须满足：① 目标已交付（存在于对应域，含 `processed/`——归档后仍算交付）；② 任务单头部在 `依据` / `Task` / `Refs` 行引用源文档；③ 晚于源文档。角色→域映射覆盖五个 inbox 域（Jarvis→`inbox-code`、Edith→`inbox-test`、Karen→`inbox-release`/`inbox-deploy`、DeployAgent→`inbox-deploy`、OpsAgent→`inbox-operate`；其余含 Friday/Peter 视为格式错误）。**`[x]` 与 `[ ]` 同等校验**——「勾了没单」同样 fail-closed。窗口复用 CX-9 的 `EFFECTIVE_TS`。
+- **CX-14 —— handoff 断言③ 降级为 warning**。源文档交付后被无关再编辑会刷新 mtime，此前会把合规交付误判为 `missing` 而硬拦（R2 中的唯一残留阻塞）。现断言③ 写入独立 `warns` 桶，**通过与拒绝两条路径都打印**，且**不影响 `rc`**（EXIT=0）；断言①② 与 CX-9 逻辑未动。
+- **CX-9（自 v6.11.0 起生效，本版沿用）**：进入批次窗口的裁决/审批文档须在 `inbox-results/` 有 `Refs:` 回执（按文件名匹配，`processed/` 亦扫描），fail-closed。
+
+### Notes
+
+- **断言③ warning 语义**：`warning: handoff task <task> for "<source>" (task predates source doc)` 是**已知可审计痕迹**，不是拦截项；warning 缺席才是异常。
+- **残余风险（OBS-7，已登记）**：③ 放宽后，「**预造**任务文件、事后在其 `依据:` 行补引用」在**客户端不可检**（hook 只能观测文件存在与 mtime）。已写入 defense-in-depth 已知缺口清单。
+- **`--no-verify` 天花板**：客户端 hook 可被 `git push --no-verify` 静默跳过（git 设计使然，无本地痕迹）；指引见 hook 头部注释所引 `docs/audits/stage-gate-defense-in-depth.md`（服务端 branch protection + tag ruleset 为 backstop）。
+
+### Tests
+
+- hook 单测 **41 passed**；全量 108 files / **1345 passed, 0 failed, 5 skipped**；`tsc --noEmit` clean。
+
+
 ## [6.11.0] - 2026-10-06
 
 ### Added
