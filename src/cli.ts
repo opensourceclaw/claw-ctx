@@ -337,9 +337,13 @@ function cmdDoctorUsage(options: Record<string, string>): void {
   );
   console.log(
     `  consistency: pass=${q.consistency.pass} rejected=${q.consistency.rejected}` +
-    ` degraded=${q.consistency.degraded} violationRate=${(q.consistency.violationRate * 100).toFixed(1)}%` +
+    ` degraded=${q.consistency.degraded} notMeasured=${q.consistency.notMeasured}` +
+    ` violationRate=${(q.consistency.violationRate * 100).toFixed(1)}%` +
     `  capped=${q.capped}`
   );
+  // OBS-2: this CLI process never hosts the engine — numbers here are the
+  // in-process collector's (initial zeros unless the host feeds it)
+  console.log("  note: P4 data is in-process (this CLI process has no engine samples)");
   console.log(`Keyword tables (manual verification):`);
   console.log(`  CRITICAL_STATE: ${CRITICAL_STATE_KEYWORDS.join(", ")}`);
   console.log(`  NEXT_ACTION:    ${NEXT_ACTION_KEYWORDS.join(", ")}`);

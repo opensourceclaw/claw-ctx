@@ -39,7 +39,8 @@ export interface CompactionQualityRecord {
   /** The summary text actually written — keyword screening input */
   summaryText: string;
   removedCount: number;
-  consistency: "pass" | "rejected" | "degraded";
+  /** notMeasured = consistency was never evaluated (legacy schema default) */
+  consistency: "pass" | "rejected" | "degraded" | "notMeasured";
 }
 
 export interface CompactionQualityReport {
@@ -54,6 +55,9 @@ export interface CompactionQualityReport {
     pass: number;
     rejected: number;
     degraded: number;
+    /** CX-12: samples where consistency was never evaluated (shown explicitly,
+     *  never folded into pass — unmeasured is not measured-pass) */
+    notMeasured: number;
     violationRate: number;
   };
   window: { start: number; end: number };
@@ -142,6 +146,7 @@ interface InternalMetrics {
     consistencyPass: number;
     consistencyRejected: number;
     consistencyDegraded: number;
+    consistencyNotMeasured: number;
     firstAt: number;
     lastAt: number;
   };
@@ -180,6 +185,7 @@ export class OptimizerMetricsCollector {
         consistencyPass: 0,
         consistencyRejected: 0,
         consistencyDegraded: 0,
+        consistencyNotMeasured: 0,
         firstAt: 0,
         lastAt: 0,
       },
@@ -255,7 +261,8 @@ export class OptimizerMetricsCollector {
     if (!matchesAnyKeyword(rec.summaryText, NEXT_ACTION_KEYWORDS)) t.missingNext++;
     if (rec.consistency === "pass") t.consistencyPass++;
     else if (rec.consistency === "rejected") t.consistencyRejected++;
-    else t.consistencyDegraded++;
+    else if (rec.consistency === "degraded") t.consistencyDegraded++;
+    else t.consistencyNotMeasured++;
     if (t.firstAt === 0) t.firstAt = rec.at;
     t.lastAt = rec.at;
 
@@ -296,6 +303,7 @@ export class OptimizerMetricsCollector {
         pass: t.consistencyPass,
         rejected: t.consistencyRejected,
         degraded: t.consistencyDegraded,
+        notMeasured: t.consistencyNotMeasured,
         violationRate:
           total > 0 ? (t.consistencyRejected + t.consistencyDegraded) / total : 0,
       },

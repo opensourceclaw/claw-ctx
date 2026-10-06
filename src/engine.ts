@@ -899,9 +899,9 @@ export class ClawContextEngine {
         sessionId: p.sessionId,
         triggerReason,
         proactive: triggerReason === "auto",
-        summaryText: result.summary ?? "",
+        summaryText: result.summaryBlock ?? "", // CX-11: actual persisted summary, not the report line
         removedCount: details.removedCount ?? 0,
-        consistency: result.consistency ?? "pass",
+        consistency: result.consistency ?? "notMeasured", // CX-12: unmeasured ≠ measured-pass
       });
       return {
         ok: true,
