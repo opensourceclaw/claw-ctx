@@ -82,12 +82,12 @@ exit 1
     expect(r.out).toContain("FATAL: 2 releases for tag v9.9.9");
   });
 
-  it("notes two-state: docs/releases/<tag>.md present → --notes-file path taken", () => {
-    fs.mkdirSync(path.join(dir, "docs/releases"), { recursive: true });
-    fs.writeFileSync(path.join(dir, "docs/releases/v9.9.9.md"), "# release body\n");
+  it("notes two-state: release-notes/<tag>.md present → --notes-file path taken", () => {
+    fs.mkdirSync(path.join(dir, "release-notes"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "release-notes/v9.9.9.md"), "# release body\n");
     const r = run(["v9.9.9"], { MOCK_PRE: "0", MOCK_AFTER: "1" });
     expect(r.code).toBe(0);
-    expect(r.out).toContain("create with notes file docs/releases/v9.9.9.md");
+    expect(r.out).toContain("create with notes file release-notes/v9.9.9.md");
   });
 
   it("missing tag arg → exit 2", () => {
