@@ -3,6 +3,7 @@ dist/
 coverage/
 cov-merged/
 docs/
+# release-notes/ intentionally NOT ignored (CX-15 two-state release body, OBS-F)
 docs/api/
 *.log
 .DS_Store
