@@ -1,5 +1,38 @@
 # Changelog
 
+## [6.12.0] - 2026-10-07
+
+### Added
+
+- **CX-18 —— §6.5 性能夹具入库 + CI `perf` 通道（手动）**：
+  - `tests/performance/paired-compaction-benchmark.mjs`：§6.5 口径正式化——pretrim 60 消息夹具、A=legacy / B=three-section+record **交替 10 轮**、`process.cpuUsage` 配对采样、取 median，支持 `--json`，并写入 `GITHUB_STEP_SUMMARY` markdown 表；无 `.test.` 后缀 → **不进 vitest 常规集合**。
+  - `ci.yml` 新增 **`perf` job**：**仅 `workflow_dispatch`** 触发（push / PR 路径**零膨胀**），跑 build + 基准，数值落 job summary。
+  - **首次 dispatch 实测**（run `37574041315`，CI ubuntu，load 0.78）：A legacy **2.1809 ms/op**、B three-section+record **2.3511 ms/op** → **median delta 6.00%**（预算 <2% → **OVER**）。
+- **OBS-F —— `release-notes/` 出 gitignore，CX-15 二态 body 首次可生效**：新增顶层 `release-notes/`（+`README.md`）并确保**不被 ignore**（`docs/` 整目录在 `.gitignore` 中，旧 `docs/releases/<tag>.md` 在 CI 上恒不存在）；CX-15 二态路径由 `docs/releases/<tag>.md` **迁移至 `release-notes/<tag>.md`**，脚本与单测同步（5/5 绿）。本批起发布方可在 bump commit 内落 `<tag>.md`，CI 即走 **`--notes-file`** 分支。
+
+### Fixed
+
+- **PR #15（Dependabot）合并**：dev 传递依赖 `proxy-addr` 2.0.7→2.0.8、`source-map-js` 1.2.1→1.2.2（均 patch 级），**无 manifest / runtime 变化**；合并 commit `51f7f09`。
+
+### Notes
+
+- **CX-19 —— 持久化写路径探路（只探不改，`src/` 零改动、零新依赖）**：`tests/performance/persist-write-exp.mjs` 三路对照（line 325B、n=5000、reps=5）：
+
+  | impl | µs/op | vs 现行 |
+  |------|:-----:|:-------:|
+  | A `appendFileSync`/条（现行） | 121.6 ~ 127.2 | — |
+  | B fd 复用（open 一次 + `writeSync`） | 13.8 ~ 15.2 | **−88.0% ~ −88.7%** |
+  | C 缓冲 ×64 | 2.2 ~ 2.8 | −97.8% ~ −98.3% |
+
+  - **三路互证**：Edith 3 轮（−88.1 / −88.7 / −88.0%）、Friday 本机（139.5 → 15.3 µs，−89%）、Jarvis CI 侧（133 → 14 µs，−89%）。
+  - **归因（数据说话）**：固定成本在 per-call **open + close**，非 fs 吞吐、且与负载无关——CI delta 6% × 2.18 ms ≈ **130 µs/record**，与 impl A 的 133 µs/record 严丝合缝。
+- **§D 口径（如实）**：现行 CI delta = **6.00%（OVER，预算 <2%）**；impl B 修正**未随本版落地**，随 **v6.13.0**；**§D (a) 条件豁免保持开放**。
+- 本批为**测量 / 基建批**：无用户可见行为变更；`ctx_compact` / `ctx_build` / `ctx_inject` 签名不变。
+
+### Tests
+
+- 111 files / **1367 passed, 0 failed, 5 skipped**；`tsc --noEmit` clean；新增 `.mjs` 探针不计入 vitest 集合；`release-idempotency.test.ts` 5/5（路径迁移后）。
+
 ## [6.11.2] - 2026-10-07
 
 ### Added
