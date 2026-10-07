@@ -25,10 +25,20 @@
 
 set -u
 
-GATES_FILE="${OPENCLAW_GATES_FILE:-$HOME/.openclaw/gates/gates.json}"
 BYPASS_SIG="${OPENCLAW_GATE_BYPASS:-}"
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 RESULTS_DIR="$ROOT/inbox/inbox-results"
+# CX-20: per-repo slot files ($GATES_DIR/<repo>.json) — multi-repo concurrent
+# releases must never clobber each other (2026-10-07 14:24 real clobber).
+# Legacy shared gates.json stays as a read fallback with a migration NOTE;
+# explicit OPENCLAW_GATES_FILE always wins (tests, emergency tooling).
+GATES_DIR="${OPENCLAW_GATES_DIR:-$HOME/.openclaw/gates}"
+REPO_NAME=$(basename "$ROOT")
+GATES_FILE="${OPENCLAW_GATES_FILE:-$GATES_DIR/$REPO_NAME.json}"
+if [ -z "${OPENCLAW_GATES_FILE:-}" ] && [ ! -f "$GATES_FILE" ] && [ -f "$GATES_DIR/gates.json" ]; then
+  echo "[pre-push] NOTE: per-repo slot $REPO_NAME.json not found — reading legacy shared gates.json. Run scripts/migrate-gates.sh $REPO_NAME to split slots (CX-20)." >&2
+  GATES_FILE="$GATES_DIR/gates.json"
+fi
 BYPASS_LOG="$ROOT/inbox/govern/bypass-log.md"
 
 is_zero_sha() {
