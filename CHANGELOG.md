@@ -1,5 +1,16 @@
 # Changelog
 
+## [6.13.1] - 2026-10-09
+
+### Fixed
+
+- **批准件 canonical 目录收窄（`inbox/inbox-release/` 单目录）**：pre-push / `audit-stage-gate.sh` 的 req2（Peter 发布批准）扫描面由「`inbox/inbox-plan/` 或 `inbox/inbox-release/`」收窄为 **`inbox/inbox-release/` 单目录**（Peter 2026-10-09 15:35 裁定：宽收面是 bug——批准件属 RELEASE 工件，v6.10.3–v6.12.0 先例均在该目录）。**CX-4 / CX-14 双 claim 防护与批窗口语义不变**；漂移到 `inbox-plan/` 的批准件现被**拒绝**（fail-closed）。
+- **audit no-op 修复（Karen 发布观察 3）**：推送成功后再以 `--mode=client` 复跑同一 (local, remote) 时不再把批次窗口退化为 `wstart=0`（旧行为会把 v6.11/v6.12 时代的政策前缺口误报为红）；现与真实 hook 的 `continue` 语义对齐，显式输出 `stage-gate no-op (nothing to push)` 且 **rc=0**。
+
+### Tests
+
+- 门禁两套测试 **56 passed**（漂移文件被拒 / canonical 被收 / no-op rc=0）；全量 **114 files / 1404 passed / 0 failed / 5 skipped**；`tsc --noEmit` clean；零新依赖。
+
 ## [6.13.0] - 2026-10-09
 
 ### Added
