@@ -3,7 +3,7 @@
  * claw-ctx v5.16.1
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { OptimizerMetricsCollector, optimizerMetricsCollector } from '../src/metrics/optimizer-metrics.js';
+import { OptimizerMetricsCollector, optimizerMetricsCollector, stripSummaryScaffold } from '../src/metrics/optimizer-metrics.js';
 
 describe('OptimizerMetricsCollector', () => {
   let collector: OptimizerMetricsCollector;
@@ -110,5 +110,52 @@ describe('OptimizerMetricsCollector', () => {
 describe('optimizerMetricsCollector singleton', () => {
   it('should be an OptimizerMetricsCollector instance', () => {
     expect(optimizerMetricsCollector).toBeInstanceOf(OptimizerMetricsCollector);
+  });
+});
+
+// ── v6.13.0 OBS-3: template scaffolding must not fake the missing-% counters ──
+describe('OBS-3 summary screening', () => {
+  const record = (summaryText: string) => {
+    const c = new OptimizerMetricsCollector();
+    c.recordCompactionQuality({
+      sessionId: 's',
+      triggerReason: 'auto',
+      proactive: true,
+      summaryText,
+      removedCount: 5,
+      consistency: 'notMeasured',
+    });
+    return c.getCompactionQuality();
+  };
+
+  it('legacy template tail no longer false-positives as a next action', () => {
+    // Before OBS-3 this contained "continue" → missingNext stayed 0 (false negative).
+    const legacy =
+      '[Compacted History — 12 earlier messages summarized]\n' +
+      'Topics: general discussion\n\n' +
+      'Continue with the current task using the remaining recent context below.';
+    expect(record(legacy).missingNextCount).toBe(1);
+  });
+
+  it('three-section with an empty Next Action value still counts as missing', () => {
+    const three =
+      '[Compacted History - 5 msgs] Recorded Findings: decided the fix | ' +
+      'Workspace State: ok | Next Action: ';
+    expect(record(three).missingNextCount).toBe(1);
+  });
+
+  it('three-section with a real Next Action value is NOT counted missing', () => {
+    const three =
+      '[Compacted History - 5 msgs] Recorded Findings: decided the fix | ' +
+      'Workspace State: ok | Next Action: verify the release';
+    expect(record(three).missingNextCount).toBe(0);
+  });
+
+  it('stripSummaryScaffold removes only fixed scaffolding', () => {
+    expect(
+      stripSummaryScaffold('Continue with the current task using the remaining recent context below.').trim(),
+    ).toBe('');
+    expect(stripSummaryScaffold('Next Action: verify')).not.toContain('Next Action:');
+    expect(stripSummaryScaffold('keep me intact')).toBe('keep me intact');
   });
 });

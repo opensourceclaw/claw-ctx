@@ -117,12 +117,17 @@ import {
 // v5.0.0-rc.2: Predictive context
 import { ContextPredictor } from "./predictive/context-predictor.js";
 import { PreloadManager } from "./predictive/preload-manager.js";
+// v6.13.0 P1/P3: stage-progress trigger + continuation guard (both default off)
+import { StageProgressTrigger, type StageTriggerConfig } from "./stage-progress-trigger.js";
+import { ContinuationGuard, type ContinuationGuardConfig } from "./continuation-guard.js";
 
 // v4.3.0: Global token counter instance for precise counting
 const globalTokenCounter = createTokenCounter("cl100k_base");
 
 interface ClawCtxConfig { workspaceDir?: string; topK?: number; debug?: boolean; compactThreshold?: number; reserveRatio?: number; compressionStrategy?: "semantic" | "legacy"; /** v6.11.0 P2: default "legacy" = v6.10.4 byte-equal */ summarySchema?: "legacy" | "three-section";
-  /** T3: persist P4 compaction quality to <workspace>/.claw-ctx/*.jsonl (default true) */ persistCompactionQuality?: boolean; sessionResume?: Partial<SessionResumeConfig> | false; roleAwareInjection?: boolean; roleOverrides?: import("./context-role.js").RoleOverrides }
+  /** T3: persist P4 compaction quality to <workspace>/.claw-ctx/*.jsonl (default true) */ persistCompactionQuality?: boolean; sessionResume?: Partial<SessionResumeConfig> | false; roleAwareInjection?: boolean; roleOverrides?: import("./context-role.js").RoleOverrides;
+  /** v6.13.0 P1: stage-progress trigger (default off = v6.11.x equivalent) */ stageTrigger?: Partial<StageTriggerConfig>;
+  /** v6.13.0 P3: continuation guard (default off = v6.11.x equivalent) */ continuationGuard?: Partial<ContinuationGuardConfig> }
 interface ClawCtxLogger { info: (...a: any[]) => void; error: (...a: any[]) => void; warn: (...a: any[]) => void; debug?: (...a: any[]) => void }
 
 function extractText(msg: any): string {
@@ -339,6 +344,12 @@ export class ClawContextEngine {
   // v6.10.1: pre-trim evaluation invariant + window validation dedup
   private _lastEvaluationView: { sessionId: string; preTrimTokens: number } | null = null;
   private _windowValidatedModels: Set<string> = new Set();
+  // v6.13.0 P1/P3: stage-progress trigger + continuation guard (default off)
+  private _stageTrigger: StageProgressTrigger;
+  private _continuationGuard: ContinuationGuard;
+  // P3: last summary text per session (refetch/plan-restatement input) + pending re-fetch hints
+  private _lastSummaryBySession = new Map<string, string>();
+  private _pendingGuardHints = new Map<string, RoleHint[]>();
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
@@ -394,6 +405,9 @@ export class ClawContextEngine {
     );
     // v5.16.0: Model-aware context optimizer
     this._modelOptimizer = modelAwareOptimizer;
+    // v6.13.0 P1/P3: stage-progress trigger + continuation guard (config absent ⇒ default off)
+    this._stageTrigger = new StageProgressTrigger(config.stageTrigger);
+    this._continuationGuard = new ContinuationGuard(config.continuationGuard);
 
     // v6.10.1: startup window/reserve validation (warn-only, no hard failure)
     for (const w of validateWindowStartup({ reserve: config.reserveRatio })) {
@@ -419,6 +433,14 @@ export class ClawContextEngine {
   }
 
   private _session(id: string): void { if (this.sid !== id) { this.sid = id; this.manager.sessionId = id; } }
+
+  /** v6.13.0 P3: drain pending continuation-guard re-fetch hints for this session. */
+  private _drainGuardHints(sessionId: string): RoleHint[] {
+    const hints = this._pendingGuardHints.get(sessionId);
+    if (!hints || hints.length === 0) return [];
+    this._pendingGuardHints.delete(sessionId);
+    return hints;
+  }
 
   async bootstrap(p: { sessionId: string; sessionKey?: string; sessionFile: string; memoryReady?: boolean }): Promise<{ bootstrapped: boolean; importedMessages?: number; reason?: string; memoryOk?: boolean; contextOk?: boolean }> {
     this._session(p.sessionId);
@@ -496,6 +518,8 @@ export class ClawContextEngine {
   async assemble(p: { sessionId: string; sessionKey?: string; messages: any[]; tokenBudget?: number; availableTools?: Set<string>; citationsMode?: string; model?: string; prompt?: string; confidenceThreshold?: number; confidenceMode?: ConfidenceMode; statusSignal?: TaskStatusSignal; crossDomain?: { enabled: boolean; currentPillar?: string; currentIntent?: string; timeRange?: string; maxSignals?: number }; ci?: { enabled: boolean; project?: string; includeBuildStatus?: boolean; includeTestResults?: boolean; includeDeployStatus?: boolean; maxSignals?: number } }): Promise<{ messages: any[]; estimatedTokens: number; systemPromptAddition?: string; promptAuthority?: string; confidenceReport?: ConfidenceReport; crossDomainReport?: { signalsInjected: number; totalTokens: number; correlations: InjectedSignal[] }; ciReport?: { signalsInjected: number; totalTokens: number; signals: CISignal[] }; driftScore?: number; autoCompact?: boolean; newSessionSuggestion?: string; roleConflicts?: RoleConflictRecord[]; roleBreakdown?: RoleBreakdown }> {
     if (this.config.debug) this.logger.info(`[claw-ctx] assemble() called, sessionId=${p.sessionId}, messages=${p.messages?.length ?? 0}, tokenBudget=${p.tokenBudget ?? 0}`);
     this._session(p.sessionId);
+    // v6.13.0 P1: record host-supplied stage (no-op when the trigger is disabled)
+    this._stageTrigger.noteStage(p.sessionId, p.statusSignal?.stage);
 
     // v5.16.0: Get model-aware optimization hint
     if (p.model) {
@@ -560,6 +584,7 @@ export class ClawContextEngine {
       // v6.10.0: error-card reminder rides the no-memory path too — prevention
       // reminders are independent of generic recall (joint design §3.2)
       const additions = await this._cachedExternalContext(p.sessionId);
+      additions.push(...this._drainGuardHints(p.sessionId));
       const errorCardEarly = this._cachedErrorCardSearch(q, p.statusSignal);
       if (errorCardEarly) additions.unshift(toRoleHint("error-card", errorCardEarly));
       const crossDomainResult = await this._cachedCrossDomain(p);
@@ -737,6 +762,9 @@ export class ClawContextEngine {
       // structured context failure is non-blocking
     }
 
+    // v6.13.0 P3: continuation-guard re-fetch hints ride the dynamic suffix
+    dynamicAdditions.push(...this._drainGuardHints(p.sessionId));
+
     // v6.8.0: Assemble dynamic suffix — priority ordering + conflict arbitration
     // when roleAwareInjection is enabled; otherwise byte-identical to v6.7.3.
     {
@@ -849,6 +877,11 @@ export class ClawContextEngine {
       }
       // v5.1.1: Reset token warning flag after successful compaction
       this._tokenWarningEmitted = false;
+
+      // v6.13.0 P3: arm the continuation guard + remember the summary (all
+      // initiators: explicit / auto / force). No-op when the guard is disabled.
+      this._lastSummaryBySession.set(p.sessionId, result.summaryBlock ?? "");
+      this._continuationGuard.arm(p.sessionId);
 
       // v5.11.3: Sync in-memory and persisted state after compaction.
       // Why: _executeCompaction only rewrites the session file; _sessionState,
@@ -1316,9 +1349,13 @@ export class ClawContextEngine {
         for (const m of p.messages) {
           estTokens += this._estimateMessageTokens(m);
         }
-        const triggerThreshold = Math.floor(p.tokenBudget * 0.75);
+        const baseThreshold = Math.floor(p.tokenBudget * 0.75);
+        // v6.13.0 P1: lower the threshold at a stage boundary (disabled ⇒ base,
+        // byte-equal to v6.11.x)
+        const triggerThreshold = this._stageTrigger.adjustThreshold(p.sessionId, baseThreshold, estTokens);
         if (estTokens > triggerThreshold) {
-          this.logger.info(`[claw-ctx] afterTurn: ${estTokens} tokens > ${triggerThreshold} threshold (budget=${p.tokenBudget}), triggering self-compaction`);
+          const boundaryNote = triggerThreshold < baseThreshold ? " stage-boundary" : "";
+          this.logger.info(`[claw-ctx] afterTurn: ${estTokens} tokens > ${triggerThreshold} threshold (budget=${p.tokenBudget}${boundaryNote}), triggering self-compaction`);
           const result = await this.compact({
             sessionId: p.sessionId,
             sessionKey: p.sessionKey,
@@ -1337,6 +1374,34 @@ export class ClawContextEngine {
       } catch (e: any) {
         this.logger.warn(`[claw-ctx] afterTurn self-compaction check failed: ${e?.message ?? e}`);
       }
+    }
+
+    // v6.13.0 P3: continuation guard — inspect for redundant recovery within the
+    // post-compaction window (no-op when disabled or outside the window).
+    try {
+      const hits = this._continuationGuard.inspect(
+        p.sessionId,
+        p.messages ?? [],
+        this._lastSummaryBySession.get(p.sessionId) ?? "",
+      );
+      if (hits.length > 0) {
+        for (const h of hits) {
+          this.logger.warn(`[claw-ctx] continuation-guard: ${h.kind} — ${h.detail} (turn ${h.turn})`);
+        }
+        if (this.config.continuationGuard?.refetchHint !== false) {
+          const list = this._pendingGuardHints.get(p.sessionId) ?? [];
+          for (const h of hits) {
+            list.push(toRoleHint(
+              "continuation-guard",
+              `[Continuation Guard] ${h.detail} — content already folded into the compaction summary; re-fetch from source rather than reconstruct.`,
+              this.config.roleOverrides,
+            ));
+          }
+          this._pendingGuardHints.set(p.sessionId, list);
+        }
+      }
+    } catch (e: any) {
+      this.logger.warn(`[claw-ctx] continuation-guard inspect failed: ${e?.message ?? e}`);
     }
   }
 

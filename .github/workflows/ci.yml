@@ -78,6 +78,8 @@ jobs:
   # CX-18: §6.5 paired benchmark — MANUAL dispatch only (kept out of push/PR
   # gates so CI duration stays flat). Numbers land in the job summary;
   # §D(a) condition is judged from this run.
+  # v6.13.0: P1/P3 paired overhead harness joins the channel (Edith 验收项 7
+  # 的权威口径；本机共享开发机噪声地板高于信号，读数仅参考).
   perf:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -92,3 +94,5 @@ jobs:
       - run: npm run build
       - name: §6.5 paired compaction benchmark
         run: node tests/performance/paired-compaction-benchmark.mjs --rounds 10
+      - name: v6.13.0 P1/P3 paired overhead benchmark
+        run: node tests/performance/p13-paired-overhead-benchmark.mjs

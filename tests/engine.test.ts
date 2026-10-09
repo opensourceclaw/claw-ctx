@@ -1467,3 +1467,50 @@ describe('ClawContextEngine', () => {
     });
   });
 });
+
+describe('v6.13.0 P1: stage-progress trigger in afterTurn', () => {
+  function bigMessages(n = 30): any[] {
+    const filler = 'Lorem ipsum dolor sit amet '.repeat(40);
+    const out: any[] = [];
+    for (let i = 0; i < n; i++) {
+      out.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `Msg ${i}: ${filler}` });
+    }
+    return out;
+  }
+  // 30 messages ≈ 6150 estTokens. budget 16000 ⇒ base = 12000; boundary
+  // discount (bonus 0.9) ⇒ 1200. So the boundary flips the trigger decision.
+  const BUDGET = 16000;
+  const TRIGGER_ON = { enabled: true, boundaryBonus: 0.9, minTokens: 0 };
+
+  it('stage boundary lowers the threshold → self-compaction fires', async () => {
+    const sessionFile = createSessionFile(30);
+    const msgs = bigMessages(30);
+    const engine = createClawContextEngine({ workspaceDir: '/tmp', stageTrigger: TRIGGER_ON }, mockLogger());
+    await engine.assemble({ sessionId: 'p1', messages: msgs, tokenBudget: BUDGET, statusSignal: { stage: 'A' } });
+    await engine.assemble({ sessionId: 'p1', messages: msgs, tokenBudget: BUDGET, statusSignal: { stage: 'B' } });
+    const spy = vi.spyOn(engine, 'compact');
+    await engine.afterTurn({ sessionId: 'p1', sessionFile, messages: msgs, prePromptMessageCount: msgs.length, tokenBudget: BUDGET });
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('disabled (default) with the same inputs ⇒ threshold stays base, no self-compaction', async () => {
+    const sessionFile = createSessionFile(30);
+    const msgs = bigMessages(30);
+    const engine = createClawContextEngine({ workspaceDir: '/tmp' }, mockLogger());
+    await engine.assemble({ sessionId: 'p1off', messages: msgs, tokenBudget: BUDGET, statusSignal: { stage: 'A' } });
+    await engine.assemble({ sessionId: 'p1off', messages: msgs, tokenBudget: BUDGET, statusSignal: { stage: 'B' } });
+    const spy = vi.spyOn(engine, 'compact');
+    await engine.afterTurn({ sessionId: 'p1off', sessionFile, messages: msgs, prePromptMessageCount: msgs.length, tokenBudget: BUDGET });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('enabled but no stage change ⇒ threshold stays base, no self-compaction', async () => {
+    const sessionFile = createSessionFile(30);
+    const msgs = bigMessages(30);
+    const engine = createClawContextEngine({ workspaceDir: '/tmp', stageTrigger: TRIGGER_ON }, mockLogger());
+    await engine.assemble({ sessionId: 'p1ns', messages: msgs, tokenBudget: BUDGET, statusSignal: { stage: 'A' } });
+    const spy = vi.spyOn(engine, 'compact');
+    await engine.afterTurn({ sessionId: 'p1ns', sessionFile, messages: msgs, prePromptMessageCount: msgs.length, tokenBudget: BUDGET });
+    expect(spy).not.toHaveBeenCalled();
+  });
+});

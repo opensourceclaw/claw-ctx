@@ -163,6 +163,22 @@ export {
   type CompactionRecommendation,
 } from "./proactive-compaction-controller.js";
 
+// v6.13.0 P1/P3: stage-progress trigger + continuation guard (both default off)
+export {
+  StageProgressTrigger,
+  DEFAULT_STAGE_TRIGGER_CONFIG,
+  type StageTriggerConfig,
+} from "./stage-progress-trigger.js";
+export {
+  ContinuationGuard,
+  DEFAULT_CONTINUATION_GUARD_CONFIG,
+  type ContinuationGuardConfig,
+  type ContinuationSignal,
+  type ContinuationSignalKind,
+  type ContinuationDetector,
+  type ContinuationContext,
+} from "./continuation-guard.js";
+
 // v5.16.0 CLI entry point (run via: claw-ctx <command>)
 // CLI is available via bin entry in package.json
 
@@ -173,10 +189,15 @@ const plugin: ReturnType<typeof definePluginEntry> = definePluginEntry({
 
   register(api: any) {
     const pluginConfig = (api as { pluginConfig?: Record<string, unknown> }).pluginConfig ?? {};
-    const config: { workspaceDir?: string; topK: number; debug: boolean } = {
+    const config: { workspaceDir?: string; topK: number; debug: boolean; stageTrigger?: Record<string, unknown>; continuationGuard?: Record<string, unknown> } = {
       workspaceDir: typeof pluginConfig.workspaceDir === "string" ? pluginConfig.workspaceDir : undefined,
       topK: typeof pluginConfig.topK === "number" ? (pluginConfig.topK as number) : 10,
       debug: pluginConfig.debug === true,
+      // v6.13.0 P1/P3: opt-in passthrough (absent ⇒ default off = v6.11.x equivalent)
+      stageTrigger: pluginConfig.stageTrigger && typeof pluginConfig.stageTrigger === "object"
+        ? pluginConfig.stageTrigger as Record<string, unknown> : undefined,
+      continuationGuard: pluginConfig.continuationGuard && typeof pluginConfig.continuationGuard === "object"
+        ? pluginConfig.continuationGuard as Record<string, unknown> : undefined,
     };
 
     try {
