@@ -83,16 +83,33 @@ const MAX_SESSIONS = 500;
 /** T3: rotate the JSONL when it exceeds this size (single-level .1) */
 const PERSIST_ROTATE_BYTES = 512 * 1024;
 
-/** Three-section schema heads — stripped before screening so the schema
- *  itself (literal "Next Action:") never swallows the missing-% counters. */
-const SECTION_HEAD_RE = /(?:Recorded Findings|Workspace State|Next Action):/g;
+/**
+ * OBS-3 (v6.13.0): fixed, author-controlled summary scaffolding, stripped before
+ * keyword screening. Screening must see *content* only — the template's own
+ * words are not evidence. Covers both schemas plus the shared head label.
+ */
+export const SUMMARY_SCAFFOLD_FRAGMENTS = [
+  "Continue with the current task using the remaining recent context below.", // engine.ts legacy tail (contains "continue")
+  "Recorded Findings:", "Workspace State:", "Next Action:",                   // semantic-compressor three-section heads
+  "[Compacted History",                                                       // head label (both schemas)
+] as const;
 
-function scrubSectionHeads(text: string): string {
-  return text.replace(SECTION_HEAD_RE, " ");
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const SUMMARY_SCAFFOLD_RE = new RegExp(
+  SUMMARY_SCAFFOLD_FRAGMENTS.map(escapeRegExp).join("|"),
+  "g",
+);
+
+/** Strip fixed template scaffolding; user/agent content is never touched. */
+export function stripSummaryScaffold(text: string): string {
+  return text.replace(SUMMARY_SCAFFOLD_RE, " ");
 }
 
 function matchesAnyKeyword(text: string, keywords: readonly string[]): boolean {
-  const lower = scrubSectionHeads(text).toLowerCase();
+  const lower = stripSummaryScaffold(text).toLowerCase();
   return keywords.some((k) => lower.includes(k));
 }
 
