@@ -1,5 +1,29 @@
 # Changelog
 
+## [6.13.0] - 2026-10-09
+
+### Added
+
+- **P1 —— 阶段进度触发（`StageProgressTrigger`）**：boundary-weighted 压缩阈值。宿主提供的阶段迁移（非空 A→B）标记安全压缩点；`adjustThreshold` **每次评估即消费**该边界（钉死项：错失 floor 的边界不在下一阶段补用），带 `minTokens` floor 与单一重标定面（W3 预留）。默认 **off** → 关闭态与 v6.11.x 字节等价。
+- **P3 —— continuation 守卫（`ContinuationGuard`）**：压缩后窗口守卫，三个纯函数基础检测器（redo-loop / refetch-summarized / plan-restatement），warn-only sidecar；构造参数 `detectors[]` = v6.14.0 W4 扩展位；单趟解析备忘；`windowTurns` 到期自动 disarm。
+- **CI `perf` 通道接入 P1/P3 夹具**（`ci.yml` perf job，仍**仅 `workflow_dispatch`**）：`tests/performance/p13-paired-overhead-benchmark.mjs` —— A existing / Boff default / Bon armed 配对 CPU 采样 + 噪声地板 + amortized(on) 口径，数值落 job summary。
+- **CX-20 —— 每仓独立 gates 槽位**：`.githooks/pre-push` 改读 `~/.openclaw/gates/<repo>.json`（legacy 共享 `gates.json` 保留为读回退并打印迁移提示；`OPENCLAW_GATES_FILE` 仍显式优先）；新增 `scripts/migrate-gates.sh` 与 151 行单测。修复 2026-10-07 多仓并发发布互踩槽位的真实事故。
+
+### Fixed
+
+- **OBS-3 —— `stripSummaryScaffold` 单点口径**：legacy 摘要尾句 `[Compacted History …] Continue with the current task …` 命中 `continue` 关键词 → `missingNext` **结构性假阴性**（旧行为 0% 计入）。现以固定、作者可控的脚手架子句统一剥离，**P4 metrics 与 P3 detectors 共用同一筛查定义**。核对：legacy 尾句 → 计入 100%；三段式**空值** → 计入 100%；三段式有值 → 0%；用户内容含关键词 → 不被剥离（命中）。
+
+### Notes
+
+- **性能（CI 权威口径，run `37898544346`，loadavg 1.44 干净机）**：发货默认档 Boff vs A **−0.21%（PASS）**；armed 摊薄 **0.29% ≪ 2% 预算（PASS）**；armed 原始 4.75% **< 本 run 噪声地板 6.46%**（不可判，以摊薄口径为准，§6.5 条件本就按此设计）。
+- **§6.5 旧基准如实附记**：同 run 旧基准 delta **4.53% vs 预算 <2%（OVER）**——系 v6.11/v6.12 既有特性，**与本批无关**；「2% 硬门」语义问题登记待 Peter 裁（不属 v6.13.0 判据）。
+- **P5 面零实现**（与本批裁定一致，独立单排后）；W1~W6 零实现，W3 仅注释声明「v6.14.0 回填复标」。
+- 本批 `ctx_compact` / `ctx_build` / `ctx_inject` 签名不变；默认配置下 engine 输出与 v6.11.x **字节等价**（golden `v6.10.4` fixture 复验 14 passed）。
+
+### Tests
+
+- 114 files / **1400 passed, 0 failed, 5 skipped**；`tsc --noEmit` clean；本批 +22 单测（钉死项同轮失效、OBS-3 两条件、窗口过期、W4 注入）；**零新依赖**（`package.json` / lock 依赖 diff 0 行）。
+
 ## [6.12.0] - 2026-10-07
 
 ### Added
