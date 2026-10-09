@@ -4,8 +4,9 @@
 # Enforces at process level what the protocol enforces by convention:
 #   - push to refs/heads/main: requires a PASS TEST acceptance receipt in
 #     inbox/inbox-results/ AND a Peter APPROVED release record in
-#     inbox/inbox-plan/ or inbox/inbox-release/ (artifact separation — one
-#     file may not satisfy both), each dated no earlier than the batch:
+#     inbox/inbox-release/ ONLY (approval = RELEASE artifact — single
+#     canonical dir, v6.13.1; one file may not satisfy both), each dated no
+#     earlier than the batch:
 #     oldest commit in remote..local, or — on first push (remote = ZERO) —
 #     the oldest commit of the local branch.
 #   - push of refs/tags/v*: requires gates.json release-approval-gate with
