@@ -89,9 +89,11 @@ function writeResults(dir: string, withTest: boolean, withApproval: boolean): vo
     fs.writeFileSync(path.join(dir, "inbox/inbox-results/receipt-test-pass.md"), TEST_RECEIPT);
   }
   if (withApproval) {
-    fs.mkdirSync(path.join(dir, "inbox/inbox-plan"), { recursive: true });
+    // v6.13.1: approval artifacts are canonical ONLY in inbox/inbox-release/
+    // (the former inbox-plan scan surface was a bug — Peter 15:35 ruling).
+    fs.mkdirSync(path.join(dir, "inbox/inbox-release"), { recursive: true });
     const approvalName = "peter-release-approval-x.md";
-    fs.writeFileSync(path.join(dir, "inbox/inbox-plan", approvalName), PETER_APPROVAL);
+    fs.writeFileSync(path.join(dir, "inbox/inbox-release", approvalName), PETER_APPROVAL);
     // CX-9: approval docs are adjudication docs too — their own Refs
     // receipt is a policy obligation (clause 1: every stage response)
     fs.mkdirSync(path.join(dir, "inbox/inbox-results"), { recursive: true });
@@ -188,7 +190,7 @@ describe("pre-push stage-gate hook", () => {
     const old = new Date(Date.now() - 3600_000);
     for (const f of [
       "inbox/inbox-results/receipt-test-pass.md",
-      "inbox/inbox-plan/peter-release-approval-x.md",
+      "inbox/inbox-release/peter-release-approval-x.md",
     ]) {
       fs.utimesSync(path.join(repo, f), old, old);
     }
@@ -198,7 +200,7 @@ describe("pre-push stage-gate hook", () => {
 
     // fresh receipts → allowed
     fs.utimesSync(path.join(repo, "inbox/inbox-results/receipt-test-pass.md"), new Date(), new Date());
-    fs.utimesSync(path.join(repo, "inbox/inbox-plan/peter-release-approval-x.md"), new Date(), new Date());
+    fs.utimesSync(path.join(repo, "inbox/inbox-release/peter-release-approval-x.md"), new Date(), new Date());
     const ok = runHook(repo, head(repo), "refs/heads/main", first);
     expect(ok.code).toBe(0);
   });
@@ -313,7 +315,7 @@ describe("pre-push stage-gate hook", () => {
     const old = new Date("2020-01-01T00:00:00Z");
     for (const f of [
       "inbox/inbox-results/receipt-test-pass.md",
-      "inbox/inbox-plan/peter-release-approval-x.md",
+      "inbox/inbox-release/peter-release-approval-x.md",
     ]) {
       fs.utimesSync(path.join(repo, f), old, old);
     }
@@ -353,7 +355,7 @@ describe("pre-push stage-gate hook", () => {
     // it (structural dual-claim prevention makes that check redundant and it
     // false-positived on receipts citing gate output). Security outcome is
     // unchanged: push is still rejected because a real Peter approval record
-    // (in inbox-plan/ or inbox-release/) is still missing.
+    // (in inbox/inbox-release/ — the single canonical dir, v6.13.1) is missing.
     expect(r.code).not.toBe(0);
     expect(r.out).not.toContain("TEST acceptance receipt");
     expect(r.out).toContain("Peter RELEASE APPROVED");
@@ -388,11 +390,11 @@ describe("pre-push stage-gate hook", () => {
     // TEST receipt only — the QUOTING approval below must be the ONE that
     // satisfies requirement 2 (otherwise the case cannot detect exclusion)
     writeResults(repo, true, false);
-    fs.mkdirSync(path.join(repo, "inbox/inbox-plan"), { recursive: true });
+    fs.mkdirSync(path.join(repo, "inbox/inbox-release"), { recursive: true });
     // a genuine Peter approval that QUOTES the TEST receipt header in prose —
     // under the old content rule `Stage.*TEST` anywhere excluded it (false kill)
     fs.writeFileSync(
-      path.join(repo, "inbox/inbox-plan/peter-approval-quoted.md"),
+      path.join(repo, "inbox/inbox-release/peter-approval-quoted.md"),
       [
         "# Peter Release Approval — v9.9.9",
         "- **Approver**: Peter",
@@ -412,6 +414,29 @@ describe("pre-push stage-gate hook", () => {
 
   it("CX-4: separated artifacts across the right directories still allow", () => {
     writeResults(repo, true, true);
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("stage-gate OK: main");
+  });
+
+  // --- v6.13.1: approval scan surface narrowed to inbox/inbox-release/ --------
+  it("v6.13.1: valid approval in inbox-plan (drift dir) is REJECTED — single canonical", () => {
+    // TEST receipt present; a genuine Peter approval placed in the DRIFT dir
+    // (inbox-plan). Before v6.13.1 the wide "plan or release" scan accepted
+    // this; after narrowing it must NOT satisfy requirement 2.
+    writeResults(repo, true, false);
+    fs.mkdirSync(path.join(repo, "inbox/inbox-plan"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "inbox/inbox-plan/peter-release-approval-drift.md"), PETER_APPROVAL);
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("Peter RELEASE APPROVED");
+    expect(r.out).not.toContain("stage-gate OK");
+  });
+
+  it("v6.13.1: same approval in inbox-release (canonical) is ACCEPTED", () => {
+    writeResults(repo, true, false);
+    fs.mkdirSync(path.join(repo, "inbox/inbox-release"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "inbox/inbox-release/peter-release-approval-drift.md"), PETER_APPROVAL);
     const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
     expect(r.code).toBe(0);
     expect(r.out).toContain("stage-gate OK: main");

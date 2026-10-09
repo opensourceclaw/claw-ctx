@@ -120,9 +120,10 @@ describe("audit-stage-gate.sh --mode=client rc parity with hook (CX-16)", () => 
       );
     }
     if (withApproval) {
-      fs.mkdirSync(path.join(repo, "inbox/inbox-plan"), { recursive: true });
+      // v6.13.1: canonical approval dir = inbox/inbox-release/ only.
+      fs.mkdirSync(path.join(repo, "inbox/inbox-release"), { recursive: true });
       fs.writeFileSync(
-        path.join(repo, "inbox/inbox-plan/peter-approval-x.md"),
+        path.join(repo, "inbox/inbox-release/peter-approval-x.md"),
         "# A\n- **Approver**: Peter\n- **Verdict**: APPROVED\n",
       );
       fs.mkdirSync(path.join(repo, "inbox/inbox-results"), { recursive: true });
@@ -158,4 +159,30 @@ describe("audit-stage-gate.sh --mode=client rc parity with hook (CX-16)", () => 
       expect([0, 1]).toContain(r.hook);
     });
   }
+
+  it("v6.13.1: approval in inbox-plan (drift dir) — both paths reject (parity)", () => {
+    if (repo) fs.rmSync(repo, { recursive: true, force: true });
+    repo = makeClientRepo();
+    // TEST receipt present; approval placed in the DRIFT dir (inbox-plan)
+    fs.mkdirSync(path.join(repo, "inbox/inbox-results"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "inbox/inbox-results/r.md"), "**Status**: passed\n**Stage**: TEST\n");
+    fs.mkdirSync(path.join(repo, "inbox/inbox-plan"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repo, "inbox/inbox-plan/peter-approval-drift.md"),
+      "# A\n- **Approver**: Peter\n- **Verdict**: APPROVED\n",
+    );
+    const r = runBoth();
+    expect(r.hook).not.toBe(0);
+    expect(r.audit).toBe(r.hook);
+    expect(r.out).toContain("Peter RELEASE APPROVED");
+  });
+
+  it("v6.13.1: client mode with local == remote is a no-op (EXIT 0)", () => {
+    if (repo) fs.rmSync(repo, { recursive: true, force: true });
+    repo = makeClientRepo();
+    const sha = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf-8" }).stdout.trim();
+    const r = runAudit(repo, ["--mode=client", `--local=${sha}`, `--remote=${sha}`]);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("no-op (nothing to push)");
+  });
 });

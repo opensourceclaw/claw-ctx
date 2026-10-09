@@ -116,6 +116,17 @@ audit_client() {
     return 1
   fi
 
+  # v6.13.1 (Karen release-observation 3): the real hook skips validation when
+  # there is nothing to push (local == remote, the pre-push stdin loop
+  # `continue`s). Re-running this script manually in client mode after a
+  # successful push (local == remote) degrades the batch window to wstart=0 and
+  # would misreport historical v6.11/6.12-era gaps as red. Mirror the hook:
+  # explicit no-op, zero evaluation (forensics must not misread it as a fail).
+  if [ -n "$remote_sha" ] && ! is_zero_sha "$remote_sha" && [ "$local_sha" = "$remote_sha" ]; then
+    echo "[pre-push] stage-gate no-op (nothing to push)" >&2
+    return 0
+  fi
+
   if is_zero_sha "$remote_sha"; then
     # CX-3: first push — window starts at the OLDEST commit of the local
     # branch, so receipts from another repo's era cannot pass wholesale.
@@ -166,14 +177,15 @@ audit_client() {
   - missing: TEST acceptance receipt (Status PASS) in inbox/inbox-results/ newer than batch start ($(date -u -r "$wstart" 2>/dev/null || date -u -d "@$wstart" 2>/dev/null || echo "t=$wstart"))"
 
   # requirement 2: Peter RELEASE APPROVED record within the batch window.
-  # CX-4: lives only in inbox/inbox-plan/ + inbox/inbox-release/.
+  # CX-4 + v6.13.1: lives ONLY in inbox/inbox-release/ (single canonical dir;
+  # the former "plan or release" wide scan was a bug — approval = RELEASE artifact).
   # CX-14 (actor signature, symmetric to CX-8): dual-claim exclusion keys on
   # the TEST receipt's AUTHOR signature (From: TestAgent/Edith), not on the
   # literal "Stage.*TEST" anywhere — an approval that merely QUOTES its
   # underlying TEST receipt stays valid; a file signed by BOTH actors is
   # still excluded (true dual-claim).
   approval_ok=0
-  for d in "$ROOT/inbox/inbox-plan" "$ROOT/inbox/inbox-release"; do
+  for d in "$ROOT/inbox/inbox-release"; do
     [ -d "$d" ] || continue
     for f in "$d"/*.md; do
       [ -e "$f" ] || continue
@@ -188,7 +200,7 @@ audit_client() {
     done
   done
   [ "$approval_ok" -eq 1 ] || missing="$missing
-  - missing: Peter RELEASE APPROVED record (Approver: Peter + APPROVED, in inbox-plan/ or inbox-release/) newer than batch start"
+  - missing: Peter RELEASE APPROVED record (Approver: Peter + APPROVED, in inbox-release/) newer than batch start"
 
   # requirement 3 (CX-9): every adjudication/approval doc that entered the
   # batch window must have a Refs: receipt in inbox-inbox-results/.
