@@ -1,5 +1,16 @@
 # Changelog
 
+## [6.13.2] - 2026-10-10
+
+### Fixed
+
+- **`mtime_of` GNU 可移植化（`.githooks/pre-push` + `tools/audit-stage-gate.sh`）**：旧写法 BSD-first 的 `m=$(stat -f %m …) || m=$(stat -c %Y …)` 在 GNU stat 下**永不触发回退**——`stat -f %m` 退 0 并吐出非数字，垃圾值进入批次窗口的整数比较（`-ge`/`-lt`）→ 报 `integer expression expected` → 在 ubuntu 上 **fail-closed 误拒**。现改为 GNU-first（`stat -c %Y` 优先）+ 数字守卫 `case "$m" in ''|*[!0-9]*) m=0`，**只改取值侧，窗口断言语义不变**；零新依赖、POSIX sh。（devclaw v10.3.2 同型热修 `52363ad1` 的移植）
+
+### Tests
+
+- 门禁两套测试 **61 passed**（本批 +5 判例）：忠实 GNU 垫片（真实 mtime → 窗口数学不变）+ 非数字垫片探测（垃圾 → 0，无 shell 整数报错）。判别力复证：临时回退旧码 → 4 failed（4 条 shim 判例转红并复现 `integer expression expected`），完整还原后复归 61 passed。
+- 全量 **114 files / 1409 passed / 0 failed / 5 skipped**；`tsc --noEmit` clean；零新依赖。
+
 ## [6.13.1] - 2026-10-09
 
 ### Fixed
