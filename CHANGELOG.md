@@ -1,5 +1,16 @@
 # Changelog
 
+## [6.13.3] - 2026-10-10
+
+### Fixed
+
+- **dependabot #64（HIGH）——`@modelcontextprotocol/sdk` 版本 floor**：MCP TypeScript SDK 的 OAuth client 可能向由 MCP server 选定的授权服务器发送凭据（GHSA-6qxp-vccf-f47h，影响 `1.12.0 – 1.30.1`）。本仓仅**经 dev 域传递链**暴露（`openclaw` / `@earendil-works/pi-agent-core` → `@google/genai` → sdk@1.30.0；运行时 `dependencies` 仅 `js-tiktoken`，`npm audit --omit=dev` 修复前即为 0）。处置：`package.json` 新增 **floor 语义 override** `"@modelcontextprotocol/sdk": ">=1.31.0"`（**不锁上限**），确定性再生 lock → 全部解析到 **`1.32.1`**（4 个解析点 deduped/overridden，无逃逸）。修复后 `npm audit` 全量 **0**。零运行时依赖改动。
+- **OBS-V6132-1 判例加强（LOW，判例强度）**：v6.13.2 的 pre-push 判例「faithful GNU shim — stale receipts still rejected」在原（未修）码下也绿——旧码经 shell 整数报错路径拒绝，恰好得出与修复态相同的拒绝理由，**无鉴别力**。现保留原断言并加一条只在修复后成立的读数断言 `expect(r.out).not.toContain("integer expression expected")`；revert-and-restore 复证：回退旧 `mtime_of` 该判例转红、恢复后复绿。
+
+### Tests
+
+- 判例为**原地加强**（非新增），全量 **114 files / 1409 passed / 0 failed / 5 skipped**（与 v6.13.2 基线持平）；`npm run build` ✓、`tsc --noEmit` clean、`audit-stage-gate.sh --mode=repo` EXIT=0；`npm audit` 与 `npm audit --omit=dev` 均 **0**；零运行时依赖改动。
+
 ## [6.13.2] - 2026-10-10
 
 ### Fixed
