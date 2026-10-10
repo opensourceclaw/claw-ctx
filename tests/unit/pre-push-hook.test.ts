@@ -777,6 +777,11 @@ describe("pre-push stage-gate hook", () => {
     });
     expect(r.code).not.toBe(0);
     expect(r.out).toContain("newer than batch start");
+    // OBS-V6132-1 discrimination: the rejection must come from the window
+    // arithmetic reading the REAL (old) mtime — not from the old code path
+    // where GNU's garbage "?" hit the integer comparison and shell-errored.
+    // This assertion is red on the pre-fix mtime_of, green only when fixed.
+    expect(r.out).not.toContain("integer expression expected");
   });
 
   it("v6.13.2: numeric guard — non-numeric stat output → fail-closed, no integer error", () => {

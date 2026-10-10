@@ -74,5 +74,8 @@
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "^0.84.2",
     "openclaw": ">=2026.3.28"
+  },
+  "overrides": {
+    "@modelcontextprotocol/sdk": ">=1.31.0"
   }
 }
