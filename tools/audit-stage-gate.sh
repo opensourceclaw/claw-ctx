@@ -41,8 +41,9 @@ is_zero_sha() {
 }
 
 mtime_of() {
-  m=$(stat -f %m "$1" 2>/dev/null) || m=$(stat -c %Y "$1" 2>/dev/null) || m=0
-  echo "${m:-0}"
+  m=$(stat -c %Y "$1" 2>/dev/null) || m=$(stat -f %m "$1" 2>/dev/null) || m=0
+  case "$m" in ''|*[!0-9]*) m=0 ;; esac
+  echo "$m"
 }
 
 # ---------------------------------------------------------------------------

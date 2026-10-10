@@ -104,6 +104,39 @@ function writeResults(dir: string, withTest: boolean, withApproval: boolean): vo
   }
 }
 
+// v6.13.2 — GNU-portability probe for mtime_of() (hook delegates the batch
+// audit to tools/audit-stage-gate.sh, which is where mtime_of is consumed).
+// A shim `stat` first on PATH simulates GNU semantics:
+//   faithful: `-c %Y` → real mtime (numeric); `-f %m` → non-numeric + exit 0.
+//   nonnumeric: BOTH forms emit non-numeric + exit 0 (probes the numeric guard).
+function makeGnuStatShim(dir: string, mode: "faithful" | "nonnumeric"): string {
+  const shimDir = path.join(dir, "gnu-stat-shim");
+  fs.mkdirSync(shimDir, { recursive: true });
+  const lines =
+    mode === "faithful"
+      ? [
+          "#!/bin/sh",
+          "# faithful GNU stat shim: -c %Y -> real mtime; -f %m -> non-numeric + exit 0",
+          'if [ "$1" = "-c" ] && [ "$2" = "%Y" ]; then',
+          '  m=$(/usr/bin/stat -c %Y "$3" 2>/dev/null)',
+          '  case "$m" in ""|*[!0-9]*) m=$(/usr/bin/stat -f %m "$3" 2>/dev/null) ;; esac',
+          '  case "$m" in ""|*[!0-9]*) m=0 ;; esac',
+          "  printf '%s\\n' \"$m\"; exit 0",
+          "fi",
+          'if [ "$1" = "-f" ]; then printf "?\\n"; exit 0; fi',
+          'exec /usr/bin/stat "$@"',
+        ]
+      : [
+          "#!/bin/sh",
+          "# broken GNU stat shim: BOTH forms emit non-numeric + exit 0 (guard probe)",
+          'printf "?\\n"; exit 0',
+        ];
+  const p = path.join(shimDir, "stat");
+  fs.writeFileSync(p, lines.join("\n") + "\n");
+  fs.chmodSync(p, 0o755);
+  return shimDir;
+}
+
 const GATES_OK = JSON.stringify({
   gates: {
     "release-approval-gate": {
@@ -712,5 +745,48 @@ describe("pre-push stage-gate hook", () => {
     const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
     expect(r.code).toBe(0);
     expect(r.out).toContain("stage-gate OK: main");
+  });
+
+  // --- v6.13.2: mtime_of GNU-portability (same bug class as devclaw v10.3.2) --
+  // The batch audit's window assertion `[ "$(mtime_of f)" -ge "$wstart" ]` must
+  // resolve a real epoch under GNU stat semantics. Old BSD-first mtime_of() let
+  // GNU's `stat -f %m` garbage ("?" exit 0) reach the integer comparison.
+  it("v6.13.2: faithful GNU shim — fresh compliant push allowed (real mtime, window intact)", () => {
+    writeResults(repo, true, true);
+    const shim = makeGnuStatShim(repo, "faithful");
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO, {
+      PATH: `${shim}:${process.env.PATH}`,
+    });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("stage-gate OK: main");
+    expect(r.out).not.toContain("integer expression expected");
+  });
+
+  it("v6.13.2: faithful GNU shim — stale receipts still rejected (window math intact)", () => {
+    writeResults(repo, true, true);
+    const old = new Date("2020-01-01T00:00:00Z");
+    for (const f of [
+      "inbox/inbox-results/receipt-test-pass.md",
+      "inbox/inbox-release/peter-release-approval-x.md",
+    ]) {
+      fs.utimesSync(path.join(repo, f), old, old);
+    }
+    const shim = makeGnuStatShim(repo, "faithful");
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO, {
+      PATH: `${shim}:${process.env.PATH}`,
+    });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("newer than batch start");
+  });
+
+  it("v6.13.2: numeric guard — non-numeric stat output → fail-closed, no integer error", () => {
+    writeResults(repo, true, true);
+    const shim = makeGnuStatShim(repo, "nonnumeric");
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO, {
+      PATH: `${shim}:${process.env.PATH}`,
+    });
+    expect(r.code).not.toBe(0);
+    expect(r.out).not.toContain("integer expression expected");
+    expect(r.out).toContain("PUSH REJECTED");
   });
 });

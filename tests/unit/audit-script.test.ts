@@ -37,9 +37,52 @@ function makeFixtureRepo(): string {
   return dir;
 }
 
-function runAudit(cwd: string, args: string[]): { code: number | null; out: string } {
-  const r = spawnSync("sh", [SCRIPT, ...args], { cwd, encoding: "utf-8" });
+function runAudit(
+  cwd: string,
+  args: string[],
+  env: Record<string, string> = {},
+): { code: number | null; out: string } {
+  const r = spawnSync("sh", [SCRIPT, ...args], {
+    cwd,
+    encoding: "utf-8",
+    env: { ...process.env, ...env },
+  });
   return { code: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+}
+
+// v6.13.2 — GNU-portability probe for mtime_of(). A shim `stat` placed first on
+// PATH simulates the GNU semantics that break the old BSD-first mtime_of():
+//   faithful: `-c %Y` → real mtime (numeric); `-f %m` → non-numeric + exit 0
+//             (GNU `stat -f` is filesystem status — exit 0 with a garbage value,
+//              so a BSD-first `||` fallback never fires).
+//   nonnumeric: BOTH forms emit non-numeric + exit 0 (probes the numeric guard).
+// The real-mtime branch is host-portable (GNU `-c %Y` or BSD `-f %m`).
+function makeGnuStatShim(dir: string, mode: "faithful" | "nonnumeric"): string {
+  const shimDir = path.join(dir, "gnu-stat-shim");
+  fs.mkdirSync(shimDir, { recursive: true });
+  const lines =
+    mode === "faithful"
+      ? [
+          "#!/bin/sh",
+          "# faithful GNU stat shim: -c %Y -> real mtime; -f %m -> non-numeric + exit 0",
+          'if [ "$1" = "-c" ] && [ "$2" = "%Y" ]; then',
+          '  m=$(/usr/bin/stat -c %Y "$3" 2>/dev/null)',
+          '  case "$m" in ""|*[!0-9]*) m=$(/usr/bin/stat -f %m "$3" 2>/dev/null) ;; esac',
+          '  case "$m" in ""|*[!0-9]*) m=0 ;; esac',
+          "  printf '%s\\n' \"$m\"; exit 0",
+          "fi",
+          'if [ "$1" = "-f" ]; then printf "?\\n"; exit 0; fi',
+          'exec /usr/bin/stat "$@"',
+        ]
+      : [
+          "#!/bin/sh",
+          "# broken GNU stat shim: BOTH forms emit non-numeric + exit 0 (guard probe)",
+          'printf "?\\n"; exit 0',
+        ];
+  const p = path.join(shimDir, "stat");
+  fs.writeFileSync(p, lines.join("\n") + "\n");
+  fs.chmodSync(p, 0o755);
+  return shimDir;
 }
 
 describe("audit-stage-gate.sh --mode=repo (CX-16)", () => {
@@ -184,5 +227,40 @@ describe("audit-stage-gate.sh --mode=client rc parity with hook (CX-16)", () => 
     const r = runAudit(repo, ["--mode=client", `--local=${sha}`, `--remote=${sha}`]);
     expect(r.code).toBe(0);
     expect(r.out).toContain("no-op (nothing to push)");
+  });
+
+  // --- v6.13.2: mtime_of GNU-portability (same bug class as devclaw v10.3.2) --
+  // The window assertion `[ "$(mtime_of f)" -ge "$wstart" ]` must resolve a
+  // real epoch under GNU stat semantics. The old BSD-first mtime_of() let GNU's
+  // `stat -f %m` garbage ("?" exit 0) reach the integer comparison → error/false
+  // reject. Fix = GNU-first + numeric guard; only the value side changed.
+  it("v6.13.2: faithful GNU shim — fresh compliant push is allowed (real mtime, window intact)", () => {
+    if (repo) fs.rmSync(repo, { recursive: true, force: true });
+    repo = makeClientRepo();
+    writeFixtures(true, true);
+    const shim = makeGnuStatShim(repo, "faithful");
+    const sha = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf-8" }).stdout.trim();
+    const r = runAudit(repo, ["--mode=client", `--local=${sha}`, `--remote=${ZERO}`], {
+      PATH: `${shim}:${process.env.PATH}`,
+    });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("stage-gate OK: main");
+    expect(r.out).not.toContain("integer expression expected");
+  });
+
+  it("v6.13.2: numeric guard — non-numeric stat output → fail-closed, no integer error", () => {
+    if (repo) fs.rmSync(repo, { recursive: true, force: true });
+    repo = makeClientRepo();
+    writeFixtures(true, true);
+    const shim = makeGnuStatShim(repo, "nonnumeric");
+    const sha = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf-8" }).stdout.trim();
+    const r = runAudit(repo, ["--mode=client", `--local=${sha}`, `--remote=${ZERO}`], {
+      PATH: `${shim}:${process.env.PATH}`,
+    });
+    // guard maps garbage → 0 → receipt appears older than the window → reject,
+    // but without the old "integer expression expected" shell error.
+    expect(r.code).not.toBe(0);
+    expect(r.out).not.toContain("integer expression expected");
+    expect(r.out).toContain("PUSH REJECTED");
   });
 });
