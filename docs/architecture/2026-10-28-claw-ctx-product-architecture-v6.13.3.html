@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>claw-ctx Product Architecture</title>
+<style>
+  body { margin: 0; padding: 24px; background: #ffffff; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 4px; color: #1a1a2e; }
+  p.sub { font-size: 12px; color: #6b7280; margin: 0 0 20px; }
+  svg { background: #ffffff; }
+</style>
+</head>
+<body>
+<h1>claw-ctx v6.13.3 — 组件产品架构（家族四层拓扑 · 2026-10-28）</h1>
+<p class="sub">一份能力实现 · 多个标准消费面 · 信任随 devclaw-kernel 迁移（ADR-205） · 宿主实测基线：devclaw v10.9.0（2026-10-27）</p>
+
+<svg width="1180" height="1000" viewBox="0 0 1180 1000" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563"/></marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/></marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#059669"/></marker>
+  </defs>
+
+  <!-- 连接线 -->
+  <path d="M 590 200 L 590 248" fill="none" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="610" y="230" font-size="11" fill="#4b5563">invoke tools（3 经注册表路由）</text>
+  <path d="M 590 560 L 590 608" fill="none" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="610" y="590" font-size="11" fill="#4b5563">api.registerTool / hooks（manifest 协议）</text>
+  <path d="M 590 780 L 590 828" fill="none" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="610" y="810" font-size="11" fill="#4b5563">model routing</text>
+  <path d="M 200 200 L 200 700 L 330 700" fill="none" stroke="#2563eb" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrow-blue)"/>
+  <text x="120" y="560" font-size="11" fill="#2563eb" transform="rotate(-90 120 560)">before_tool_call hook · role gate 强制拦截</text>
+
+  <!-- ═══ Layer 3 · devclaw 消费面 ═══ -->
+  <rect x="40" y="30" width="1100" height="170" rx="10" fill="#eef2ff" stroke="#4338ca" stroke-width="2"/>
+  <text x="60" y="58" font-size="15" font-weight="bold" fill="#312e81">Layer 3 · devclaw v10.9.0 — 软件工程治理 Harness（9-stage · 27 substages · Run Ledger · Trust Without Borders）</text>
+  <rect x="60" y="76" width="530" height="106" rx="6" fill="#ffffff" stroke="#818cf8"/>
+  <text x="76" y="100" font-size="12" font-weight="bold" fill="#312e81">本组件在 devclaw 的消费面</text>
+  <text x="76" y="122" font-size="11" fill="#3730a3">devclaw contextEngine slot</text>
+  <text x="76" y="142" font-size="11" fill="#3730a3">各 pipeline stage 上下文构建 · 治理注入承载面</text>
+  <text x="76" y="166" font-size="9" fill="#6b7280">门禁：M1 + commit-msg + post-commit 三层闭环（v10.9.0）· 验收回执 = 提交授权凭据（Plan B）</text>
+  <rect x="606" y="76" width="514" height="106" rx="6" fill="#ffffff" stroke="#818cf8"/>
+  <text x="622" y="100" font-size="12" font-weight="bold" fill="#312e81">家族关系（10 组件 · 一份实现 N 个消费面）</text>
+  <text x="622" y="122" font-size="9" fill="#3730a3">claw-mem · claw-cog · claw-rsi · claw-gov · claw-obs · claw-rl · claw-sec · claw-eva · claw-graph</text>
+  <text x="622" y="142" font-size="11" fill="#3730a3">读 claw-mem 记忆构建上下文；注入 claw-gov 治理语义</text>
+  <text x="622" y="166" font-size="9" fill="#6b7280">严禁 fork：三面共享同一业务路径，行为以家族契约为唯一真值（ADR-204）</text>
+
+  <!-- ═══ Layer 2 · 本组件 ═══ -->
+  <rect x="40" y="248" width="1100" height="312" rx="10" fill="#f0fdf4" stroke="#059669" stroke-width="2"/>
+  <text x="60" y="278" font-size="15" font-weight="bold" fill="#064e3b">Layer 2 · claw-ctx v6.13.3 — slot: contextEngine · 3 tools（统一插件协议 · ADR-402 统一降级）</text>
+  <text x="60" y="298" font-size="11" fill="#047857">「管理智能体的注意力带宽」</text>
+
+  <rect x="60" y="316" width="530" height="196" rx="6" fill="#ffffff" stroke="#059669" stroke-width="2"/>
+  <text x="76" y="340" font-size="13" font-weight="bold" fill="#064e3b">能力与内部模块</text>
+    <text x="76" y="366" font-size="11" fill="#374151">· auto-compact 自动压缩</text>
+  <text x="76" y="386" font-size="11" fill="#374151">· drift-detector 上下文漂移检测</text>
+  <text x="76" y="406" font-size="11" fill="#374151">· confidence-gate 置信门</text>
+  <text x="76" y="426" font-size="11" fill="#374151">· v6.13：CX-20 gates 槽 + P1/P3 守卫</text>
+  <text x="76" y="446" font-size="11" fill="#374151">· governance 注入（宿主无关）</text>
+  <rect x="606" y="316" width="514" height="196" rx="6" fill="#ffffff" stroke="#059669" stroke-width="2"/>
+  <text x="622" y="340" font-size="13" font-weight="bold" fill="#064e3b">工具面（3 tools）</text>
+    <text x="622" y="366" font-size="11" fill="#92400e">ctx_compact / ctx_build / ctx_inject</text>
+  <text x="622" y="490" font-size="10" fill="#92400e">「管理智能体的注意力带宽」</text>
+
+  <text x="60" y="540" font-size="10" fill="#6b7280">组件版本为 2026-10-28 仓内实测（package.json）；降级守卫 ComponentHealthMonitor：&lt;3 失败降级 / &gt;=3 不可用 / 自动恢复</text>
+
+  <!-- ═══ Layer 1 · OpenClaw ═══ -->
+  <rect x="40" y="608" width="1100" height="172" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="60" y="636" font-size="15" font-weight="bold" fill="#1e3a8a">Layer 1 · OpenClaw（Agent Runtime · 内核与主板）</text>
+  <g font-size="11">
+    <rect x="60" y="652" width="255" height="80" rx="6" fill="#ffffff" stroke="#2563eb"/>
+    <text x="76" y="674" font-size="12" font-weight="bold" fill="#1e3a8a">插件协议总线</text>
+    <text x="76" y="690" fill="#374151">· openclaw.plugin.json manifest</text>
+    <text x="76" y="706" fill="#374151">· entry / contracts.tools / config</text>
+    <text x="76" y="722" fill="#374151">· definePluginEntry 统一入口</text>
+    <rect x="330" y="652" width="255" height="80" rx="6" fill="#ffffff" stroke="#2563eb"/>
+    <text x="346" y="674" font-size="12" font-weight="bold" fill="#1e3a8a">Hook 拦截层（治理执行点）</text>
+    <text x="346" y="690" fill="#374151">· before_tool_call（blocking）</text>
+    <text x="346" y="706" fill="#374151">· session_start · agent_turn_prepare</text>
+    <text x="346" y="722" fill="#374151">· role gate 挂载于此 = 程序级硬约束</text>
+    <rect x="600" y="652" width="255" height="80" rx="6" fill="#ffffff" stroke="#2563eb"/>
+    <text x="616" y="674" font-size="12" font-weight="bold" fill="#1e3a8a">工具注册/调用面</text>
+    <text x="616" y="690" fill="#374151">· api.registerTool 统一注册表</text>
+    <text x="616" y="706" fill="#374151">· AgentTool.execute(callId, params)</text>
+    <text x="616" y="722" fill="#374151">· 本组件 3 注册于此</text>
+    <rect x="870" y="652" width="250" height="80" rx="6" fill="#ffffff" stroke="#2563eb"/>
+    <text x="886" y="674" font-size="12" font-weight="bold" fill="#1e3a8a">Session/通道/模型路由</text>
+    <text x="886" y="690" fill="#374151">· 会话生命周期管理</text>
+    <text x="886" y="706" fill="#374151">· 多通道路由（webchat 等）</text>
+    <text x="886" y="722" fill="#374151">· model-agnostic 换脑不换体</text>
+  </g>
+
+  <!-- ═══ Layer 0 · LLM ═══ -->
+  <rect x="40" y="828" width="1100" height="110" rx="10" fill="#f9fafb" stroke="#6b7280" stroke-width="1.5"/>
+  <text x="60" y="856" font-size="14" font-weight="bold" fill="#374151">Layer 0 · 大模型底座（model-agnostic）</text>
+  <g font-size="11" fill="#4b5563">
+    <rect x="60" y="872" width="150" height="40" rx="6" fill="#ffffff" stroke="#9ca3af"/><text x="105" y="896" text-anchor="middle">deepseek</text>
+    <rect x="230" y="872" width="150" height="40" rx="6" fill="#ffffff" stroke="#9ca3af"/><text x="275" y="896" text-anchor="middle">glm</text>
+    <rect x="400" y="872" width="150" height="40" rx="6" fill="#ffffff" stroke="#9ca3af"/><text x="435" y="896" text-anchor="middle">可替换 LLM</text>
+    <rect x="570" y="872" width="150" height="40" rx="6" fill="#ffffff" stroke="#9ca3af"/><text x="605" y="896" text-anchor="middle">（模型无关）</text>
+  </g>
+  <text x="760" y="896" font-size="10" fill="#6b7280">Harness Engineering：Agent = Model + Harness；</text>
+  <text x="760" y="912" font-size="10" fill="#6b7280">Guides(前馈) + Sensors(反馈)。</text>
+
+  <rect x="40" y="956" width="1100" height="24" fill="none"/>
+  <text x="60" y="972" font-size="10" fill="#4b5563">── 工具调用/注册 ── ··· 治理拦截（role gate @ before_tool_call，门禁永不被模型中介） · 家族契约：claw-contracts（ADR-204） · 生成于 2026-10-28</text>
+</svg>
+</body>
+</html>
