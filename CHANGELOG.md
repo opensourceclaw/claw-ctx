@@ -1,5 +1,28 @@
 # Changelog
 
+## [6.14.0] - 2026-11-03
+
+### Added
+
+- **reset-boundary continuity handoff（新能力）**：2026-11-03 连续性事故的根因是 OpenClaw 每日 session reset 截断 live window，且 reset 后没有任何 re-injection（该路径不经过 compaction）。新增 host `before_reset` hook 捕获 session summary；冷启动 `assemble()` 惰性 bootstrap resume history，使 `[Session History]` 在 reset/restart 后仍非空（`1d523c7`）。
+- **handoff 标识账本**：additive payload 新增 pending files / ids（`task-` / `pipeline-` / `回执-` / `receipt-` 前缀与文件扩展名 token，各 20 上限）与 recentUserMessages（最近 3 条用户消息、各 300 字符）；full / compact / default 三条 reinjection 路径统一渲染为 `Open items:`；旧 payload 无新字段时输出不变（`a598eeb`）。
+
+### Fixed
+
+- **标识截断方向**：抽取改为 newest-first，20 上限保留最近工作的标识；共享 `openItemsOf()` 做跨 files/ids 精确去重与后缀吸收（更长形式优先），三条路径口径一致；`MEMORY.md` 运行时模板加入 `.gitignore`（`2f167c4`）。
+- **负载型 perf 假红**：8 个 performance describe 全部改为 sequential，阈值统一为实测峰值的 3× 余量；不引入 retry / skip / 软断言，受控实验确认真实回归仍会转红（`3c19b55`）。
+
+### Tests
+
+- 最终全量 **117 files / 1423 passed / 5 skipped / 0 failed**；Jarvis + Edith 合计 **5 轮连续全量 0 failed**。
+- `npm run build` ✓；`tsc --noEmit` 与 `tsc -p tsconfig.pi.json --noEmit` 均 0 error；`audit-stage-gate.sh --mode=repo` EXIT=0。
+
+### Notes
+
+- 已知边界：summary 为 topic-level（标识可能丢）；daily 自动 reset 是否触发 hook 仍需 gateway 重启后的活体验证；标识抽取仅覆盖前缀形状 token；单条消息内部仍按自然顺序截断；2–3× 的 perf 回归可能落入 3× 阈值盲区。
+- `ctx_compact` / `ctx_build` / `ctx_inject` 签名不变；新增字段为 additive，旧 payload 与旧输出保持兼容。
+- **安全观察（非本批引入）**：运行时依赖未变（仅 `js-tiktoken`）；全量 `npm audit` 报告 25 个 dev-only advisories（`openclaw` / `vitest` / `eslint` / `typedoc` 链），不随发布包分发。`npm audit --omit=dev` 因 npm quick audit endpoint 退役未能取得结果，不将其误记为 0。
+
 ## [6.13.3] - 2026-10-10
 
 ### Fixed
