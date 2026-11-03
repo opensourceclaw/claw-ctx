@@ -43,9 +43,11 @@
  */
 
 import {
+  CLAIM_SPAN_MAX_CHARS,
   CONFIDENCE_FLOOR,
   DIGEST_MAX_TOKENS,
   DIGEST_PREFIX,
+  DIGEST_PREFIX_V2,
   ITEM_TEXT_MAX_CHARS,
   PARSE_REBUILD_CONFIDENCE,
   PARSE_REBUILD_ROUND,
@@ -57,11 +59,23 @@ import {
 } from "./constants.js";
 import type {
   ApiPitfall,
+  ClaimEvidence,
+  ClaimKind,
   ConfirmedFact,
   Provenance,
   RejectedApproach,
   StructuralDigest,
 } from "./types.js";
+import { createTokenCounter, FallbackCounter } from "../token-counter.js";
+
+const CLAIM_KINDS: readonly ClaimKind[] = [
+  "fact",
+  "decision",
+  "pending",
+  "rejected",
+  "pitfall",
+  "other",
+];
 
 const clip = (text: string, max: number): string =>
   text.length <= max ? text : `${text.slice(0, max)}...`;
@@ -86,6 +100,22 @@ function pitfallLine(e: ApiPitfall): string {
   return `- ${clip(e.api, 120)}: ${clip(e.pitfall, ITEM_TEXT_MAX_CHARS)}${w} [src ${e.provenance.msgId}: ${clipSnippet(e.provenance)}]`;
 }
 
+/** Compact machine-readable claim line (ignored by v1 parsers). */
+export function claimLine(claim: ClaimEvidence): string {
+  const obj: Record<string, unknown> = { k: claim.kind, e: claim.entryId, r: claim.round };
+  if (claim.confidence !== undefined) obj.c = claim.confidence;
+  if (claim.seq !== undefined) obj.n = claim.seq;
+  obj.s = claim.claim;
+  obj.q = claim.span;
+  return `@claim ${JSON.stringify(obj)}`;
+}
+
+function claimsBlock(d: StructuralDigest): string[] {
+  const claims = d.claims ?? [];
+  if (claims.length === 0) return [];
+  return [`@claims ${claims.length} ${d.sessionId}`, ...claims.map(claimLine)];
+}
+
 /** Serialize digest to its injected text form. Returns null when empty. */
 export function serializeDigest(d: StructuralDigest): string | null {
   const sections: string[] = [];
@@ -98,13 +128,20 @@ export function serializeDigest(d: StructuralDigest): string | null {
   if (d.pitfalls.length > 0) {
     sections.push(SECTION_PITFALLS, ...d.pitfalls.map(pitfallLine));
   }
-  if (sections.length === 0) return null;
-  return [`${DIGEST_PREFIX}`, ...sections].join("\n");
+  const claims = d.claims ?? [];
+  if (sections.length === 0 && claims.length === 0) return null;
+  const prefix = claims.length > 0 ? DIGEST_PREFIX_V2 : DIGEST_PREFIX;
+  return [prefix, ...sections, ...claimsBlock(d)].join("\n");
 }
 
-/** True when no entry qualifies in any class */
+/** True when no entry qualifies in any class (views or claims) */
 export function emptyDigest(d: StructuralDigest): boolean {
-  return d.confirmed.length === 0 && d.rejected.length === 0 && d.pitfalls.length === 0;
+  return (
+    d.confirmed.length === 0 &&
+    d.rejected.length === 0 &&
+    d.pitfalls.length === 0 &&
+    (d.claims ?? []).length === 0
+  );
 }
 
 const LINE_RE = /^- (.+?) \[src ([^:]*): ([^\]]*)\]$/;
@@ -125,21 +162,65 @@ function rebuildProvenance(msgId: string, snippet: string): Provenance {
   return { msgId, snippet, round: PARSE_REBUILD_ROUND };
 }
 
+function parseClaimLine(line: string, sessionId: string): ClaimEvidence | null {
+  let raw: any;
+  try {
+    raw = JSON.parse(line.slice("@claim ".length));
+  } catch {
+    return null;
+  }
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  if (!CLAIM_KINDS.includes(raw.k)) return null;
+  if (typeof raw.e !== "string" || raw.e === "") return null;
+  if (typeof raw.r !== "number" || !Number.isFinite(raw.r)) return null;
+  if (typeof raw.s !== "string" || raw.s === "") return null;
+  if (typeof raw.q !== "string" || raw.q === "" || raw.q.length > CLAIM_SPAN_MAX_CHARS) {
+    return null;
+  }
+  const claim: ClaimEvidence = {
+    claim: raw.s,
+    kind: raw.k,
+    span: raw.q,
+    sessionId,
+    entryId: raw.e,
+    round: raw.r,
+  };
+  if (typeof raw.c === "number" && Number.isFinite(raw.c)) claim.confidence = raw.c;
+  if (typeof raw.n === "number" && Number.isFinite(raw.n)) claim.seq = raw.n;
+  return claim;
+}
+
 /**
- * Parse persisted digest text back into an object. Lossy rebuild:
- * confidence = PARSE_REBUILD_CONFIDENCE (floor), round = PARSE_REBUILD_ROUND.
- * Invalid entries are skipped (never crash compaction on bad persisted data).
+ * Parse persisted digest text back into an object. Accepts v1 and v2 text.
+ * v1 sections are lossy-rebuilt (confidence = floor, round = 0); v2 claim
+ * lines keep their verbatim span/round. Invalid entries are skipped (never
+ * crash compaction on bad persisted data).
  */
 export function parseDigest(text: string): StructuralDigest | null {
-  if (!text.startsWith(DIGEST_PREFIX)) return null;
+  const isV2 = text.startsWith(DIGEST_PREFIX_V2);
+  if (!isV2 && !text.startsWith(DIGEST_PREFIX)) return null;
   const lines = text.split("\n");
   const confirmed: ConfirmedFact[] = [];
   const rejected: RejectedApproach[] = [];
   const pitfalls: ApiPitfall[] = [];
+  const claims: ClaimEvidence[] = [];
+  let claimsSessionId = "";
 
   let section: "confirmed" | "rejected" | "pitfalls" | null = null;
   for (const raw of lines.slice(1)) {
     const line = raw.trimEnd();
+    if (line.startsWith("@claims ")) {
+      // "@claims <count> <sessionId...>"
+      const rest = line.slice("@claims ".length);
+      const splitAt = rest.indexOf(" ");
+      claimsSessionId = splitAt === -1 ? "" : rest.slice(splitAt + 1).trim();
+      continue;
+    }
+    if (line.startsWith("@claim ")) {
+      const claim = parseClaimLine(line, claimsSessionId);
+      if (claim) claims.push(claim);
+      continue;
+    }
     if (line === SECTION_CONFIRMED) {
       section = "confirmed";
       continue;
@@ -186,31 +267,59 @@ export function parseDigest(text: string): StructuralDigest | null {
     }
   }
 
-  if (confirmed.length === 0 && rejected.length === 0 && pitfalls.length === 0) return null;
+  if (
+    confirmed.length === 0 &&
+    rejected.length === 0 &&
+    pitfalls.length === 0 &&
+    claims.length === 0
+  ) {
+    return null;
+  }
   return {
-    version: 1,
-    sessionId: "",
+    version: isV2 || claims.length > 0 ? 2 : 1,
+    sessionId: claimsSessionId,
     rounds: PARSE_REBUILD_ROUND,
     updatedAt: 0,
     confirmed,
     rejected,
     pitfalls,
+    ...(claims.length > 0 ? { claims } : {}),
   };
 }
 
-/** Rough token estimate (chars/4), used only for capacity ordering */
+/**
+ * Authoritative token count for the digest budget: tiktoken cl100k_base via
+ * the same `createTokenCounter()` used by engine.ts (Edith P1-A: chars/4
+ * undercounted claim-heavy text by 18–24%, CJK by >2×).
+ */
+const digestTokenCounter = createTokenCounter("cl100k_base");
+const DIGEST_TOKEN_CACHE = new Map<string, number>();
+const MAX_DIGEST_TOKEN_CACHE = 4000;
+
 function estimateTokensOf(text: string): number {
-  return Math.max(1, Math.ceil(text.length / 4));
+  const key =
+    text.length < 500
+      ? text
+      : `L${text.length}|${text.slice(0, 30)}|${text.slice(-30)}`;
+  const cached = DIGEST_TOKEN_CACHE.get(key);
+  if (cached !== undefined) return cached;
+
+  let tokens: number;
+  if (digestTokenCounter.isPrecise()) {
+    try {
+      tokens = digestTokenCounter.count(text).tokens;
+    } catch {
+      tokens = FallbackCounter.estimate(text);
+    }
+  } else {
+    tokens = FallbackCounter.estimate(text);
+  }
+  if (DIGEST_TOKEN_CACHE.size >= MAX_DIGEST_TOKEN_CACHE) DIGEST_TOKEN_CACHE.clear();
+  DIGEST_TOKEN_CACHE.set(key, tokens);
+  return tokens;
 }
 
 type AnyEntry = ConfirmedFact | RejectedApproach | ApiPitfall;
-
-function cmpTuple(a: [number, number, number], b: [number, number, number]): number {
-  for (let i = 0; i < 3; i++) {
-    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
-  }
-  return 0;
-}
 
 /**
  * Cut priority of an entry — smaller sorts earlier for removal.
@@ -233,10 +342,39 @@ function entryText(e: AnyEntry): string {
 }
 
 /**
- * Capacity truncation (ADR-3 §6.2): overflow is cut by priority
- * rejected > confirmed > pitfalls; class-internal by lower confidence first,
- * then older round first. Silent tail-cut; returns dropped count for logging.
+ * Cut priority for claims — smaller sorts earlier for removal:
+ * other(0) < pitfall(1) < fact/decision(2) < rejected/pending(3).
+ * Class-internal: lower confidence first, then older round.
  */
+export function claimCutRank(c: ClaimEvidence): [number, number, number] {
+  const rank =
+    c.kind === "other"
+      ? 0
+      : c.kind === "pitfall"
+        ? 1
+        : c.kind === "rejected" || c.kind === "pending"
+          ? 3
+          : 2; // fact / decision
+  return [rank, c.confidence ?? 0, c.round];
+}
+
+/**
+ * Capacity truncation (ADR-3 §6.2, extended for claims v2): overflow is cut
+ * by priority across the v1 views and the claims ledger. Views keep their
+ * legacy order (pitfalls < confirmed < rejected); claims are cut
+ * other < pitfall < fact/decision < rejected/pending. Class-internal by lower
+ * confidence first, then older round. Silent tail-cut; returns dropped count.
+ */
+const cmpTuple4 = (
+  a: [number, number, number, number],
+  b: [number, number, number, number]
+): number => {
+  for (let i = 0; i < 4; i++) {
+    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  }
+  return 0;
+};
+
 export function truncateToCapacity(
   d: StructuralDigest,
   maxTokens: number = DIGEST_MAX_TOKENS
@@ -246,37 +384,82 @@ export function truncateToCapacity(
     ["rejected", d.rejected],
     ["pitfalls", d.pitfalls],
   ];
+  const claims = d.claims ?? [];
 
-  const total = (): number =>
-    lists.reduce(
-      (sum, [key]) => sum + (d[key] as AnyEntry[]).reduce((s, e) => s + estimateTokensOf(entryText(e)), 0),
-      0
-    );
+  const lineCost = (line: string): number => estimateTokensOf(line) + 1; // newline
+  const cost = (): number => {
+    let total = 0;
+    for (const [, entries] of lists) {
+      for (const entry of entries) total += lineCost(entryText(entry as AnyEntry));
+    }
+    if (claims.length > 0) {
+      total += lineCost(`@claims ${claims.length} ${d.sessionId}`);
+      for (const claim of claims) total += lineCost(claimLine(claim));
+    }
+    return total;
+  };
 
   let dropped = 0;
-  while (total() > maxTokens) {
-    // Cut candidates: lowest cutRank (class, then confidence asc, round asc)
-    let cut: { key: "confirmed" | "rejected" | "pitfalls"; idx: number } | null = null;
+  const dropLowest = (): boolean => {
+    let cut:
+      | {
+          kind: "view";
+          key: "confirmed" | "rejected" | "pitfalls";
+          idx: number;
+          tuple: [number, number, number, number];
+        }
+      | { kind: "claim"; idx: number; tuple: [number, number, number, number] }
+      | null = null;
+
+    // Tuple: [tier, surface, confidence, round] — smaller cuts first.
+    // surface 0 = legacy view, 1 = claim: at equal tier views are cut first,
+    // so the evidence ledger always outlives same-tier low-fidelity views
+    // (Edith P2-A inversion fix). Legacy view ranks (pitfall 0 / confirmed 1 /
+    // rejected 2) are mapped into claim space (other 0 / pitfall 1 / fact 2 /
+    // rejected 3).
     for (const [key, entries] of lists) {
-      if (entries.length === 0) continue;
-      let worstIdx = 0;
-      let worstRank: [number, number, number] | null = null;
       for (let i = 0; i < entries.length; i++) {
-        const r = cutRank(entries[i] as AnyEntry);
-        if (worstRank === null || cmpTuple(r, worstRank) < 0) {
-          worstRank = r;
-          worstIdx = i;
+        const legacy = cutRank(entries[i] as AnyEntry);
+        const tuple: [number, number, number, number] = [legacy[0] + 1, 0, legacy[1], legacy[2]];
+        if (cut === null || cmpTuple4(tuple, cut.tuple) < 0) {
+          cut = { kind: "view", key, idx: i, tuple };
         }
       }
-      const current = cut ? cutRank((d[cut.key] as AnyEntry[])[cut.idx] as AnyEntry) : null;
-      if (current === null || cmpTuple(worstRank!, current) < 0) {
-        cut = { key, idx: worstIdx };
+    }
+    for (let i = 0; i < claims.length; i++) {
+      const rank = claimCutRank(claims[i]);
+      const tuple: [number, number, number, number] = [rank[0], 1, rank[1], rank[2]];
+      if (cut === null || cmpTuple4(tuple, cut.tuple) < 0) {
+        cut = { kind: "claim", idx: i, tuple };
       }
     }
-    if (!cut) break;
-    const list = d[cut.key] as AnyEntry[];
-    list.splice(cut.idx, 1);
+    if (cut === null) return false;
+
+    if (cut.kind === "claim") {
+      claims.splice(cut.idx, 1);
+    } else {
+      (d[cut.key] as AnyEntry[]).splice(cut.idx, 1);
+    }
     dropped++;
+    return true;
+  };
+
+  while (cost() > maxTokens) {
+    if (!dropLowest()) break;
+  }
+  // Authoritative check on the real serialized text (BPE/newline boundary-safe).
+  for (;;) {
+    const text = serializeDigest(d);
+    if (text === null || estimateTokensOf(text) <= maxTokens) break;
+    if (!dropLowest()) break;
+  }
+
+  if (claims.length > 0) {
+    d.claims = claims;
+    d.version = 2;
+  } else {
+    delete d.claims;
+    d.version = 1;
   }
   return { digest: d, dropped };
 }

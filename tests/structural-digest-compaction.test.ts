@@ -23,7 +23,7 @@ import {
   type IEventBus,
 } from "../src/obs/optimizer-observer.js";
 import { parseDigest } from "../src/structural-digest/serialize.js";
-import { DIGEST_PREFIX } from "../src/structural-digest/constants.js";
+import { isDigestText } from "../src/structural-digest/constants.js";
 
 const SESSION_ID = "v690-int";
 const EV_SESSION = "v690-ev";
@@ -98,8 +98,7 @@ function sessionLinesOf(file: string): string[] {
 function digestLinesOf(file: string): string[] {
   return sessionLinesOf(file).filter((l) => {
     try {
-      return typeof JSON.parse(l).message?.content === "string"
-        && (JSON.parse(l).message.content as string).startsWith(DIGEST_PREFIX);
+      return isDigestText(JSON.parse(l).message?.content);
     } catch {
       return false;
     }
@@ -128,7 +127,7 @@ describe("structural digest compaction (v6.9.0)", () => {
     const digests = digestLinesOf(sessionFile);
     expect(digests).toHaveLength(1);
     const text = JSON.parse(digests[0]).message.content as string;
-    expect(text.startsWith(DIGEST_PREFIX)).toBe(true);
+    expect(isDigestText(text)).toBe(true);
     expect(text).toContain("-- 已确认 --");
     expect(text).toContain("-- 已否决 --");
     expect(text).toContain("-- API 契约与坑 --");

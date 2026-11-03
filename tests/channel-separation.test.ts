@@ -11,7 +11,7 @@ import * as os from "os";
 import * as path from "path";
 import { createClawContextEngine } from "../src/engine.js";
 import { parseDigest, serializeDigest } from "../src/structural-digest/serialize.js";
-import { DIGEST_PREFIX } from "../src/structural-digest/constants.js";
+import { DIGEST_PREFIX, isDigestText } from "../src/structural-digest/constants.js";
 import {
   DERIVED_META_SCHEMA_VERSION,
   isLegacyCompactionSummary,
@@ -79,10 +79,8 @@ function summariesOf(file: string): any[] {
 }
 
 function digestsOf(file: string): any[] {
-  return parseLines(sessionLinesOf(file)).filter(
-    (o) =>
-      typeof o.message?.content === "string" &&
-      (o.message.content as string).startsWith(DIGEST_PREFIX),
+  return parseLines(sessionLinesOf(file)).filter((o) =>
+    isDigestText(o.message?.content),
   );
 }
 
@@ -102,7 +100,7 @@ function assertNoDerivedInSource(sourceLines: string[]): void {
     const obj = JSON.parse(line);
     expect(obj.derived).toBeUndefined();
     expect(isLegacyCompactionSummary(obj.message?.content)).toBe(false);
-    expect(String(obj.message?.content ?? "").startsWith(DIGEST_PREFIX)).toBe(false);
+    expect(isDigestText(obj.message?.content)).toBe(false);
   }
 }
 

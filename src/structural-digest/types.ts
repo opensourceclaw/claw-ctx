@@ -61,8 +61,41 @@ export interface ApiPitfall {
   provenance: Provenance;
 }
 
+/* ── v6.15.0 (claims v2): claim-evidence ledger ───────────────────── */
+
+export type ClaimKind =
+  | "fact"
+  | "decision"
+  | "pending"
+  | "rejected"
+  | "pitfall"
+  | "other";
+
+/**
+ * One verbatim evidence unit captured from a removed raw message.
+ * `span` MUST be a substring of the source message; invalid spans are dropped
+ * (model proposes, source disposes). `seq` is only present when the host
+ * supplies a transcript sequence anchor (compact params currently do not).
+ */
+export interface ClaimEvidence {
+  /** Normalized one-liner (≤ CLAIM_MAX_CHARS) */
+  claim: string;
+  kind: ClaimKind;
+  /** Verbatim slice from the source message (≤ CLAIM_SPAN_MAX_CHARS) */
+  span: string;
+  sessionId: string;
+  /** Host transcript entry id (primary anchor) */
+  entryId: string;
+  /** Optional strong anchor (host transcript_events.seq) */
+  seq?: number;
+  round: number;
+  /** Heuristic score; no confidence floor for claims. */
+  confidence?: number;
+}
+
 export interface StructuralDigest {
-  version: 1;
+  /** 2 when a claims ledger is present; 1 for legacy digests. */
+  version: 1 | 2;
   sessionId: string;
   /** Cumulative compaction rounds that produced this digest (≥ 1) */
   rounds: number;
@@ -70,8 +103,10 @@ export interface StructuralDigest {
   confirmed: ConfirmedFact[];
   rejected: RejectedApproach[];
   pitfalls: ApiPitfall[];
+  /** v6.15.0 additive: verbatim claim ledger (v1 views above stay intact). */
+  claims?: ClaimEvidence[];
   /** v6.14.1 additive lineage face (not serialized in v1 text; kept on the entry). */
   derived?: DerivedMeta;
 }
 
-export const DIGEST_SCHEMA_VERSION = 1 as const;
+export const DIGEST_SCHEMA_VERSION = 2 as const;

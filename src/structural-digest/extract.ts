@@ -25,6 +25,10 @@
  */
 
 import {
+  CLAIM_MAX_CHARS,
+  CLAIM_ROUND_LIMIT,
+  CLAIM_SPAN_MAX_CHARS,
+  CLAIM_TOTAL_LIMIT,
   CONFIDENCE_FLOOR,
   CONFIDENCE_CAP,
   LINKER_BONUS,
@@ -48,6 +52,8 @@ import {
 } from "./patterns.js";
 import type {
   ApiPitfall,
+  ClaimEvidence,
+  ClaimKind,
   ConfirmedFact,
   Provenance,
   RejectedApproach,
@@ -235,9 +241,134 @@ function extractPitfall(
   };
 }
 
+/* ── v6.15.0 (claims v2): verbatim evidence ledger ─────────────────── */
+
+const PENDING_PATTERNS: RegExp[] = [
+  /\b(?:todo|pending|next step|follow[- ]?up|need to|not yet|remaining|outstanding)\b/i,
+  /(?:待办|待处理|下一步|还需要|尚未|未完成|遗留|之后要|后续)/,
+];
+
+const DECISION_VERBS: RegExp[] = [
+  /\b(?:decided|agreed|settled on|went with|chose|chosen|selected|opted for)\b/i,
+  /(?:决定|同意|确认|选定|采用|一致认为)/,
+];
+
+/** Evidence-bearing identifiers: files, task/pipeline ids, dotted symbols, code spans. */
+const IDENTIFIER_PATTERNS: RegExp[] = [
+  /`[^`\s]{2,}`/,
+  /\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+/,
+  /\b(?:task|pipeline|pipelineId|issue|pr)-[A-Za-z0-9._-]+/i,
+  /\b[\w./-]+\.(?:ts|tsx|js|mjs|cjs|json|md|py|yml|yaml)\b/,
+];
+
+interface ClaimSignal {
+  kind: ClaimKind;
+  /** 3 = rejected/pending, 2 = decision/fact/pitfall, 1 = identifier-only */
+  strength: number;
+}
+
+function claimSignalFor(sentence: string): ClaimSignal | null {
+  if (hasAny(sentence, REJECTED_PATTERNS.strong)) return { kind: "rejected", strength: 3 };
+  if (hasAny(sentence, PITFALL_NEGATIVE) && hasAny(sentence, API_SYMBOL)) {
+    return { kind: "pitfall", strength: 2 };
+  }
+  if (hasAny(sentence, PENDING_PATTERNS)) return { kind: "pending", strength: 3 };
+  if (hasAny(sentence, DECISION_VERBS) || hasAny(sentence, CONFIRMED_PATTERNS.strong)) {
+    return { kind: "decision", strength: 2 };
+  }
+  if (
+    hasAny(sentence, CONFIRMED_PATTERNS.weak) &&
+    !hasAny(sentence, CONFIRMED_PATTERNS.suppress)
+  ) {
+    return { kind: "fact", strength: 2 };
+  }
+  if (hasAny(sentence, IDENTIFIER_PATTERNS)) return { kind: "other", strength: 1 };
+  return null;
+}
+
+/**
+ * Drop claims whose verbatim span is missing from the source message (or
+ * exceeds the cap). Exported so the invariant is directly testable.
+ */
+export function validateClaims(
+  claims: readonly ClaimEvidence[],
+  messages: readonly DigestSourceMessage[]
+): ClaimEvidence[] {
+  const byId = new Map<string, string[]>();
+  for (const msg of messages) {
+    const id = msg.id ?? "unknown";
+    const list = byId.get(id) ?? [];
+    list.push(textOf(msg));
+    byId.set(id, list);
+  }
+  return claims.filter((c) => {
+    if (typeof c.span !== "string" || c.span.length === 0) return false;
+    if (c.span.length > CLAIM_SPAN_MAX_CHARS) return false;
+    const sources = byId.get(c.entryId);
+    return sources !== undefined && sources.some((text) => text.includes(c.span));
+  });
+}
+
+/**
+ * Extract at most CLAIM_ROUND_LIMIT claims from removed raw messages.
+ * Messages without any signal produce no claim (keeps the v1 pure-incremental
+ * contract for chit-chat); when over the cap, identifier/decision-bearing
+ * messages win (cost trade-off documented in the receipt).
+ */
+export function extractClaims(
+  messages: readonly DigestSourceMessage[],
+  sessionId: string,
+  round: number,
+  limit: number = CLAIM_ROUND_LIMIT
+): ClaimEvidence[] {
+  const scored: Array<{ claim: ClaimEvidence; strength: number }> = [];
+  for (const msg of messages) {
+    const text = textOf(msg);
+    if (text.trim().length < MIN_SENTENCE_CHARS) continue;
+
+    let best: { sentence: string; signal: ClaimSignal; strength: number } | null = null;
+    for (const raw of splitSentences(text)) {
+      const sentence = raw.trim();
+      if (sentence.length < MIN_SENTENCE_CHARS || isQuestion(sentence)) continue;
+      const signal = claimSignalFor(sentence);
+      if (!signal) continue;
+      const strength = signal.strength + (hasAny(sentence, IDENTIFIER_PATTERNS) ? 1 : 0);
+      if (best === null || strength > best.strength) {
+        best = { sentence, signal, strength };
+      }
+    }
+    if (best === null) continue;
+
+    const span = best.sentence.slice(0, CLAIM_SPAN_MAX_CHARS);
+    scored.push({
+      strength: best.strength,
+      claim: {
+        claim: best.sentence.replace(/\s+/g, " ").trim().slice(0, CLAIM_MAX_CHARS),
+        kind: best.signal.kind,
+        span,
+        sessionId,
+        entryId: msg.id ?? "unknown",
+        round,
+        confidence:
+          best.strength >= 4 ? 0.9 : best.strength === 3 ? 0.8 : best.strength === 2 ? 0.6 : 0.4,
+      },
+    });
+  }
+
+  const selected = new Set(
+    [...scored]
+      .sort((a, b) => b.strength - a.strength)
+      .slice(0, Math.max(0, limit))
+      .map((entry) => entry.claim)
+  );
+  const ordered = scored.filter((entry) => selected.has(entry.claim)).map((entry) => entry.claim);
+  return validateClaims(ordered, messages);
+}
+
 /**
  * Extract a fresh digest from removed messages (per compaction round).
- * Entries below CONFIDENCE_FLOOR are dropped (宁缺毋滥).
+ * Entries below CONFIDENCE_FLOOR are dropped (宁缺毋滥). The claims ledger
+ * has no confidence floor; invalid spans are dropped instead.
  */
 export function extractFromMessages(
   messages: DigestSourceMessage[],
@@ -266,14 +397,16 @@ export function extractFromMessages(
     }
   }
 
+  const claims = extractClaims(messages, sessionId, round);
   return {
-    version: 1,
+    version: claims.length > 0 ? 2 : 1,
     sessionId,
     rounds: round,
     updatedAt: Date.now(),
     confirmed,
     rejected,
     pitfalls,
+    ...(claims.length > 0 ? { claims } : {}),
   };
 }
 
@@ -306,19 +439,37 @@ function norm(key: string): string {
  * Same-claim detection is conservative normalized-equality (no fuzzy match —
  * prevents over-deduplication swallowing genuinely new conclusions).
  */
+function mergeClaims(
+  prev: readonly ClaimEvidence[],
+  next: readonly ClaimEvidence[]
+): ClaimEvidence[] {
+  // entryId is the primary anchor; same entry + same claim keeps the newest copy.
+  const map = new Map<string, ClaimEvidence>();
+  for (const claim of [...prev, ...next]) {
+    map.set(`${claim.entryId}|${norm(claim.claim)}`, claim);
+  }
+  const merged = [...map.values()];
+  // Cross-round cap (P3-C): FIFO by insertion order = oldest evidence ages out.
+  return merged.length > CLAIM_TOTAL_LIMIT
+    ? merged.slice(merged.length - CLAIM_TOTAL_LIMIT)
+    : merged;
+}
+
 export function mergeDigest(
   prev: StructuralDigest | null,
   next: StructuralDigest
 ): StructuralDigest {
   if (!prev) return next;
+  const claims = mergeClaims(prev.claims ?? [], next.claims ?? []);
   return {
-    version: 1,
+    version: claims.length > 0 ? 2 : 1,
     sessionId: prev.sessionId || next.sessionId,
     rounds: next.rounds,
     updatedAt: next.updatedAt,
     confirmed: mergeEntryList(prev.confirmed, next.confirmed, (e) => norm(e.claim)),
     rejected: mergeEntryList(prev.rejected, next.rejected, (e) => norm(`${e.approach}|${e.reason}`)),
     pitfalls: mergeEntryList(prev.pitfalls, next.pitfalls, (e) => norm(`${e.api}|${e.pitfall}`)),
+    ...(claims.length > 0 ? { claims } : {}),
   };
 }
 

@@ -29,6 +29,17 @@ export const STRUCTURAL_DIGEST_ENABLED = true;
 /** Message-content prefix marking a structural digest entry (quasi-header) */
 export const DIGEST_PREFIX = "[STRUCTURAL-DIGEST v1]";
 
+/** v6.15.0 (claims v2): v2 text keeps the v1 sections and adds a claims block. */
+export const DIGEST_PREFIX_V2 = "[STRUCTURAL-DIGEST v2]";
+
+/** True for any digest text version the parser accepts. */
+export function isDigestText(text: unknown): boolean {
+  return (
+    typeof text === "string" &&
+    (text.startsWith(DIGEST_PREFIX) || text.startsWith(DIGEST_PREFIX_V2))
+  );
+}
+
 /** Minimum confidence to enter the protected zone (below = dropped, 宁缺毋滥) */
 export const CONFIDENCE_FLOOR = 0.75; // 待校准
 export const STRONG_SIGNAL_BASE = 0.85;
@@ -39,8 +50,25 @@ export const LINKER_BONUS = 0.1; // reason linker in sentence
 export const LEN_BONUS = 0.05; // sentence > LEN_BONUS_CHARS
 export const LEN_BONUS_CHARS = 50;
 
-/** Protected zone capacity (≈ 8-10KB text, single monotonic entry) */
-export const DIGEST_MAX_TOKENS = 2048; // 待校准
+/** Protected zone capacity (≈ 16KB text, single monotonic entry).
+ *  v6.15.0: raised 2048→4096 for the claims ledger, with priority trimming:
+ *  rejected/pending > fact/decision > pitfall > other. */
+export const DIGEST_MAX_TOKENS = 4096; // 待校准
+
+/* ── v6.15.0: claim-evidence ledger (digest v2) ───────────────────── */
+
+/** Per-claim normalized text cap */
+export const CLAIM_MAX_CHARS = 120;
+
+/** Verbatim evidence slice cap (must exist in the source message) */
+export const CLAIM_SPAN_MAX_CHARS = 512;
+
+/** Per-compaction-round claim cap (cost control) */
+export const CLAIM_ROUND_LIMIT = 20;
+
+/** Cross-round claim cap. FIFO aging: the oldest (earliest insertion) claims
+ *  are dropped once the ledger exceeds this total. */
+export const CLAIM_TOTAL_LIMIT = 60;
 
 export const SNIPPET_MAX_CHARS = 200; // stored provenance snippet cap
 export const SNIPPET_DISPLAY_CHARS = 80; // per-line display cap

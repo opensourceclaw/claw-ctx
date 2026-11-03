@@ -69,7 +69,7 @@ import { SessionStateExtractor, type SessionState, type Entity } from "./session
 import { runStructuralDigest, type DigestSourceMessage } from "./structural-digest/extract.js";
 import { parseDigest, serializeDigest } from "./structural-digest/serialize.js";
 import { ERROR_CARD_BLOCK_MAX_TOKENS } from "./structural-digest/constants.js";
-import { DIGEST_PREFIX, STRUCTURAL_DIGEST_ENABLED } from "./structural-digest/constants.js";
+import { isDigestText, STRUCTURAL_DIGEST_ENABLED } from "./structural-digest/constants.js";
 // v6.14.1 (channel separation 1/2): derived artifacts are read-only lineage faces
 import { isDerivedTranscriptEntry, makeDerivedMeta } from "./derived-meta.js";
 import { optimizerObserver } from "./obs/optimizer-observer.js";
@@ -1063,7 +1063,7 @@ export class ClawContextEngine {
     if (STRUCTURAL_DIGEST_ENABLED) {
       for (let i = msgEntries.length - 1; i >= 0; i--) {
         const c = msgEntries[i].message?.content;
-        if (typeof c === "string" && c.startsWith(DIGEST_PREFIX)) {
+        if (isDigestText(c)) {
           const line = msgEntries[i];
           msgEntries.splice(i, 1);
           if (oldDigestText === null) {
