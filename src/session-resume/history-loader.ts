@@ -68,17 +68,31 @@ interface MemoryManager {
   hybridSearch?(query: string, options?: HybridSearchOptions): Promise<HybridSearchResult>;
 }
 
-/** v6.14.1: deduped files+ids from a summary; pre-v6.14.1 payloads yield []. */
-function openItemsOf(summary: SessionSummary): string[] {
+/**
+ * v6.14.1/v6.14.2: deduped files+ids from a summary; pre-v6.14.1 payloads
+ * yield []. P3-1: when A ends with `/<B` (B is the tail-name form), keep the
+ * longer A only — one artifact must not be listed twice. Shared by all three
+ * render paths (full, compact, context-assembler default).
+ */
+export function openItemsOf(summary: SessionSummary): string[] {
   const files = Array.isArray(summary.pendingFiles) ? summary.pendingFiles : [];
   const ids = Array.isArray(summary.pendingIds) ? summary.pendingIds : [];
-  return [
+  const unique = [
     ...new Set(
       [...files, ...ids].filter(
         (value): value is string => typeof value === "string" && value.trim() !== "",
       ),
     ),
   ];
+  return unique.filter(
+    (value, index) =>
+      !unique.some(
+        (other, otherIndex) =>
+          otherIndex !== index &&
+          other.length > value.length &&
+          other.endsWith(`/${value}`),
+      ),
+  );
 }
 
 export class HistoryLoader {

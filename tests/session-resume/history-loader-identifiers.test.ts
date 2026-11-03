@@ -5,7 +5,7 @@
 // simply omit the line — additive only, no break.
 
 import { describe, it, expect, vi } from "vitest";
-import { HistoryLoader } from "../../src/session-resume/history-loader.js";
+import { HistoryLoader, openItemsOf } from "../../src/session-resume/history-loader.js";
 import type { SessionSummary } from "../../src/session-resume/types.js";
 
 function summary(overrides: Partial<SessionSummary> & { sessionId: string }): SessionSummary {
@@ -57,6 +57,28 @@ describe("HistoryLoader — v6.14.1 identifier surface", () => {
     );
     const result = await loader.load("s1");
     expect(result.formatted).toContain("Open items: a.md, b.md, task-1");
+  });
+
+  it("keeps the longer path when a bare tail-name duplicates it (P3-1)", async () => {
+    const duplicated = summary({
+      sessionId: "s1",
+      pendingFiles: ["inbox/inbox-results/回执-x.md"],
+      pendingIds: ["回执-x.md"],
+    });
+    const loader = new HistoryLoader(managerFor(duplicated));
+    const result = await loader.load("s1");
+
+    expect(result.formatted).toContain("Open items: inbox/inbox-results/回执-x.md");
+    expect(result.formatted).not.toContain("回执-x.md, 回执-x.md");
+    expect(
+      openItemsOf(
+        summary({
+          sessionId: "s1",
+          pendingFiles: ["inbox/inbox-results/回执-x.md"],
+          pendingIds: ["回执-x.md"],
+        })
+      )
+    ).toEqual(["inbox/inbox-results/回执-x.md"]);
   });
 
   it("parses pre-v6.14.1 payloads and omits the line (no break)", async () => {

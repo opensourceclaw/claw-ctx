@@ -56,16 +56,51 @@ export interface HandoffIdentifiers {
 }
 
 /**
- * v6.14.1 — extract concrete identifiers from the messages being reset.
- * Bounded and deterministic (first occurrence wins, deduped, ≤ limit).
+ * v6.14.2 — extract concrete identifiers from the messages being reset.
+ *
+ * P2-2: scan from the NEWEST message backwards so the cap keeps the most
+ * recent identifiers (consistent with recentUserMessages). Class-local dedupe
+ * keeps the newest occurrence; within a message the natural token order is
+ * preserved. Bounded and deterministic (≤ limit per class).
  */
 export function extractHandoffIdentifiers(
   messages: readonly NormalizedMessage[],
 ): HandoffIdentifiers {
-  const text = messages.map((message) => message.content).join("\n");
-  const seen = new Set<string>();
-  const pendingFiles = collectTokens(text, FILE_TOKEN_PATTERN, HANDOFF_IDENTIFIER_LIMIT, seen);
-  const pendingIds = collectTokens(text, ID_TOKEN_PATTERN, HANDOFF_IDENTIFIER_LIMIT, seen);
+  const fileSeen = new Set<string>();
+  const idSeen = new Set<string>();
+  const pendingFiles: string[] = [];
+  const pendingIds: string[] = [];
+
+  for (
+    let index = messages.length - 1;
+    index >= 0 &&
+    (pendingFiles.length < HANDOFF_IDENTIFIER_LIMIT ||
+      pendingIds.length < HANDOFF_IDENTIFIER_LIMIT);
+    index--
+  ) {
+    const content = messages[index].content;
+    if (pendingFiles.length < HANDOFF_IDENTIFIER_LIMIT) {
+      pendingFiles.push(
+        ...collectTokens(
+          content,
+          FILE_TOKEN_PATTERN,
+          HANDOFF_IDENTIFIER_LIMIT - pendingFiles.length,
+          fileSeen,
+        ),
+      );
+    }
+    if (pendingIds.length < HANDOFF_IDENTIFIER_LIMIT) {
+      pendingIds.push(
+        ...collectTokens(
+          content,
+          ID_TOKEN_PATTERN,
+          HANDOFF_IDENTIFIER_LIMIT - pendingIds.length,
+          idSeen,
+        ),
+      );
+    }
+  }
+
   const recentUserMessages = messages
     .filter((message) => message.role === "user")
     .slice(-HANDOFF_RECENT_USER_LIMIT)

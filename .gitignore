@@ -21,3 +21,6 @@ devclaw.json.bak-*
 # Internal collaboration dirs (do not commit to public repo)
 inbox/
 .devclaw/
+
+# Runtime agent memory template (local state, never commit)
+MEMORY.md

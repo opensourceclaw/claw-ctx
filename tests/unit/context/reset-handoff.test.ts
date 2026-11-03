@@ -112,6 +112,20 @@ describe("ResetHandoff", () => {
     expect(extracted.pendingIds).toEqual(["task-dup"]);
   });
 
+  it("keeps the MOST RECENT identifiers when the cap is reached (P2-2)", () => {
+    const oldFiles = Array.from({ length: 20 }, (_, i) => `old-file-${i}.md`);
+    const extracted = extractHandoffIdentifiers([
+      { role: "user", content: oldFiles.join(" ") },
+      { role: "assistant", content: "latest: new-file-A.md new-file-B.md task-NEW-1" },
+    ]);
+
+    expect(extracted.pendingFiles).toHaveLength(HANDOFF_IDENTIFIER_LIMIT);
+    expect(extracted.pendingFiles[0]).toBe("new-file-A.md");
+    expect(extracted.pendingFiles).toContain("new-file-B.md");
+    expect(extracted.pendingFiles).not.toContain("old-file-19.md");
+    expect(extracted.pendingIds).toEqual(["task-NEW-1"]);
+  });
+
   it("does not store when there is not enough evidence", async () => {
     const manager = fakeManager();
     const result = await new ResetHandoff(manager).capture({
