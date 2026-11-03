@@ -5,7 +5,12 @@
 // session summary to re-inject. The before_reset hook now persists one.
 
 import { describe, it, expect } from "vitest";
-import { ResetHandoff, RESET_HANDOFF_TAG } from "../../../src/reset-handoff.js";
+import {
+  ResetHandoff,
+  RESET_HANDOFF_TAG,
+  HANDOFF_IDENTIFIER_LIMIT,
+  extractHandoffIdentifiers,
+} from "../../../src/reset-handoff.js";
 
 interface Stored {
   content: string;
@@ -65,6 +70,46 @@ describe("ResetHandoff", () => {
     expect(
       [...summary.pendingTasks, ...summary.keyPoints].join("\n")
     ).toContain("回执 diff");
+  });
+
+  it("stores concrete file and task identifiers alongside the summary", async () => {
+    const manager = fakeManager();
+    await new ResetHandoff(manager).capture({
+      sessionId: "s-ids",
+      reason: "daily",
+      messages: [
+        { role: "user", content: "检查 inbox/inbox-results/回执-edith-wiring-batch-B-acceptance-20261102.md" },
+        { role: "assistant", content: "任务 task-edith-p3-closeout 仍然待办。" },
+        { role: "user", content: "记得看 MY_MARKER-note.md。" },
+      ],
+    });
+
+    const summary = JSON.parse(manager.stored[0].content);
+    expect(summary.pendingFiles).toEqual(
+      expect.arrayContaining([
+        "inbox/inbox-results/回执-edith-wiring-batch-B-acceptance-20261102.md",
+        "MY_MARKER-note.md",
+      ])
+    );
+    expect(summary.pendingIds).toEqual(
+      expect.arrayContaining(["task-edith-p3-closeout"])
+    );
+    expect(summary.recentUserMessages).toHaveLength(2);
+    expect(summary.recentUserMessages[1]).toContain("MY_MARKER-note.md");
+  });
+
+  it("caps and dedupes extracted identifiers deterministically", () => {
+    const files = Array.from(
+      { length: HANDOFF_IDENTIFIER_LIMIT + 5 },
+      (_, index) => `docs/file-${index}.md`
+    );
+    const text = [...files, files[0], "task-dup", "task-dup"].join(" ");
+    const extracted = extractHandoffIdentifiers([{ role: "user", content: text }]);
+
+    expect(extracted.pendingFiles).toHaveLength(HANDOFF_IDENTIFIER_LIMIT);
+    expect(extracted.pendingFiles[0]).toBe("docs/file-0.md");
+    expect(extracted.pendingFiles).toEqual(files.slice(0, HANDOFF_IDENTIFIER_LIMIT));
+    expect(extracted.pendingIds).toEqual(["task-dup"]);
   });
 
   it("does not store when there is not enough evidence", async () => {

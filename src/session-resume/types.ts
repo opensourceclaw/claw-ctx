@@ -37,6 +37,12 @@ export interface SessionSummary {
   messageCount: number;
   /** Top entities from SessionStateExtractor */
   entities: string[];
+  /** v6.14.1 additive: file paths recovered from reset-handoff messages. */
+  pendingFiles?: string[];
+  /** v6.14.1 additive: task/pipeline/receipt identifiers from reset-handoff. */
+  pendingIds?: string[];
+  /** v6.14.1 additive: last few user messages (truncated) from reset-handoff. */
+  recentUserMessages?: string[];
 }
 
 export interface SessionResumeConfig {

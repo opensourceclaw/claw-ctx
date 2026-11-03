@@ -68,6 +68,19 @@ interface MemoryManager {
   hybridSearch?(query: string, options?: HybridSearchOptions): Promise<HybridSearchResult>;
 }
 
+/** v6.14.1: deduped files+ids from a summary; pre-v6.14.1 payloads yield []. */
+function openItemsOf(summary: SessionSummary): string[] {
+  const files = Array.isArray(summary.pendingFiles) ? summary.pendingFiles : [];
+  const ids = Array.isArray(summary.pendingIds) ? summary.pendingIds : [];
+  return [
+    ...new Set(
+      [...files, ...ids].filter(
+        (value): value is string => typeof value === "string" && value.trim() !== "",
+      ),
+    ),
+  ];
+}
+
 export class HistoryLoader {
   private _manager: MemoryManager;
   private _config: SessionResumeConfig;
@@ -287,7 +300,9 @@ export class HistoryLoader {
       for (const e of entries) {
         const s = e.summary;
         const tasks = s.pendingTasks.length > 0 ? ` | tasks: ${s.pendingTasks.slice(0, 2).join("; ")}` : "";
-        lines.push(`Session ${s.sessionId}: ${s.theme}${tasks}`);
+        const open = openItemsOf(s);
+        const openNote = open.length > 0 ? ` | open: ${open.slice(0, 5).join(", ")}` : "";
+        lines.push(`Session ${s.sessionId}: ${s.theme}${tasks}${openNote}`);
       }
       return lines.join("\n");
     }
@@ -308,6 +323,12 @@ export class HistoryLoader {
       }
       if (s.entities.length > 0) {
         lines.push(`Entities: ${s.entities.join(", ")}`);
+      }
+      // v6.14.1: concrete identifiers from the reset handoff (additive fields;
+      // absent on pre-v6.14.1 payloads and then simply omitted).
+      const openItems = openItemsOf(s);
+      if (openItems.length > 0) {
+        lines.push(`Open items: ${openItems.join(", ")}`);
       }
       blocks.push(lines.join("\n"));
     }

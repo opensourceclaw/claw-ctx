@@ -46,7 +46,13 @@ const logger = {
 const PRE_RESET_MESSAGES = [
   { role: "user", content: "目前除了 Karen 在进行的发布，还有哪些未完成的任务？" },
   { role: "assistant", content: "需要继续检查被改的 10-27 回执 diff，确认动了什么。" },
-  { role: "assistant", content: "要我先查那份被改的 10-27 回执 diff、确认动了什么吗？" },
+  {
+    role: "assistant",
+    content:
+      "要我先查那份被改的 10-27 回执 diff、确认动了什么吗？" +
+      "相关文件 inbox/inbox-results/回执-edith-wiring-batch-B-acceptance-20261102.md，" +
+      "任务 task-MY_MARKER-1，标记 MY_MARKER-note.md。",
+  },
 ];
 
 describe("cold-start continuity injection", () => {
@@ -76,6 +82,11 @@ describe("cold-start continuity injection", () => {
     const injected = result.systemPromptAddition ?? "";
     expect(injected).toContain("[Session History");
     expect(injected).toContain("回执 diff");
+    // v6.14.1: concrete identifiers survive the reset and are rendered.
+    expect(injected).toContain("Open items:");
+    expect(injected).toContain("task-MY_MARKER-1");
+    expect(injected).toContain("MY_MARKER-note.md");
+    expect(injected).toContain("回执-edith-wiring-batch-B-acceptance-20261102.md");
   });
 
   it("bootstraps resume history at most once per session across cold turns", async () => {

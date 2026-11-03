@@ -517,6 +517,17 @@ export class ContextAssembler {
       if (entry.summary.entities.length > 0) {
         lines.push(`Entities: ${entry.summary.entities.join(", ")}`);
       }
+      // v6.14.1: concrete identifiers from the reset handoff (additive fields;
+      // absent on pre-v6.14.1 payloads).
+      const openItems = [
+        ...new Set([
+          ...(entry.summary.pendingFiles ?? []),
+          ...(entry.summary.pendingIds ?? []),
+        ]),
+      ].filter((value): value is string => typeof value === "string" && value.trim() !== "");
+      if (openItems.length > 0) {
+        lines.push(`Open items: ${openItems.join(", ")}`);
+      }
 
       blocks.push(lines.join("\n"));
     }

@@ -25,6 +25,54 @@ import type { SessionSummary } from "./session-resume/types.js";
 
 export const RESET_HANDOFF_TAG = "reset-handoff";
 
+/** v6.14.1: identifier surface so post-reset recall keeps concrete file/ID names. */
+export const HANDOFF_IDENTIFIER_LIMIT = 20;
+export const HANDOFF_RECENT_USER_LIMIT = 3;
+const HANDOFF_RECENT_USER_CHARS = 300;
+const FILE_TOKEN_PATTERN = /[\p{L}\p{N}._/-]+\.(?:md|ts|json|tsx|js)/gu;
+const ID_TOKEN_PATTERN = /(?:task|pipeline|回执|receipt)-[\w.-]+/gu;
+
+function collectTokens(
+  text: string,
+  pattern: RegExp,
+  limit: number,
+  seen: Set<string>,
+): string[] {
+  const values: string[] = [];
+  for (const match of text.matchAll(pattern)) {
+    const value = match[0];
+    if (value === "" || seen.has(value)) continue;
+    seen.add(value);
+    values.push(value);
+    if (values.length >= limit) break;
+  }
+  return values;
+}
+
+export interface HandoffIdentifiers {
+  readonly pendingFiles: string[];
+  readonly pendingIds: string[];
+  readonly recentUserMessages: string[];
+}
+
+/**
+ * v6.14.1 — extract concrete identifiers from the messages being reset.
+ * Bounded and deterministic (first occurrence wins, deduped, ≤ limit).
+ */
+export function extractHandoffIdentifiers(
+  messages: readonly NormalizedMessage[],
+): HandoffIdentifiers {
+  const text = messages.map((message) => message.content).join("\n");
+  const seen = new Set<string>();
+  const pendingFiles = collectTokens(text, FILE_TOKEN_PATTERN, HANDOFF_IDENTIFIER_LIMIT, seen);
+  const pendingIds = collectTokens(text, ID_TOKEN_PATTERN, HANDOFF_IDENTIFIER_LIMIT, seen);
+  const recentUserMessages = messages
+    .filter((message) => message.role === "user")
+    .slice(-HANDOFF_RECENT_USER_LIMIT)
+    .map((message) => message.content.slice(0, HANDOFF_RECENT_USER_CHARS));
+  return { pendingFiles, pendingIds, recentUserMessages };
+}
+
 interface MemoryStore {
   store(
     content: string,
@@ -99,9 +147,12 @@ export class ResetHandoff {
 
     try {
       const summary = new SummaryGenerator().generate(messages, sessionId);
-      // Extra fields are additive; HistoryLoader JSON-parses the same object.
+      const identifiers = extractHandoffIdentifiers(messages);
+      // Extra fields are additive; HistoryLoader JSON-parses the same object,
+      // and pre-v6.14.1 payloads without these fields stay valid.
       const payload = JSON.stringify({
         ...summary,
+        ...identifiers,
         handoffReason: params.reason ?? "unknown",
         handoffAt: Date.now(),
         sessionKey: params.sessionKey ?? null,
