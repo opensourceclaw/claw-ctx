@@ -8,6 +8,7 @@ docs/api/
 *.log
 .DS_Store
 .claw-mem-index/
+.claw-ctx/
 src/version.ts.npmrc
 
 # Local agent notes / session transcripts / backups (not part of the repo)

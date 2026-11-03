@@ -200,13 +200,42 @@ const plugin: ReturnType<typeof definePluginEntry> = definePluginEntry({
         ? pluginConfig.continuationGuard as Record<string, unknown> : undefined,
     };
 
+    let engineRef: ReturnType<typeof createClawContextEngine> | null = null;
     try {
       (api as any).registerContextEngine("claw-ctx", (_ctx: any) => {
-        return createClawContextEngine(config as any, api.logger);
+        const engine = createClawContextEngine(config as any, api.logger);
+        engineRef = engine;
+        return engine;
       });
       api.logger.info(`[claw-ctx] v${VERSION} registered`);
     } catch (e) {
       api.logger.warn("[claw-ctx] registration failed:", e);
+    }
+
+    // v6.14.0: continuity handoff across host reset boundaries (daily/idle/
+    // manual reset). OpenClaw drops the live window at a reset boundary; the
+    // handoff summary is re-injected by cold-start assemble().
+    if (typeof (api as any).on === "function") {
+      (api as any).on("before_reset", async (event: any, ctx: any) => {
+        try {
+          if (!engineRef) return;
+          const sessionId = typeof ctx?.sessionId === "string" ? ctx.sessionId : "";
+          if (sessionId === "") return;
+          const result = await engineRef.captureResetHandoff({
+            sessionId,
+            sessionKey: typeof ctx?.sessionKey === "string" ? ctx.sessionKey : undefined,
+            reason: typeof event?.reason === "string" ? event.reason : undefined,
+            messages: Array.isArray(event?.messages) ? event.messages : [],
+          });
+          if (result.stored) {
+            api.logger.info(`[claw-ctx] reset handoff stored for session ${sessionId}`);
+          } else {
+            api.logger.debug?.(`[claw-ctx] reset handoff skipped: ${result.reason ?? "unknown"}`);
+          }
+        } catch (e) {
+          api.logger.warn("[claw-ctx] before_reset handoff failed (non-blocking):", e);
+        }
+      });
     }
 
     // v6.5.1: register contract tools — names must match openclaw.plugin.json

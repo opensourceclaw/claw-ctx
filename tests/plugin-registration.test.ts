@@ -24,6 +24,7 @@ describe("Plugin Registration", () => {
       registerContextEngine: vi.fn((id: string, factory: (ctx: any) => any) => {
         registeredEngine = factory({});
       }),
+      on: vi.fn(),
     };
   });
 
@@ -62,6 +63,35 @@ describe("Plugin Registration", () => {
     expect(typeof registeredEngine.assemble).toBe("function");
     expect(typeof registeredEngine.ingest).toBe("function");
     expect(typeof registeredEngine.healthCheck).toBe("function");
+  });
+
+  it("v6.14.0: registers before_reset and captures the continuity handoff", async () => {
+    plugin.register(mockApi);
+    const call = mockApi.on.mock.calls.find(([event]: [string]) => event === "before_reset");
+    expect(call).toBeDefined();
+    const handler = call![1] as (event: any, ctx: any) => Promise<void>;
+
+    const spy = vi
+      .spyOn(registeredEngine, "captureResetHandoff")
+      .mockResolvedValue({ stored: true });
+    try {
+      await handler(
+        { reason: "daily", messages: [{ role: "user", content: "需要" }] },
+        { sessionId: "s-1", sessionKey: "agent:main:tui" }
+      );
+      expect(spy).toHaveBeenCalledWith({
+        sessionId: "s-1",
+        sessionKey: "agent:main:tui",
+        reason: "daily",
+        messages: [{ role: "user", content: "需要" }],
+      });
+
+      spy.mockClear();
+      await handler({ reason: "daily" }, {});
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   // Edge case: registerContextEngine throws

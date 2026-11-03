@@ -87,6 +87,7 @@ import { CheckpointManager } from "./session-resume/checkpoint.js";
 import { ContextAssembler, type AssemblyResult } from "./session-resume/context-assembler.js";
 import { HistoryLoader } from "./session-resume/history-loader.js";
 import { TaskTypeDetector } from "./adaptive/task-type-detector.js";
+import { ResetHandoff, type ResetHandoffParams, type ResetHandoffResult } from "./reset-handoff.js";
 // v5.16.0: Model-aware context optimization
 import { ModelAwareOptimizer, modelAwareOptimizer, type OptimizationHint } from "./model-aware-optimizer.js";
 // v6.10.1: window/reserve startup validation (warn-only)
@@ -349,6 +350,9 @@ export class ClawContextEngine {
   private _continuationGuard: ContinuationGuard;
   // P3: last summary text per session (refetch/plan-restatement input) + pending re-fetch hints
   private _lastSummaryBySession = new Map<string, string>();
+  // v6.14.0: sessions whose resume history was lazily loaded (cold-start after
+  // a host reset / restart) — avoids repeated claw-mem searches per turn.
+  private _resumeBootstrapped = new Set<string>();
   private _pendingGuardHints = new Map<string, RoleHint[]>();
   // v4.3.0: tiktoken | v4.4.0: drift | v4.5.0: smart budget | v4.7.0: state extractor | v4.9.0: dependency tracker
 
@@ -433,6 +437,21 @@ export class ClawContextEngine {
   }
 
   private _session(id: string): void { if (this.sid !== id) { this.sid = id; this.manager.sessionId = id; } }
+
+  /** v6.14.0: no assistant turn yet in the live window ⇒ likely a reset/restart. */
+  private _isColdStartMessages(messages: any[] | undefined): boolean {
+    if (!Array.isArray(messages) || messages.length === 0) return true;
+    return !messages.some((message) => message?.role === "assistant");
+  }
+
+  /**
+   * v6.14.0: persist a continuity summary before the host resets the session
+   * (OpenClaw `before_reset` hook). Stored as a normal session_summary so the
+   * next cold-start assemble() re-injects it through [Session History].
+   */
+  async captureResetHandoff(params: ResetHandoffParams): Promise<ResetHandoffResult> {
+    return new ResetHandoff(this.manager as any, this.logger).capture(params);
+  }
 
   /** v6.13.0 P3: drain pending continuation-guard re-fetch hints for this session. */
   private _drainGuardHints(sessionId: string): RoleHint[] {
@@ -520,6 +539,24 @@ export class ClawContextEngine {
     this._session(p.sessionId);
     // v6.13.0 P1: record host-supplied stage (no-op when the trigger is disabled)
     this._stageTrigger.noteStage(p.sessionId, p.statusSignal?.stage);
+
+    // v6.14.0: cold start after a host reset boundary or process restart —
+    // load session-summary history once so the existing [Session History]
+    // block below is not empty. Warm turns already carry the live messages.
+    if (
+      this._sessionResume &&
+      this._isColdStartMessages(p.messages) &&
+      !this._resumeBootstrapped.has(p.sessionId)
+    ) {
+      this._resumeBootstrapped.add(p.sessionId);
+      try {
+        await this._sessionResume.bootstrap(p.sessionId);
+      } catch (error) {
+        this.logger.warn(
+          `[claw-ctx] cold-start resume bootstrap failed (non-blocking): ${String(error)}`,
+        );
+      }
+    }
 
     // v5.16.0: Get model-aware optimization hint
     if (p.model) {
