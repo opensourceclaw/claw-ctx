@@ -72,6 +72,26 @@ describe("ResetHandoff", () => {
     ).toContain("回执 diff");
   });
 
+  it("tags the handoff payload with DerivedMeta lineage (channel separation)", async () => {
+    const manager = fakeManager();
+    await new ResetHandoff(manager).capture({
+      sessionId: "s-derived",
+      reason: "daily",
+      messages: [
+        { role: "user", id: "h-1", content: "检查 inbox/inbox-results/回执-a.md 的状态" },
+        { role: "assistant", id: "h-2", content: "回执 a 已交付，继续检查回执 b。" },
+        { role: "user", id: "h-3", content: "好的，先等 Friday 复核。" },
+      ],
+    });
+    const summary = JSON.parse(manager.stored[0].content);
+    expect(summary.derived).toMatchObject({
+      schemaVersion: 1,
+      derivedBy: "reset-handoff",
+      sourceSessionId: "s-derived",
+      sourceEntryIds: ["h-1", "h-2", "h-3"],
+    });
+  });
+
   it("stores concrete file and task identifiers alongside the summary", async () => {
     const manager = fakeManager();
     await new ResetHandoff(manager).capture({

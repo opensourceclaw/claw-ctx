@@ -70,6 +70,8 @@ import { runStructuralDigest, type DigestSourceMessage } from "./structural-dige
 import { parseDigest, serializeDigest } from "./structural-digest/serialize.js";
 import { ERROR_CARD_BLOCK_MAX_TOKENS } from "./structural-digest/constants.js";
 import { DIGEST_PREFIX, STRUCTURAL_DIGEST_ENABLED } from "./structural-digest/constants.js";
+// v6.14.1 (channel separation 1/2): derived artifacts are read-only lineage faces
+import { isDerivedTranscriptEntry, makeDerivedMeta } from "./derived-meta.js";
 import { optimizerObserver } from "./obs/optimizer-observer.js";
 import { CIInjector, type CISignal, type CIProvider } from "./ci_injector.js";
 import { LongTermDependencyTracker } from "./long-term-dependency-tracker.js";
@@ -504,7 +506,15 @@ export class ClawContextEngine {
     const c = extractText(p.message);
     if (!c || c.length < 20) return { ingested: false };
     try {
-      this.manager.store(c, "episodic");
+      // v6.14.1 channel separation: raw evidence keeps its source pointer.
+      this.manager.store(c, "episodic", ["raw-evidence"], {
+        sessionId: p.sessionId,
+        role: typeof p.message?.role === "string" ? p.message.role : "unknown",
+        ...(typeof p.message?.id === "string" && p.message.id !== ""
+          ? { sourceEntryId: p.message.id }
+          : {}),
+        kind: "raw-evidence",
+      });
 
       // v4.7.0: Extract and merge session state
       const newState = SessionStateExtractor.extract([{ content: c, role: p.message.role }], p.sessionId);
@@ -530,7 +540,19 @@ export class ClawContextEngine {
     if (p.isHeartbeat) return { ingestedCount: 0 };
     this._session(p.sessionId);
     let n = 0;
-    for (const m of p.messages) { const c = extractText(m); if (c && c.length >= 20) { try { this.manager.store(c, "episodic"); n++; } catch { /* skip */ } } }
+    for (const m of p.messages) {
+      const c = extractText(m);
+      if (!c || c.length < 20) continue;
+      try {
+        this.manager.store(c, "episodic", ["raw-evidence"], {
+          sessionId: p.sessionId,
+          role: typeof m?.role === "string" ? m.role : "unknown",
+          ...(typeof m?.id === "string" && m.id !== "" ? { sourceEntryId: m.id } : {}),
+          kind: "raw-evidence",
+        });
+        n++;
+      } catch { /* skip */ }
+    }
     return { ingestedCount: n };
   }
 
@@ -958,7 +980,11 @@ export class ClawContextEngine {
         // 3. Persist compaction summary as episodic memory
         if (summaryBlock) {
           try {
-            this.manager.store(summaryBlock, "episodic", ["compaction", "post-compact"]);
+            this.manager.store(summaryBlock, "episodic", ["compaction", "post-compact", "derived"], {
+              sessionId: p.sessionId,
+              kind: "derived",
+              derivedBy: "compaction-summary",
+            });
           } catch (e: any) {
             this.logger.warn(`[claw-ctx] post-compact episodic store failed: ${e?.message ?? e}`);
           }
@@ -1013,12 +1039,12 @@ export class ClawContextEngine {
     sessionId: string
   ): Promise<{ compacted: boolean; reason?: string; summary: string; tokensBefore: number; tokensAfter?: number; details?: unknown; keptMsgs?: Array<{ line: string; type: string; message?: any }>; summaryBlock?: string; digest?: { rounds: number; tokens: number }; consistency?: "pass" | "rejected" | "degraded" }> {
     const lines = fs.readFileSync(sessionFile, "utf-8").split("\n").filter(l => l.trim());
-    const entries: Array<{ line: string; type: string; message?: any }> = [];
+    const entries: Array<{ line: string; type: string; message?: any; derived?: unknown }> = [];
 
     for (const line of lines) {
       try {
         const obj = JSON.parse(line);
-        entries.push({ line, type: obj.type ?? "unknown", message: obj.message });
+        entries.push({ line, type: obj.type ?? "unknown", message: obj.message, derived: obj.derived });
       } catch {
         entries.push({ line, type: "unparseable" });
       }
@@ -1055,14 +1081,22 @@ export class ClawContextEngine {
       }
     }
 
-    if (msgEntries.length === 0) {
+    // v6.14.1 (channel separation 1/2): derived entries (compaction summaries,
+    // reset handoffs, …) stay in the transcript as read-only context, but they
+    // are never a compaction source — this is the hard guard against
+    // summary-of-summary drift.
+    const derivedEntries = msgEntries.filter((e) => isDerivedTranscriptEntry(e));
+    const sourceEntries = msgEntries.filter((e) => !isDerivedTranscriptEntry(e));
+    const derivedTokens = derivedEntries.reduce((sum, e) => sum + this._estimateMessageTokens(e.message), 0);
+
+    if (sourceEntries.length === 0) {
       return { compacted: false, reason: "no messages to compact", summary: "", tokensBefore: 0 };
     }
 
     // Estimate tokens per message
     const msgTokens: number[] = [];
     let totalMsgTokens = 0;
-    for (const e of msgEntries) {
+    for (const e of sourceEntries) {
       const t = this._estimateMessageTokens(e.message);
       msgTokens.push(t);
       totalMsgTokens += t;
@@ -1088,26 +1122,26 @@ export class ClawContextEngine {
     if (useSemantic) {
       // v4.22.0: Semantic compression — preserve important messages
       const result: CompressionResult = this._semanticCompressor.compress(
-        msgEntries, msgTokens, targetTokens
+        sourceEntries, msgTokens, targetTokens
       );
       // v6.11.0 P2: surface self-consistency verdict for P4 accounting
       consistencyVerdict = result.consistency?.status;
-      keptMsgs = result.keptIndices.map(i => msgEntries[i]);
+      keptMsgs = result.keptIndices.map(i => sourceEntries[i]);
       removedCount = result.removedIndices.length;
       if (removedCount <= 10) {
         return { compacted: false, reason: `too few messages to remove (${removedCount})`, summary: "", tokensBefore: totalMsgTokens };
       }
       summaryBlock = result.summary;
       const keptSet = new Set(result.keptIndices);
-      removedMsgs = msgEntries.filter((_, i) => !keptSet.has(i));
+      removedMsgs = sourceEntries.filter((_, i) => !keptSet.has(i));
     } else {
       // Legacy: walk from newest to oldest
       let acc = 0;
-      let keepFrom = msgEntries.length;
-      for (let i = msgEntries.length - 1; i >= 0; i--) {
+      let keepFrom = sourceEntries.length;
+      for (let i = sourceEntries.length - 1; i >= 0; i--) {
         acc += msgTokens[i];
         if (acc > targetTokens) {
-          keepFrom = Math.min(msgEntries.length, Math.max(20, i + 1));
+          keepFrom = Math.min(sourceEntries.length, Math.max(20, i + 1));
           break;
         }
       }
@@ -1117,10 +1151,10 @@ export class ClawContextEngine {
         return { compacted: false, reason: `too few messages to remove (${removedCount})`, summary: "", tokensBefore: totalMsgTokens };
       }
 
-      const oldMsgs = msgEntries.slice(0, removedCount);
+      const oldMsgs = sourceEntries.slice(0, removedCount);
       summaryBlock = this._buildSummary(oldMsgs, removedCount);
       removedMsgs = oldMsgs;
-      keptMsgs = msgEntries.slice(removedCount);
+      keptMsgs = sourceEntries.slice(removedCount);
     }
     const lastHeader = headers.length > 0 ? headers[headers.length - 1] : entries[0];
     let lastHeaderId = "root";
@@ -1132,6 +1166,7 @@ export class ClawContextEngine {
     // pre-v6.9.0 output (pure-incremental contract).
     let digestEntryLine: string | null = null;
     let digestInfo: { rounds: number; tokens: number } | null = null;
+    let digestRound: number | null = null;
     if (STRUCTURAL_DIGEST_ENABLED) {
       try {
         const sources: DigestSourceMessage[] = removedMsgs.map((e) => {
@@ -1142,11 +1177,18 @@ export class ClawContextEngine {
         });
         const oldDigest = oldDigestText ? parseDigest(oldDigestText) : null;
         const round = (oldDigestRound ?? oldDigest?.rounds ?? 0) + 1;
+        digestRound = round;
         const digest = runStructuralDigest(sources, oldDigest, sessionId, round);
         if (digest) {
           const text = serializeDigest(digest);
           if (text) {
-            digestEntryLine = JSON.stringify({ type: "message", id: this._makeId(), parentId: lastHeaderId, timestamp: new Date().toISOString(), digestRound: round, message: { role: "user", content: text } });
+            const derived = makeDerivedMeta({
+              derivedBy: "structural-digest",
+              sourceSessionId: sessionId,
+              sourceEntryIds: sources.map((s) => s.id).filter((id) => id !== "unknown"),
+              round,
+            });
+            digestEntryLine = JSON.stringify({ type: "message", id: this._makeId(), parentId: lastHeaderId, timestamp: new Date().toISOString(), digestRound: round, derived, message: { role: "user", content: text } });
             digestInfo = { rounds: digest.rounds, tokens: estimateTokens(text) };
           }
         }
@@ -1157,12 +1199,30 @@ export class ClawContextEngine {
       }
     }
 
+    const removedIds = removedMsgs
+      .map((e) => {
+        try { return JSON.parse(e.line).id; } catch { return undefined; }
+      })
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+    const summaryEntryLine = JSON.stringify({
+      type: "message",
+      id: this._makeId(),
+      parentId: lastHeaderId,
+      timestamp: new Date().toISOString(),
+      derived: makeDerivedMeta({
+        derivedBy: "compaction-summary",
+        sourceSessionId: sessionId,
+        sourceEntryIds: removedIds,
+        round: digestRound ?? undefined,
+      }),
+      message: { role: "user", content: summaryBlock },
+    });
+
     const newLines: string[] = [...headers.map(h => h.line)];
     if (digestEntryLine) newLines.push(digestEntryLine);
-    newLines.push(
-      JSON.stringify({ type: "message", id: this._makeId(), parentId: lastHeaderId, timestamp: new Date().toISOString(), message: { role: "user", content: summaryBlock } }),
-      ...keptMsgs.map(m => m.line),
-    );
+    // Derived entries are preserved verbatim as read-only context, never merged
+    // into the new summary (they are excluded from source selection above).
+    newLines.push(...derivedEntries.map(e => e.line), summaryEntryLine, ...keptMsgs.map(m => m.line));
 
     // v6.10.1: invariant — trigger evaluation must see the pre-trim volume;
     // a mismatch means the evaluate step was reordered after mutation.
@@ -1179,15 +1239,15 @@ export class ClawContextEngine {
     fs.writeFileSync(tmpFile, newLines.join("\n") + "\n", "utf-8");
     fs.renameSync(tmpFile, sessionFile);
 
-    const newTokens = keptMsgs.reduce((sum, _m, i) => sum + msgTokens[removedCount + i], 0) + estimateTokens(summaryBlock) + (digestInfo?.tokens ?? 0);
-    this.logger.info(`[claw-ctx] COMPACT: ${msgEntries.length} msgs → ${keptMsgs.length + 1} msgs, ${totalMsgTokens} → ≈${newTokens} tokens${digestInfo ? ` (digest r${digestInfo.rounds}, ${digestInfo.tokens}t)` : ""}`);
+    const newTokens = keptMsgs.reduce((sum, _m, i) => sum + msgTokens[removedCount + i], 0) + estimateTokens(summaryBlock) + (digestInfo?.tokens ?? 0) + derivedTokens;
+    this.logger.info(`[claw-ctx] COMPACT: ${msgEntries.length} msgs → ${keptMsgs.length + 1 + derivedEntries.length} msgs, ${totalMsgTokens} → ≈${newTokens} tokens${digestInfo ? ` (digest r${digestInfo.rounds}, ${digestInfo.tokens}t)` : ""}${derivedEntries.length > 0 ? ` (${derivedEntries.length} derived kept)` : ""}`);
 
     return {
       compacted: true,
       summary: `Removed ${removedCount} old messages (kept ${keptMsgs.length} recent + 1 summary). Tokens: ${totalMsgTokens} → ≈${newTokens}`,
       tokensBefore: totalMsgTokens,
       tokensAfter: newTokens,
-      details: { messagesBefore: msgEntries.length, messagesAfter: keptMsgs.length + 1, removedCount, tokensBefore: totalMsgTokens, tokensAfter: newTokens, digest: digestInfo },
+      details: { messagesBefore: msgEntries.length, messagesAfter: keptMsgs.length + 1 + derivedEntries.length, removedCount, derivedPreserved: derivedEntries.length, tokensBefore: totalMsgTokens, tokensAfter: newTokens, digest: digestInfo },
       keptMsgs,
       summaryBlock,
       digest: digestInfo ?? undefined,
@@ -1316,7 +1376,15 @@ export class ClawContextEngine {
         } catch { /* non-blocking */ }
       }
     }
-    if (p.autoCompactionSummary) { try { this.manager.store(p.autoCompactionSummary, "episodic", ["compaction"]); } catch { /* ok */ } }
+    if (p.autoCompactionSummary) {
+      try {
+        this.manager.store(p.autoCompactionSummary, "episodic", ["compaction", "derived"], {
+          sessionId: p.sessionId,
+          kind: "derived",
+          derivedBy: "compaction-summary",
+        });
+      } catch { /* ok */ }
+    }
 
     // v4.16.0: Self-refinement evaluation of last assistant message
     try {

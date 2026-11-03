@@ -32,6 +32,7 @@ import { DEFAULT_SESSION_RESUME_CONFIG } from "./types.js";
 import { SummaryGenerator } from "./summary-generator.js";
 import { HistoryLoader } from "./history-loader.js";
 import { RecapLoader } from "./recap-loader.js";
+import { makeDerivedMeta } from "../derived-meta.js";
 
 // Minimal MemoryManager interface (duck-typed to match claw-mem)
 interface MemoryManager {
@@ -127,7 +128,7 @@ export class SessionResumeManager {
    */
   async afterTurn(
     sessionId: string,
-    messages: Array<{ role?: string; content: string }>,
+    messages: Array<{ role?: string; content: string; id?: string }>,
     sessionState?: { entities: Array<{ name: string; type: string; mentions: number; firstSeen: string }>; decisions: Array<{ description: string; actor: string; confidence: number; context: string }>; topics: Array<{ label: string; weight: number; firstMentioned: number }> } | null,
   ): Promise<{ stored: boolean; summary: SessionSummary | null }> {
     if (!this._config.storeOnEveryTurn) {
@@ -139,6 +140,12 @@ export class SessionResumeManager {
 
     try {
       const summary = this._generator.generate(messages, sessionId, sessionState as any);
+      // v6.14.1 channel separation: lineage face (derived, read-only).
+      summary.derived = makeDerivedMeta({
+        derivedBy: "session-summary",
+        sourceSessionId: sessionId,
+        sourceEntryIds: messages.map((message) => message.id),
+      });
       await this._manager.store(
         JSON.stringify(summary),
         "episodic",

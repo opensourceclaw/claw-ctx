@@ -71,8 +71,21 @@ describe("compaction pre-trim evaluation invariant (v6.10.1)", () => {
     });
     const first = engine.lastEvaluationView!.preTrimTokens;
 
-    // Second attempt on the now-compacted file: evaluation re-runs on the
-    // new (smaller) file — the view must reflect that pre-trim volume.
+    // Second attempt on the now-compacted file plus new turns: derived summary
+    // entries are excluded from the compaction source (v6.14.1), so the second
+    // attempt needs fresh raw evidence to have something to trim.
+    const appended = Array.from({ length: 20 }, (_, i) =>
+      JSON.stringify({
+        type: "message",
+        id: `m-extra-${i}`,
+        message: {
+          role: "user",
+          content: `extra ${i} ` + "lorem ipsum dolor sit amet consectetur ".repeat(12),
+        },
+      }),
+    );
+    fs.appendFileSync(sessionFile, appended.join("\n") + "\n", "utf-8");
+
     const second = await engine.compact({
       sessionId: "pretrim-2",
       sessionFile,

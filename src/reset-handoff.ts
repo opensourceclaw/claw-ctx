@@ -22,6 +22,7 @@
 
 import { SummaryGenerator } from "./session-resume/summary-generator.js";
 import type { SessionSummary } from "./session-resume/types.js";
+import { makeDerivedMeta } from "./derived-meta.js";
 
 export const RESET_HANDOFF_TAG = "reset-handoff";
 
@@ -133,15 +134,17 @@ export interface ResetHandoffResult {
 interface NormalizedMessage {
   role: string;
   content: string;
+  id?: string;
 }
 
-function messageText(message: unknown): { role: string; content: string } {
+function messageText(message: unknown): { role: string; content: string; id?: string } {
   if (typeof message === "string") return { role: "user", content: message };
   if (!message || typeof message !== "object") return { role: "user", content: "" };
   const record = message as Record<string, unknown>;
   const role = typeof record.role === "string" ? record.role : "user";
+  const id = typeof record.id === "string" && record.id.trim() !== "" ? record.id.trim() : undefined;
   const content = record.content;
-  if (typeof content === "string") return { role, content };
+  if (typeof content === "string") return { role, content, ...(id ? { id } : {}) };
   if (Array.isArray(content)) {
     const text = content
       .map((block) => {
@@ -154,9 +157,9 @@ function messageText(message: unknown): { role: string; content: string } {
       })
       .filter((part) => part.length > 0)
       .join("\n");
-    return { role, content: text };
+    return { role, content: text, ...(id ? { id } : {}) };
   }
-  return { role, content: "" };
+  return { role, content: "", ...(id ? { id } : {}) };
 }
 
 export class ResetHandoff {
@@ -188,6 +191,11 @@ export class ResetHandoff {
       const payload = JSON.stringify({
         ...summary,
         ...identifiers,
+        derived: makeDerivedMeta({
+          derivedBy: "reset-handoff",
+          sourceSessionId: sessionId,
+          sourceEntryIds: messages.map((message) => message.id),
+        }),
         handoffReason: params.reason ?? "unknown",
         handoffAt: Date.now(),
         sessionKey: params.sessionKey ?? null,

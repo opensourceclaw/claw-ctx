@@ -233,6 +233,20 @@ describe("CheckpointManager", () => {
     );
   });
 
+  // v6.14.1: snapshot is a derived, read-only face with lineage
+  it("buildSnapshot carries DerivedMeta lineage (channel separation)", () => {
+    const mgr = makeMockManager();
+    const cm = new CheckpointManager(mgr, undefined, () => makeSessionState());
+    cm.checkpoint();
+    const snapshot = (mgr.sessionSnapshot.mock.calls[0][0] as any).snapshot;
+    expect(snapshot.derived).toMatchObject({
+      schemaVersion: 1,
+      derivedBy: "checkpoint",
+      sourceSessionId: "sess_test",
+    });
+    expect(Array.isArray(snapshot.derived.sourceEntryIds)).toBe(true);
+  });
+
   // v5.11.4: buildSnapshot extracts pendingItems from decisions
   it("v5.11.4: buildSnapshot extracts pendingItems from decisions", () => {
     const mgr = makeMockManager();

@@ -22,6 +22,8 @@
  * v1.0.0: Initial implementation
  */
 
+import type { DerivedMeta } from "../derived-meta.js";
+
 export interface SessionSummary {
   /** Dominant topic / keyword summary */
   theme: string;
@@ -43,6 +45,8 @@ export interface SessionSummary {
   pendingIds?: string[];
   /** v6.14.1 additive: last few user messages (truncated) from reset-handoff. */
   recentUserMessages?: string[];
+  /** v6.14.1 additive: lineage face (derived, read-only). */
+  derived?: DerivedMeta;
 }
 
 export interface SessionResumeConfig {
@@ -107,6 +111,8 @@ export interface SessionSnapshot {
   pendingItems: string[];
   keyEntities: string[];
   isClosed: boolean;
+  /** v6.14.1 additive: lineage face (derived snapshot). */
+  derived?: DerivedMeta;
 }
 
 /** v5.1.0: CheckpointManager configuration. */

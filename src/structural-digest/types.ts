@@ -24,6 +24,8 @@
  * confidence + provenance are MANDATORY on every entry (garbage gate).
  */
 
+import type { DerivedMeta } from "../derived-meta.js";
+
 export interface Provenance {
   /** Source JSONL entry id */
   msgId: string;
@@ -68,6 +70,8 @@ export interface StructuralDigest {
   confirmed: ConfirmedFact[];
   rejected: RejectedApproach[];
   pitfalls: ApiPitfall[];
+  /** v6.14.1 additive lineage face (not serialized in v1 text; kept on the entry). */
+  derived?: DerivedMeta;
 }
 
 export const DIGEST_SCHEMA_VERSION = 1 as const;

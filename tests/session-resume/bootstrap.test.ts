@@ -47,6 +47,26 @@ describe("SessionResumeManager", () => {
     );
   });
 
+  it("afterTurn tags the stored session summary with DerivedMeta lineage", async () => {
+    const mockMgr = makeMockManager();
+    const mgr = new SessionResumeManager(mockMgr);
+    const msgs = Array.from({ length: 5 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: `message ${i} about deploy`,
+      id: `entry-${i}`,
+    }));
+    const result = await mgr.afterTurn("session-1", msgs);
+    expect(result.stored).toBe(true);
+    expect(result.summary!.derived).toMatchObject({
+      schemaVersion: 1,
+      derivedBy: "session-summary",
+      sourceSessionId: "session-1",
+      sourceEntryIds: ["entry-0", "entry-1", "entry-2", "entry-3", "entry-4"],
+    });
+    const stored = JSON.parse((mockMgr.store.mock.calls[0] as any[])[0] as string);
+    expect(stored.derived.derivedBy).toBe("session-summary");
+  });
+
   it("afterTurn skips for < 3 messages", async () => {
     const mockMgr = makeMockManager();
     const mgr = new SessionResumeManager(mockMgr);

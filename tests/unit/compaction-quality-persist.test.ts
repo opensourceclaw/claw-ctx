@@ -144,6 +144,16 @@ describe("T3 ledger persistence", () => {
     try {
       const fB = path.join(dirB, "session.jsonl");
       fs.copyFileSync(a.f, fB);
+      // v6.14.1: derived summary is not a compaction source — append raw turns
+      // so the disabled-engine compact is a real (non-empty) compaction run.
+      const extra = Array.from({ length: 40 }, (_, i) =>
+        JSON.stringify({
+          type: "message",
+          id: `extra-${i}`,
+          message: { role: "user", content: `extra ${i} ` + "lorem ipsum dolor sit amet consectetur. ".repeat(6) },
+        }),
+      );
+      fs.appendFileSync(fB, extra.join("\n") + "\n");
       const eB = createClawContextEngine(
         { workspaceDir: dirB, sessionResume: false, persistCompactionQuality: false },
         mockLogger,

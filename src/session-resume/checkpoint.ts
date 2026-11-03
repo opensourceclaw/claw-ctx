@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 
 import type { SessionSnapshot, CheckpointConfig } from "./types.js";
+import { makeDerivedMeta } from "../derived-meta.js";
 import type { SessionState } from "../session-state-extractor.js";
 
 interface MinimalMemoryManager {
@@ -266,6 +267,11 @@ export class CheckpointManager {
       pendingItems,
       keyEntities: topEntities,
       isClosed: false,
+      // v6.14.1 channel separation: lineage face (derived snapshot).
+      derived: makeDerivedMeta({
+        derivedBy: "checkpoint",
+        sourceSessionId: state.sessionId,
+      }),
     };
   }
 
