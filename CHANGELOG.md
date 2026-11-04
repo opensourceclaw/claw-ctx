@@ -1,5 +1,27 @@
 # Changelog
 
+## [6.15.0] - 2026-11-04
+
+### Added
+
+- **claim-evidence ledger v2（Structural Digest v2）**：新增 `claims[]` 逐字证据账本——每被删原始消息至多 1 条 claim（≤120 chars），带 `kind` 六类、逐字 `span`（≤512 chars，源内校验失败即弃）、宿主 transcript `entryId` 主键、`sessionId`/`round` 与可选 `seq`；v1 `confirmed/rejected/pitfalls` 保留为可读视图，v1/v2 文本双向解析兼容（v1 解析器自然忽略 `@claim` 行）。每轮上限 20（标识符/决定动词优先），跨轮全局上限 60（FIFO 老化）。实现：`57b2ae2`；验收：`回执-edith-claims-v2-acceptance-20261104.md`、`回执-edith-claims-v2-fixes-reverify-20261104.md`。
+- **通道分离批次 1**：统一 `DerivedMeta` lineage（session summary / structural digest / reset-handoff / checkpoint），压缩摘要与 digest 打派生标记；`_executeCompaction` 源选择剔除派生条目，杜绝 summary-of-summary 漂移。提交：`05b2540`；验收：`回执-edith-channel-separation-acceptance-20261103.md`。
+
+### Fixed
+
+- **digest 预算改用 tiktoken 权威口径**：`serialize.ts` 以 `createTokenCounter("cl100k_base")` 替换 chars/4 估算，并对真实序列化文本做终检；修复 claim-heavy 文本 +18~24%、中文 +116% 的低估（60 条 EN 信号 4073、中文 3998、多轮 4013–4041，均 ≤4096）。
+- **跨面裁剪倒挂**：裁剪 tuple 增加 `surface` 维度（同档视图先裁、claims 后裁），修复 claims 因 confidence 标度不可比而系统性先被裁的问题（密集信号场景 claims 由 7/20 提升至 20/20）。
+- **claims 跨轮线性累积**：`CLAIM_TOTAL_LIMIT=60` + FIFO 老化，5 轮累积封顶 60 并淘汰最老轮。
+
+### Tests
+
+- 最终全量 **119 files / 1453 passed / 5 skipped / 0 failed**；`tsc --noEmit` 与 `tsc -p tsconfig.pi.json --noEmit` 均 0 error；`npm run build` ✓。
+
+### Notes
+
+- v1 文本 parse→serialize 字节幂等（246/246）；`ctx_compact` / `ctx_build` / `ctx_inject` 签名不变；新增字段与文本块均为 additive。
+- 已知非阻塞项：`parseDigest` 仍将 `rounds` 重建为 0（v1 既有，引擎以 derivedMeta.round 维持）；digest token 缓存键为长度+首尾片，理论碰撞安全边界已由 Edith 记录为 P3。
+
 ## [6.14.0] - 2026-11-03
 
 ### Added
