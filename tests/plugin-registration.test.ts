@@ -12,6 +12,10 @@ describe("Plugin Registration", () => {
 
   beforeEach(() => {
     registeredEngine = null;
+    // v6.15.1: engineRef is process-global (split-brain fix); isolate tests.
+    delete (globalThis as Record<symbol, unknown>)[
+      Symbol.for("claw-ctx.shared-engine-state.v1")
+    ];
     mockApi = {
       id: "test-api",
       config: {},
@@ -102,8 +106,9 @@ describe("Plugin Registration", () => {
     const handler = call![1] as (event: any, ctx: any) => Promise<void>;
     await handler({ reason: "daily", messages: [] }, { sessionId: "s-1" });
     expect(mockApi.logger.info).toHaveBeenCalledWith(
-      "[claw-ctx] reset handoff skipped: no engine instance for this session"
+      expect.stringContaining("reset handoff skipped: no engine instance for this session")
     );
+    expect(mockApi.logger.info).toHaveBeenCalledWith(expect.stringContaining("hook=ctx-"));
   });
 
   it("v6.15.1: logs capture() skip reasons at info level", async () => {
@@ -116,8 +121,50 @@ describe("Plugin Registration", () => {
     try {
       await handler({ reason: "daily", messages: [] }, { sessionId: "s-1" });
       expect(mockApi.logger.info).toHaveBeenCalledWith(
-        "[claw-ctx] reset handoff skipped: too few messages (2)"
+        expect.stringContaining("reset handoff skipped: too few messages (2)")
       );
+      expect(mockApi.logger.info).toHaveBeenCalledWith(expect.stringContaining("owner=ctx-"));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("v6.15.1: a second registration's before_reset sees the first instance's engine", async () => {
+    // Instance A instantiates the engine (factory runs).
+    plugin.register(mockApi);
+    expect(registeredEngine).toBeDefined();
+    const engineA = registeredEngine;
+    const spy = vi
+      .spyOn(engineA, "captureResetHandoff")
+      .mockResolvedValue({ stored: true });
+
+    // Instance B is registered but the host never instantiates its factory.
+    const apiB: any = {
+      ...mockApi,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      registerContextEngine: vi.fn(),
+      on: vi.fn(),
+    };
+    plugin.register(apiB);
+    const hookB = apiB.on.mock.calls.find(([event]: [string]) => event === "before_reset")![1] as (
+      event: any,
+      ctx: any,
+    ) => Promise<void>;
+
+    try {
+      await hookB({ reason: "daily", messages: [] }, { sessionId: "s-shared" });
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: "s-shared", reason: "daily" }),
+      );
+      expect(apiB.logger.info).toHaveBeenCalledWith(
+        expect.stringContaining("reset handoff stored for session s-shared"),
+      );
+      expect(apiB.logger.info).toHaveBeenCalledWith(expect.stringContaining("owner=ctx-"));
+      // Distinct register instances are observable in the logs.
+      const ids = [...mockApi.logger.info.mock.calls, ...apiB.logger.info.mock.calls]
+        .map(([line]: [string]) => String(line).match(/instance=(ctx-[\w]+)/)?.[1])
+        .filter(Boolean);
+      expect(new Set(ids).size).toBeGreaterThanOrEqual(2);
     } finally {
       spy.mockRestore();
     }

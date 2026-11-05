@@ -182,6 +182,27 @@ export {
 // v5.16.0 CLI entry point (run via: claw-ctx <command>)
 // CLI is available via bin entry in package.json
 
+// v6.15.1: engineRef must survive duplicate plugin registrations. OpenClaw can
+// instantiate the same plugin twice (metadata + runtime load paths), and a
+// register()-closure ref leaves the hook instance holding its own null ref
+// while another instance owns the engine ("split brain"). Use a process-global
+// singleton keyed by Symbol.for so even separately-evaluated module copies
+// converge on one engine reference.
+type ClawCtxEngine = ReturnType<typeof createClawContextEngine>;
+interface SharedEngineState {
+  engine: ClawCtxEngine | null;
+  ownerInstanceId: string | null;
+}
+const SHARED_ENGINE_STATE_KEY = Symbol.for("claw-ctx.shared-engine-state.v1");
+
+function sharedEngineState(): SharedEngineState {
+  const global = globalThis as Record<symbol, unknown>;
+  if (global[SHARED_ENGINE_STATE_KEY] === undefined) {
+    global[SHARED_ENGINE_STATE_KEY] = { engine: null, ownerInstanceId: null };
+  }
+  return global[SHARED_ENGINE_STATE_KEY] as SharedEngineState;
+}
+
 const plugin: ReturnType<typeof definePluginEntry> = definePluginEntry({
   id: "claw-ctx",
   name: "Claw Context Engine",
@@ -200,14 +221,19 @@ const plugin: ReturnType<typeof definePluginEntry> = definePluginEntry({
         ? pluginConfig.continuationGuard as Record<string, unknown> : undefined,
     };
 
-    let engineRef: ReturnType<typeof createClawContextEngine> | null = null;
+    const instanceId = `ctx-${Math.random().toString(36).slice(2, 8)}`;
+    const shared = sharedEngineState();
     try {
       (api as any).registerContextEngine("claw-ctx", (_ctx: any) => {
         const engine = createClawContextEngine(config as any, api.logger);
-        engineRef = engine;
+        shared.engine = engine;
+        shared.ownerInstanceId = instanceId;
+        api.logger.info(
+          `[claw-ctx] engine instantiated (instance=${instanceId}, owner=${instanceId})`,
+        );
         return engine;
       });
-      api.logger.info(`[claw-ctx] v${VERSION} registered`);
+      api.logger.info(`[claw-ctx] v${VERSION} registered (instance=${instanceId})`);
     } catch (e) {
       api.logger.warn("[claw-ctx] registration failed:", e);
     }
@@ -218,22 +244,32 @@ const plugin: ReturnType<typeof definePluginEntry> = definePluginEntry({
     if (typeof (api as any).on === "function") {
       (api as any).on("before_reset", async (event: any, ctx: any) => {
         try {
-          if (!engineRef) {
-            api.logger.info("[claw-ctx] reset handoff skipped: no engine instance for this session");
+          const engine = shared.engine;
+          if (!engine) {
+            api.logger.info(
+              `[claw-ctx] reset handoff skipped: no engine instance for this session ` +
+                `(hook=${instanceId}, owner=${shared.ownerInstanceId ?? "none"})`,
+            );
             return;
           }
           const sessionId = typeof ctx?.sessionId === "string" ? ctx.sessionId : "";
           if (sessionId === "") return;
-          const result = await engineRef.captureResetHandoff({
+          const result = await engine.captureResetHandoff({
             sessionId,
             sessionKey: typeof ctx?.sessionKey === "string" ? ctx.sessionKey : undefined,
             reason: typeof event?.reason === "string" ? event.reason : undefined,
             messages: Array.isArray(event?.messages) ? event.messages : [],
           });
           if (result.stored) {
-            api.logger.info(`[claw-ctx] reset handoff stored for session ${sessionId}`);
+            api.logger.info(
+              `[claw-ctx] reset handoff stored for session ${sessionId} ` +
+                `(hook=${instanceId}, owner=${shared.ownerInstanceId ?? "none"})`,
+            );
           } else {
-            api.logger.info(`[claw-ctx] reset handoff skipped: ${result.reason ?? "unknown"}`);
+            api.logger.info(
+              `[claw-ctx] reset handoff skipped: ${result.reason ?? "unknown"} ` +
+                `(hook=${instanceId}, owner=${shared.ownerInstanceId ?? "none"})`,
+            );
           }
         } catch (e) {
           api.logger.warn("[claw-ctx] before_reset handoff failed (non-blocking):", e);
