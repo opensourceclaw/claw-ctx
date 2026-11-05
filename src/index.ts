@@ -218,7 +218,10 @@ const plugin: ReturnType<typeof definePluginEntry> = definePluginEntry({
     if (typeof (api as any).on === "function") {
       (api as any).on("before_reset", async (event: any, ctx: any) => {
         try {
-          if (!engineRef) return;
+          if (!engineRef) {
+            api.logger.info("[claw-ctx] reset handoff skipped: no engine instance for this session");
+            return;
+          }
           const sessionId = typeof ctx?.sessionId === "string" ? ctx.sessionId : "";
           if (sessionId === "") return;
           const result = await engineRef.captureResetHandoff({
@@ -230,7 +233,7 @@ const plugin: ReturnType<typeof definePluginEntry> = definePluginEntry({
           if (result.stored) {
             api.logger.info(`[claw-ctx] reset handoff stored for session ${sessionId}`);
           } else {
-            api.logger.debug?.(`[claw-ctx] reset handoff skipped: ${result.reason ?? "unknown"}`);
+            api.logger.info(`[claw-ctx] reset handoff skipped: ${result.reason ?? "unknown"}`);
           }
         } catch (e) {
           api.logger.warn("[claw-ctx] before_reset handoff failed (non-blocking):", e);

@@ -94,6 +94,35 @@ describe("Plugin Registration", () => {
     }
   });
 
+  it("v6.15.1: logs the no-engine skip at info level", async () => {
+    // Registration succeeds but the host never instantiates an engine.
+    mockApi.registerContextEngine = vi.fn();
+    plugin.register(mockApi);
+    const call = mockApi.on.mock.calls.find(([event]: [string]) => event === "before_reset");
+    const handler = call![1] as (event: any, ctx: any) => Promise<void>;
+    await handler({ reason: "daily", messages: [] }, { sessionId: "s-1" });
+    expect(mockApi.logger.info).toHaveBeenCalledWith(
+      "[claw-ctx] reset handoff skipped: no engine instance for this session"
+    );
+  });
+
+  it("v6.15.1: logs capture() skip reasons at info level", async () => {
+    plugin.register(mockApi);
+    const call = mockApi.on.mock.calls.find(([event]: [string]) => event === "before_reset");
+    const handler = call![1] as (event: any, ctx: any) => Promise<void>;
+    const spy = vi
+      .spyOn(registeredEngine, "captureResetHandoff")
+      .mockResolvedValue({ stored: false, reason: "too few messages (2)" });
+    try {
+      await handler({ reason: "daily", messages: [] }, { sessionId: "s-1" });
+      expect(mockApi.logger.info).toHaveBeenCalledWith(
+        "[claw-ctx] reset handoff skipped: too few messages (2)"
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   // Edge case: registerContextEngine throws
   it("EC-PLUG-1: handles registerContextEngine throwing error", () => {
     mockApi.registerContextEngine = vi.fn(() => {
