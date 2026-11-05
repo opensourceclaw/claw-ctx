@@ -1,5 +1,16 @@
 # Changelog
 
+## [6.15.1] - 2026-11-05
+
+### Fixed
+
+- **reset-handoff 静默不可观测**：skip 分支 `debug` → `info`，no-engine 早退补 info 日志（`514e76f`）；默认日志级别下 `stored` / `skipped: <reason>` / `no engine instance` 三态可见。验收：`回执-edith-clawctx-handoff-loglevel-reverify-20261105.md`（双向负控）。
+- **双注册 engineRef split-brain**：`engineRef` 从 register() 闭包提升为 `Symbol.for("claw-ctx.shared-engine-state.v1")` 进程级单例，工厂写、钩子调用时读；register/工厂/reset 日志统一带 `(instance=…, owner=…)`。宿主双注册（`v6.15.0 registered` 每启动两次）下钩子此前恒拿 null 引用，daily reset handoff 从未 stored。验收：`回执-edith-clawctx-engineref-reverify-20261105.md`（双求值探针 + Symbol.for→Symbol 决定性负控）；生产实证 `reset handoff stored (hook=ctx-eqkldz, owner=ctx-jxmqr8)` + episodic 落盘（gateway.log 2026-11-05 13:43）。
+
+### Tests
+
+- 全量 **119 files / 1456 passed / 5 skipped / 0 failed**；`tsc --noEmit` 与 `tsc -p tsconfig.pi.json --noEmit` 均 0 error；`npm run build` ✓（dist 含 6.15.1，产物证据见 dist/version.js）。
+
 ## [6.15.0] - 2026-11-04
 
 ### Added
