@@ -27,8 +27,11 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # CX-15: idempotent create-if-absent by full list lookup + post-verify
-      # (gh release view against drafts was unreliable → double releases, OBS-B)
+      # CX-15 + family rule (devclaw/docs/protocol/UNIFIED-RELEASE-PROCESS.md):
+      # idempotent create-if-absent by full list lookup + post-verify.
+      # Release notes are hand-written English via --notes-file; a missing
+      # release-notes/<tag>.md is FATAL (no --generate-notes fallback), and the
+      # script CJK-gates the landed title+body before reporting success.
       - run: sh scripts/release-idempotency.sh "${{ github.ref_name }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
