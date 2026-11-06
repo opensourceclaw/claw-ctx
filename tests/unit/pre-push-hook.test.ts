@@ -23,6 +23,7 @@ const PETER_APPROVAL = [
   "# Peter Release Approval — claw-ctx v9.9.9",
   "- **Approver**: Peter",
   "- **Verdict**: ✅ APPROVED",
+  "- **Dispatcher**: Karen",
   "",
 ].join("\n");
 
@@ -432,6 +433,7 @@ describe("pre-push stage-gate hook", () => {
         "# Peter Release Approval — v9.9.9",
         "- **Approver**: Peter",
         "- **Verdict**: ✅ APPROVED",
+        "- **Dispatcher**: Karen",
         "依据 Edith 验收: **Stage**: TEST ｜ Status: passed(引用所据件,非本人署名)",
         "",
       ].join("\n"),
