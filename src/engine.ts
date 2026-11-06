@@ -217,6 +217,23 @@ function estimateTokens(text: string): number {
 interface ScoredItem { content: string; score: number }
 
 /**
+ * Relevance contract bridge for claw-mem search hits: v7.8.x carries the score
+ * inside `metadata.retention` (JSON string); a future version may expose a
+ * top-level `score`. Missing/malformed values fall back to the neutral 0.5 and
+ * are counted by assemble() so contract drift stays visible.
+ */
+function readHitScore(m: any): { score: number; missing: boolean } {
+  if (typeof m?.score === "number") return { score: m.score, missing: false };
+  try {
+    const rt = JSON.parse(m?.metadata?.retention ?? "{}");
+    if (typeof rt?.score === "number") return { score: rt.score, missing: false };
+  } catch { /* malformed retention — fall through to the neutral default */ }
+  return { score: 0.5, missing: true };
+}
+
+export const scoreOf = (m: any): number => readHitScore(m).score;
+
+/**
  * v6.10.0 — task status signal for error-card retrieval (joint design §3.1).
  * All fields optional: a missing dimension simply does not participate in the
  * retrieval key (never guessed). ctx never interprets error semantics —
@@ -668,14 +685,23 @@ export class ClawContextEngine {
     }
 
     // Convert to scored items
-    let items: ScoredItem[] = mems.map((m: any) => ({ content: m.content ?? "", score: m.score ?? 0 }));
+    let scoreFieldMissing = 0;
+    let items: ScoredItem[] = mems.map((m: any) => {
+      const hit = readHitScore(m);
+      if (hit.missing) scoreFieldMissing++;
+      return { content: m.content ?? "", score: hit.score };
+    });
 
     // Apply C2 confidence gating
     let confidenceReport: ConfidenceReport | undefined;
     if (this.confidenceGate) {
       const gated = this.confidenceGate.gate(items);
       items = gated.passed;
-      confidenceReport = gated.report;
+      confidenceReport = {
+        ...gated.report,
+        scoreFieldMissing,
+        memoryDroppedByGate: gated.report.totalItems - gated.report.passedItems,
+      };
     } else {
       // Legacy: simple score >= 0.3 filter
       items = items.filter((m) => m.score >= 0.3);

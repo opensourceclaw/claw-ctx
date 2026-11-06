@@ -47,6 +47,10 @@ export interface ConfidenceReport {
   avgConfidence: number;
   threshold: number;
   mode: ConfidenceMode;
+  /** Hits with no readable score (top-level or metadata.retention) → neutral 0.5. */
+  scoreFieldMissing?: number;
+  /** Hits dropped by the gate (totalItems - passedItems) — surfaces silent empty injection. */
+  memoryDroppedByGate?: number;
 }
 
 export class ConfidenceGate {
