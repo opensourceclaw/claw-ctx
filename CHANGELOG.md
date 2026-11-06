@@ -1,5 +1,17 @@
 # Changelog
 
+<!--
+Dependency pin: openclaw dev-dependency is exactly 2026.9.2 (no caret).
+2026.9.3+ requires Node >=24.16; host runs Node v22.23.1 and host macOS 11.7.11
+(x64) cannot run Node 24 — verified 2026-11-06: official node-v24.22.1-darwin-x64
+build targets macOS 13.5+ (dyld: Symbol not found ... libc++.1.dylib). Node
+upgrade is a separate decision (B-2, Peter ruling 2026-11-06).
+     Overrides note (Edith F-1 2026-11-06): minimatch overrides MUST use the nested key
+     `@typescript-eslint/typescript-estree.minimatch` (not top-level `typescript-eslint`). A top-level
+     key DOES take effect — it hoists minimatch 11 to the root and silently bumps eslint's `^3.1.5`.
+     Nested keys scope the bump to the direct holder; eslint keeps 3.1.5.
+-->
+
 ## [6.15.1] - 2026-11-05
 
 ### Fixed
