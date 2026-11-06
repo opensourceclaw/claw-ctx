@@ -6,6 +6,8 @@
 //
 // usage: check-release-cjk.mjs <tag>
 // gh resolved via PATH (mockable in tests). GH_TOKEN env required by gh itself.
+// `gh release view` exposes the release title as `name` — there is no `title`
+// JSON field (requesting one makes gh exit with Unknown JSON field).
 
 import { execFileSync } from "node:child_process";
 
@@ -19,7 +21,7 @@ if (!tag) {
 
 let raw;
 try {
-  raw = execFileSync("gh", ["release", "view", tag, "--json", "title,body"], {
+  raw = execFileSync("gh", ["release", "view", tag, "--json", "name,body"], {
     encoding: "utf-8",
   });
 } catch (err) {
@@ -36,7 +38,7 @@ try {
 }
 
 const fields = {
-  title: String(release.title ?? ""),
+  title: String(release.name ?? ""),
   body: String(release.body ?? ""),
 };
 const hits = Object.entries(fields)

@@ -40,7 +40,19 @@ if [ "$1" = "release" ] && [ "$2" = "create" ]; then
   exit 0
 fi
 if [ "$1" = "release" ] && [ "$2" = "view" ]; then
-  printf '{"title":"%s","body":"%s"}\\n' "\${MOCK_TITLE:-claw-ctx v9.9.9}" "\${MOCK_BODY:-Release notes}"
+  prev=""
+  fields=""
+  for a in "$@"; do
+    if [ "$prev" = "--json" ]; then fields="$a"; fi
+    prev="$a"
+  done
+  for f in $(echo "$fields" | tr ',' ' '); do
+    case "$f" in
+      name|body) ;;
+      *) echo "Unknown JSON field: $f" >&2; exit 1 ;;
+    esac
+  done
+  printf '{"name":"%s","body":"%s"}\\n' "\${MOCK_TITLE:-claw-ctx v9.9.9}" "\${MOCK_BODY:-Release notes}"
   exit 0
 fi
 echo "mock gh: unexpected args $*" >&2
