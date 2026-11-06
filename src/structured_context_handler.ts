@@ -30,7 +30,39 @@ export interface StructuredDataConfig {
   maxRows: number;
   compressionStrategy: "truncate" | "summarize" | "sample" | "schema-only";
   preserveRelations: boolean;
+  /** KG relation quality rules (single tuning point). */
+  relationQuality?: Partial<RelationQualityConfig>;
 }
+
+/** Minimum-quality rules for knowledge-graph relation extraction. */
+export interface RelationQualityConfig {
+  /** Words that can never be a subject/object entity. */
+  stopwords: string[];
+  /** Entity must be at least this many characters long. */
+  minEntityLength: number;
+}
+
+export const DEFAULT_RELATION_QUALITY: RelationQualityConfig = {
+  stopwords: [
+    "a", "an", "the", "this", "that", "these", "those",
+    "what", "which", "who", "whom", "whose", "when", "where", "why", "how",
+    "is", "are", "was", "were", "be", "been", "being",
+    "of", "to", "in", "on", "for", "with", "and", "or", "but", "as", "at",
+    "by", "from", "it", "its", "i", "you", "he", "she", "they", "we",
+    "me", "him", "her", "them", "us", "my", "your", "his", "their", "our",
+  ],
+  minEntityLength: 3,
+};
+
+// Action-verb / explicit relation patterns only. Copulas (is/are/was) never
+// form a relation on their own — question sentences used to yield junk triples
+// like `what --[is]--> the`.
+const RELATION_PATTERNS: RegExp[] = [
+  /\b(\w+)\s+(has|have)\s+(\w+)/gi,
+  /\b(\w+)\s+(contains|includes)\s+(\w+)/gi,
+  /\b(\w+)\s+(depends on|requires|needs)\s+(\w+)/gi,
+  /\b(\w+)\s+(writes|runs|cuts|builds|owns|manages|uses|supports|stores|searches|deploys|reviews|generates|produces|designs)\s+(\w+)/gi,
+];
 
 export interface Relation {
   subject: string;
@@ -55,9 +87,20 @@ export const DEFAULT_STRUCTURED_CONFIG: StructuredDataConfig = {
 
 export class StructuredContextHandler {
   config: StructuredDataConfig;
+  relationQuality: RelationQualityConfig;
 
   constructor(config?: Partial<StructuredDataConfig>) {
     this.config = { ...DEFAULT_STRUCTURED_CONFIG, ...config };
+    this.relationQuality = {
+      ...DEFAULT_RELATION_QUALITY,
+      ...(config?.relationQuality ?? {}),
+    };
+  }
+
+  private isQualityEntity(word: string): boolean {
+    const w = word.toLowerCase();
+    return w.length >= this.relationQuality.minEntityLength
+      && !this.relationQuality.stopwords.includes(w);
   }
 
   /** Detect the type of structured data from its format. */
@@ -170,26 +213,22 @@ export class StructuredContextHandler {
     if (!data?.trim()) return [];
 
     const relations: Relation[] = [];
-    const patterns = [
-      /\b(\w+)\s+(is|are)\s+(a|an|the)\s+(\w+)/gi,
-      /\b(\w+)\s+(has|have)\s+(\w+)/gi,
-      /\b(\w+)\s+(contains|includes)\s+(\w+)/gi,
-      /\b(\w+)\s+(depends on|requires|needs)\s+(\w+)/gi,
-    ];
+    const seen = new Set<string>();
 
-    for (const pattern of patterns) {
+    for (const pattern of RELATION_PATTERNS) {
       let match: RegExpExecArray | null;
       pattern.lastIndex = 0;
       while ((match = pattern.exec(data)) !== null) {
-        const m = match;
-        const groups = m.filter((_, i) => i > 0 && m[i] !== undefined);
-        if (groups.length >= 3) {
-          relations.push({
-            subject: groups[0],
-            predicate: groups[1].toLowerCase(),
-            object: groups[2],
-          });
-        }
+        const subject = match[1];
+        const predicate = match[2].toLowerCase();
+        const object = match[3];
+        if (!this.isQualityEntity(subject) || !this.isQualityEntity(object)) continue;
+
+        const key = `${subject.toLowerCase()}|${predicate}|${object.toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        relations.push({ subject, predicate, object });
         if (relations.length >= 50) break;
       }
     }
@@ -228,13 +267,15 @@ export class StructuredContextHandler {
       }
       case "kg": {
         const relations = this.extractRelations(data, "kg");
-        if (relations.length > 0) {
-          const relStr = relations.slice(0, 10)
-            .map(r => `  ${r.subject} --[${r.predicate}]--> ${r.object}`)
-            .join("\n");
-          return `[Structured Data: Knowledge Graph — ${relations.length} relations]\n${relStr}`;
+        if (relations.length === 0) {
+          // Nothing survived the quality gates: return the input untouched so
+          // callers comparing verbalized-vs-original never inject a KG block.
+          return data;
         }
-        return `[Structured Data: Knowledge Graph]\n${data.trim()}`;
+        const relStr = relations.slice(0, 10)
+          .map(r => `  ${r.subject} --[${r.predicate}]--> ${r.object}`)
+          .join("\n");
+        return `[Structured Data: Knowledge Graph — ${relations.length} relations]\n${relStr}`;
       }
       default:
         return data;

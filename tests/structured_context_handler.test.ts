@@ -102,16 +102,35 @@ describe("StructuredContextHandler", () => {
   // ── extractRelations ─────────────────────────────────────────────
 
   describe("extractRelations", () => {
-    it("extracts is-a relations", () => {
+    it("extracts action-verb relations", () => {
       const handler = new StructuredContextHandler();
-      const rels = handler.extractRelations("Alice is a developer. Bob is a designer.", "kg");
+      const rels = handler.extractRelations("Friday writes code. Edith runs tests.", "kg");
       expect(rels.length).toBeGreaterThan(0);
+      expect(rels[0]).toMatchObject({ subject: "Friday", predicate: "writes", object: "code" });
     });
 
     it("extracts has relations", () => {
       const handler = new StructuredContextHandler();
       const rels = handler.extractRelations("Project has moduleA. Project has moduleB.", "kg");
       expect(rels.length).toBeGreaterThan(0);
+    });
+
+    it("does not turn question words into a relation (OBS-2)", () => {
+      const handler = new StructuredContextHandler();
+      expect(handler.extractRelations("what is the release process", "kg")).toEqual([]);
+    });
+
+    it("drops stopword/short entities", () => {
+      const handler = new StructuredContextHandler();
+      expect(handler.extractRelations("it has x", "kg")).toEqual([]);
+    });
+
+    it("honours configurable quality rules", () => {
+      expect(new StructuredContextHandler().extractRelations("Bo has module", "kg")).toEqual([]);
+      const relaxed = new StructuredContextHandler({
+        relationQuality: { minEntityLength: 2 },
+      });
+      expect(relaxed.extractRelations("Bo has module", "kg").length).toBeGreaterThan(0);
     });
   });
 
@@ -134,6 +153,21 @@ describe("StructuredContextHandler", () => {
     it("returns plain text unchanged", () => {
       const handler = new StructuredContextHandler();
       expect(handler.verbalize("hello world")).toBe("hello world");
+    });
+
+    it("does not emit a KG block for a question with no valid relations (OBS-2)", () => {
+      const handler = new StructuredContextHandler();
+      const text = "what is the release process";
+      const out = handler.verbalize(text);
+      expect(out).toBe(text);
+      expect(out).not.toContain("Knowledge Graph");
+    });
+
+    it("verbalizes valid relations without the junk triple", () => {
+      const handler = new StructuredContextHandler();
+      const out = handler.verbalize("Friday writes code", "kg");
+      expect(out).toContain("Friday --[writes]--> code");
+      expect(out).not.toContain("what --[is]--> the");
     });
   });
 
