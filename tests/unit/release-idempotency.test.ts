@@ -78,9 +78,9 @@ exit 1
     return { code: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
   }
 
-  function writeNotes() {
+  function writeNotes(content = "# release body\n") {
     fs.mkdirSync(path.join(dir, "release-notes"), { recursive: true });
-    fs.writeFileSync(path.join(dir, "release-notes/v9.9.9.md"), "# release body\n");
+    fs.writeFileSync(path.join(dir, "release-notes/v9.9.9.md"), content);
   }
 
   it("notes missing → FATAL exit 1, never falls back to --generate-notes", () => {
@@ -100,6 +100,7 @@ exit 1
       MOCK_BODY: "Bug fixes and performance improvements.",
     });
     expect(r.code).toBe(0);
+    expect(r.out).toContain("cjk preflight ok: release-notes/v9.9.9.md");
     expect(r.out).toContain("release absent → create with notes file release-notes/v9.9.9.md");
     expect(r.out).toContain("cjk gate ok: v9.9.9");
     expect(r.out).toContain("release ok: v9.9.9 (count=1)");
@@ -115,6 +116,17 @@ exit 1
     expect(r.code).toBe(0);
     expect(r.out).toContain("release exists (count=1), skip create");
     expect(r.out).toContain("cjk gate ok: v9.9.9");
+    expect(fs.existsSync(path.join(stateDir, "created"))).toBe(false);
+  });
+
+  it("preflight: Chinese notes → FATAL exit 1, release never created", () => {
+    writeNotes("# 发布说明\n本次更新修复若干问题。\n");
+    const r = run(["v9.9.9"], { MOCK_PRE: "0", MOCK_AFTER: "1" });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain(
+      "FATAL: CJK characters found in notes file release-notes/v9.9.9.md",
+    );
+    expect(r.out).toContain("release not created");
     expect(fs.existsSync(path.join(stateDir, "created"))).toBe(false);
   });
 

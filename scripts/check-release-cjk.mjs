@@ -1,21 +1,55 @@
 #!/usr/bin/env node
-// Post-publish CJK gate — release title+body must be English.
+// CJK gate — release notes must be English.
 // Family rule: devclaw/docs/protocol/UNIFIED-RELEASE-PROCESS.md (hand-written
 // English notes via --notes-file; no mixed-language bodies). Incident:
 // v6.15.0/v6.15.1 shipped Chinese bodies when the notes-file fallback fired.
 //
-// usage: check-release-cjk.mjs <tag>
-// gh resolved via PATH (mockable in tests). GH_TOKEN env required by gh itself.
+// Two entry points sharing the same rule:
+//   check-release-cjk.mjs --file <notes-file>   preflight, before create
+//   check-release-cjk.mjs <tag>                 post-publish gate on gh name+body
+//
 // `gh release view` exposes the release title as `name` — there is no `title`
 // JSON field (requesting one makes gh exit with Unknown JSON field).
+//
+// gh resolved via PATH (mockable in tests). GH_TOKEN env required by gh itself.
 
 import { execFileSync } from "node:child_process";
+import * as fs from "node:fs";
 
 const CJK = /[\u4e00-\u9fff]/u;
+const USAGE = "usage: check-release-cjk.mjs --file <notes-file> | <tag>";
 
-const tag = process.argv[2];
+const [first, second] = process.argv.slice(2);
+
+if (first === "--file") {
+  if (!second) {
+    console.error(USAGE);
+    process.exit(2);
+  }
+  let notes;
+  try {
+    notes = fs.readFileSync(second, "utf-8");
+  } catch (err) {
+    console.error(`FATAL: cannot read notes file ${second}: ${err.message}`);
+    process.exit(1);
+  }
+  if (CJK.test(notes)) {
+    console.error(`FATAL: CJK characters found in notes file ${second}`);
+    console.error(
+      "  family rule: English-only release notes (UNIFIED-RELEASE-PROCESS).",
+    );
+    console.error(
+      `  fix: rewrite ${second} in English before creating the release.`,
+    );
+    process.exit(1);
+  }
+  console.log(`cjk preflight ok: ${second} (notes file CJK-free)`);
+  process.exit(0);
+}
+
+const tag = first;
 if (!tag) {
-  console.error("usage: check-release-cjk.mjs <tag>");
+  console.error(USAGE);
   process.exit(2);
 }
 

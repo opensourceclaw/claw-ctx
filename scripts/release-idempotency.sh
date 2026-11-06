@@ -33,6 +33,10 @@ if [ "$BEFORE" -eq 0 ]; then
     echo "  fix: add $NOTES (English) in the bump commit, then re-run this job." >&2
     exit 1
   fi
+  # Preflight (OBS-2): run the same CJK rule on the notes file before create —
+  # a bad note must fail the job while no release exists yet.
+  node "$SCRIPT_DIR/check-release-cjk.mjs" --file "$NOTES" \
+    || { echo "FATAL: CJK preflight failed for $NOTES — release not created" >&2; exit 1; }
   echo "release absent → create with notes file $NOTES"
   gh release create "$TAG" --notes-file "$NOTES" --title "claw-ctx $TAG" \
     || { echo "FATAL: gh release create failed for $TAG" >&2; exit 1; }
@@ -48,8 +52,8 @@ if [ "$AFTER" -ne 1 ]; then
   exit 1
 fi
 
-# post-publish CJK gate — body already landed, so this can only alarm (CI red);
-# never silent, never auto-rewritten
+# post-publish CJK gate — backstop for notes-vs-release drift (body already
+# landed, so this can only alarm: CI red, never silent, never auto-rewritten)
 node "$SCRIPT_DIR/check-release-cjk.mjs" "$TAG" \
   || { echo "FATAL: CJK gate failed for $TAG — release title/body must be English (UNIFIED-RELEASE-PROCESS)" >&2; exit 1; }
 
