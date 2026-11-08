@@ -46,6 +46,18 @@ mtime_of() {
   echo "$m"
 }
 
+# A real Peter approval carries a `## 批复` section followed by a
+# line-initial `**RELEASE APPROVED**`. A pending task that merely mentions
+# `Approver: Peter` / "视为 RELEASE APPROVED" in prose no longer counts
+# (Karen 2026-11-07 false-positive finding).
+has_release_approval() {
+  awk '
+    /^## 批复/ { in_section=1; next }
+    in_section && /^\*\*RELEASE APPROVED\*\*/ { found=1 }
+    END { exit found ? 0 : 1 }
+  ' "$1" 2>/dev/null
+}
+
 # ---------------------------------------------------------------------------
 # repo mode: versioned-surface checks (CI checkout has no inbox data)
 # ---------------------------------------------------------------------------
@@ -190,7 +202,7 @@ audit_client() {
     [ -d "$d" ] || continue
     for f in "$d"/*.md; do
       [ -e "$f" ] || continue
-      if grep -q 'APPROVED' "$f" 2>/dev/null \
+      if has_release_approval "$f" \
         && grep -q 'Approver.*Peter' "$f" 2>/dev/null \
         && ! grep -qE 'From.*:.*(TestAgent|Edith)' "$f" 2>/dev/null; then
         if [ "$(mtime_of "$f")" -ge "$wstart" ]; then

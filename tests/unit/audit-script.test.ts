@@ -167,7 +167,7 @@ describe("audit-stage-gate.sh --mode=client rc parity with hook (CX-16)", () => 
       fs.mkdirSync(path.join(repo, "inbox/inbox-release"), { recursive: true });
       fs.writeFileSync(
         path.join(repo, "inbox/inbox-release/peter-approval-x.md"),
-        "# A\n- **Approver**: Peter\n- **Verdict**: APPROVED\n- **Dispatcher**: Karen\n",
+        "# A\n- **Approver**: Peter\n## 批复\n\n**RELEASE APPROVED**\n- **Dispatcher**: Karen\n",
       );
       fs.mkdirSync(path.join(repo, "inbox/inbox-results"), { recursive: true });
       fs.writeFileSync(

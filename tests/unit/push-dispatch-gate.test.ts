@@ -63,7 +63,7 @@ describe("push-dispatch gate (audit-stage-gate --mode=client)", () => {
   it("APPROVED + Dispatcher: Karen → push allowed", () => {
     writeReceipt();
     writeRelease(
-      "# Release approval\n\n**Approver**: Peter\n**Decision**: APPROVED\n**Dispatcher**: Karen\n",
+      "# Release approval\n\n**Approver**: Peter\n## 批复\n\n**RELEASE APPROVED**\n\n**Dispatcher**: Karen\n",
     );
     const r = run();
     expect(r.code).toBe(0);
@@ -72,7 +72,7 @@ describe("push-dispatch gate (audit-stage-gate --mode=client)", () => {
 
   it("APPROVED without Karen → rejected, reports missing dispatch", () => {
     writeReceipt();
-    writeRelease("# Release approval\n\n**Approver**: Peter\n**Decision**: APPROVED\n");
+    writeRelease("# Release approval\n\n**Approver**: Peter\n## 批复\n\n**RELEASE APPROVED**\n");
     const r = run();
     expect(r.code).toBe(1);
     expect(r.out).toContain("missing: Karen push dispatch");

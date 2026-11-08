@@ -22,7 +22,10 @@ const TEST_RECEIPT = [
 const PETER_APPROVAL = [
   "# Peter Release Approval — claw-ctx v9.9.9",
   "- **Approver**: Peter",
-  "- **Verdict**: ✅ APPROVED",
+  "## 批复",
+  "",
+  "**RELEASE APPROVED**",
+  "",
   "- **Dispatcher**: Karen",
   "",
 ].join("\n");
@@ -432,7 +435,10 @@ describe("pre-push stage-gate hook", () => {
       [
         "# Peter Release Approval — v9.9.9",
         "- **Approver**: Peter",
-        "- **Verdict**: ✅ APPROVED",
+        "## 批复",
+        "",
+        "**RELEASE APPROVED**",
+        "",
         "- **Dispatcher**: Karen",
         "依据 Edith 验收: **Stage**: TEST ｜ Status: passed(引用所据件,非本人署名)",
         "",
@@ -475,6 +481,64 @@ describe("pre-push stage-gate hook", () => {
     const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
     expect(r.code).toBe(0);
     expect(r.out).toContain("stage-gate OK: main");
+  });
+
+  // --- 2026-11-07: approval criteria tightened (Karen false-positive) --------
+  it("gate criteria: a pending task (Approver header + pending prose) is NOT an approval", () => {
+    writeResults(repo, true, false);
+    fs.mkdirSync(path.join(repo, "inbox/inbox-release"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repo, "inbox/inbox-release/pending-task.md"),
+      [
+        "# Task: pending release",
+        "- **Approver**: Peter",
+        "Peter 批复后即视为 RELEASE APPROVED",
+        "- **Dispatcher**: Karen",
+        "",
+      ].join("\n"),
+    );
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("Peter RELEASE APPROVED");
+    expect(r.out).not.toContain("stage-gate OK");
+  });
+
+  it("gate criteria: marker outside the 批复 section is rejected", () => {
+    writeResults(repo, true, false);
+    fs.mkdirSync(path.join(repo, "inbox/inbox-release"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repo, "inbox/inbox-release/marker-before-section.md"),
+      [
+        "# Approval",
+        "- **Approver**: Peter",
+        "**RELEASE APPROVED**",
+        "## 批复",
+        "- **Dispatcher**: Karen",
+        "",
+      ].join("\n"),
+    );
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("Peter RELEASE APPROVED");
+  });
+
+  it("gate criteria: non-line-initial marker inside 批复 is rejected", () => {
+    writeResults(repo, true, false);
+    fs.mkdirSync(path.join(repo, "inbox/inbox-release"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repo, "inbox/inbox-release/non-initial.md"),
+      [
+        "# Approval",
+        "- **Approver**: Peter",
+        "## 批复",
+        "- 审批语: **RELEASE APPROVED**",
+        "- **Dispatcher**: Karen",
+        "",
+      ].join("\n"),
+    );
+    const r = runHook(repo, head(repo), "refs/heads/main", ZERO);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("Peter RELEASE APPROVED");
   });
 
   // --- CX-9: adjudication docs must have a Refs receipt ----------------------
