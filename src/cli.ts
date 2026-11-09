@@ -9,6 +9,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 
 // Import from compiled JS (ESM)
 import {
@@ -48,7 +49,7 @@ interface ParsedArgs {
   options: Record<string, string>;
 }
 
-function parseArgs(argv: string[]): ParsedArgs {
+export function parseArgs(argv: string[]): ParsedArgs {
   const args: string[] = [];
   const options: Record<string, string> = {};
 
@@ -56,9 +57,14 @@ function parseArgs(argv: string[]): ParsedArgs {
     const arg = argv[i];
     if (arg.startsWith("--")) {
       const key = arg.slice(2);
-      const value = argv[i + 1] && !argv[i + 1].startsWith("-") ? argv[i + 1] : "true";
-      if (value !== "true") i++;
-      options[key] = value;
+      const next = argv[i + 1];
+      if (next !== undefined && !next.startsWith("-")) {
+        options[key] = next;
+        i++;
+      } else {
+        // Flag without a value: "true" sentinel, as for --json / --compare.
+        options[key] = "true";
+      }
     } else if (arg.startsWith("-")) {
       const key = arg.slice(1);
       options[key] = "true";
@@ -394,9 +400,16 @@ function cmdDoctorUsage(options: Record<string, string>): void {
   console.log("");
 }
 
-/** Parse a CLI time bound. Absent → undefined; invalid → stderr + exit 2. */
-function parseTimeBound(flag: string, v?: string): number | undefined {
+/**
+ * Parse a CLI time bound. Absent → undefined; a bare flag ("true" sentinel) or
+ * empty/invalid value → stderr + exit 2.
+ */
+export function parseTimeBound(flag: string, v?: string): number | undefined {
   if (v === undefined) return undefined;
+  if (v === "true") {
+    console.error(`Error: --${flag} requires a value (epoch ms or ISO date)`);
+    process.exit(2);
+  }
   if (v.trim() !== "") {
     const n = Number(v);
     if (Number.isFinite(n)) return n;
@@ -438,7 +451,7 @@ function cmdCost(options: Record<string, string>): void {
   );
 }
 
-function main(): void {
+export function main(): void {
   const { command, subCommand, args, options } = parseArgs(process.argv.slice(2));
 
   if (command === "help" || (command === "model" && subCommand === "help")) {
@@ -496,4 +509,23 @@ function main(): void {
   }
 }
 
-main();
+/**
+ * Only run when invoked as a program — imported (e.g. by tests) it stays inert.
+ * Both sides are realpath-resolved: published entries (npm bin / npx) reach us
+ * through a symlink, and comparing the raw path would silently no-op them.
+ */
+function invokedDirectly(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return fs.realpathSync(entry) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (invokedDirectly()) {
+  main();
+} else if (process.env.CLAW_CTX_CLI_DEBUG) {
+  console.error("[claw-ctx] cli not invoked as main entry");
+}

@@ -34,14 +34,15 @@ describe("cli positional args (CX-1)", () => {
   });
 
   /**
-   * cli.ts runs main() at module top level — importing re-executes it with
-   * the given argv. Returns the exit code; an uncaught TypeError (the CX-1
-   * bug) propagates as a rejected promise and fails the test.
+   * Explicitly invokes the exported main() with the given argv (the module
+   * no longer self-runs on import). Returns the exit code; an uncaught
+   * TypeError (the CX-1 bug) propagates and fails the test.
    */
   async function runCli(argv: string[]): Promise<number | null> {
     process.argv = ["node", "cli.ts", ...argv];
     try {
-      await import("../../src/cli.js");
+      const mod = await import("../../src/cli.js");
+      mod.main();
       return null; // ran to completion without exit()
     } catch (e) {
       if (e instanceof ExitSignal) return e.code;

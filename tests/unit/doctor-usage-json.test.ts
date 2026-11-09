@@ -22,7 +22,8 @@ describe("doctor --usage --json (CX-2 closed)", () => {
 
   async function runDoctor(argv: string[]): Promise<any> {
     process.argv = ["node", "cli.ts", ...argv];
-    await import("../../src/cli.js");
+    const mod = await import("../../src/cli.js");
+    mod.main();
     const out = logSpy.mock.calls.map((c) => c[0]).join("\n");
     return JSON.parse(out); // throws if not valid JSON
   }
@@ -69,7 +70,8 @@ describe("doctor --usage --json (CX-2 closed)", () => {
 
   it("table path (no --json) still prints keyword tables (review ruling B)", async () => {
     process.argv = ["node", "cli.ts", "doctor", "--usage", "--file", "/nonexistent/ledger.jsonl"];
-    await import("../../src/cli.js");
+    const mod = await import("../../src/cli.js");
+    mod.main();
     const out = logSpy.mock.calls.map((c) => c[0]).join("\n");
     expect(out).toContain("Keyword tables (manual verification):");
     expect(out).toContain("CRITICAL_STATE:");

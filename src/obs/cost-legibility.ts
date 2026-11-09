@@ -84,12 +84,19 @@ export function readCostAnnotations(filePath: string): {
     if (!line.trim()) continue;
     try {
       const rec = JSON.parse(line) as CostAnnotation;
+      const share = rec.cachedTokenShare;
+      const validShare =
+        share === null
+        || (typeof share === "number" && share >= 0 && share <= 1);
+      const validTrigger =
+        rec.triggerReason === "explicit"
+        || rec.triggerReason === "auto"
+        || rec.triggerReason === "force";
       if (
         typeof rec.at !== "number" || typeof rec.sessionId !== "string"
         || typeof rec.inputTokens !== "number" || typeof rec.outputTokens !== "number"
-        || (rec.cachedTokenShare !== null && typeof rec.cachedTokenShare !== "number")
+        || !validShare || !validTrigger
         || typeof rec.strategyVersion !== "string"
-        || typeof rec.triggerReason !== "string"
       ) {
         bad++;
         continue;

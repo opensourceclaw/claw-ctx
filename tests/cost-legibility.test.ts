@@ -1,5 +1,6 @@
 // Exo C1: append-only compaction cost/cache annotations + read-only queries.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -28,6 +29,7 @@ vi.mock("../../claw-rl/src/memory_strategy_selector", () => ({
 import { createClawContextEngine } from "../src/engine";
 import { VERSION } from "../src/version";
 import { usageLedger } from "../src/usage/usage-ledger";
+import { parseArgs, parseTimeBound } from "../src/cli";
 import {
   appendCostAnnotation,
   readCostAnnotations,
@@ -97,6 +99,47 @@ describe("cost legibility ledger", () => {
     expect(bad).toBe(3);
   });
 
+  it("rejects out-of-range share and unknown triggerReason (F9)", () => {
+    const file = costLedgerPath(dir);
+    appendCostAnnotation(file, rec({ cachedTokenShare: 0 })); // lower boundary valid
+    appendCostAnnotation(file, rec({ cachedTokenShare: 1 })); // upper boundary valid
+    fs.appendFileSync(file, JSON.stringify({ ...rec(), cachedTokenShare: 1.5 }) + "\n");
+    fs.appendFileSync(file, JSON.stringify({ ...rec(), cachedTokenShare: -0.1 }) + "\n");
+    fs.appendFileSync(file, JSON.stringify({ ...rec(), triggerReason: "manual" }) + "\n");
+    const { records, bad } = readCostAnnotations(file);
+    expect(records).toHaveLength(2);
+    expect(bad).toBe(3);
+  });
+
+  it("rejects bare/empty --from/--to with accurate wording (F8)", () => {
+    // Parser layer: empty string survives as a value; a bare flag stays the "true" sentinel.
+    expect(parseArgs(["cost", "--from", ""]).options.from).toBe("");
+    expect(parseArgs(["cost", "--from"]).options.from).toBe("true");
+    expect(parseArgs(["cost", "--json"]).options.json).toBe("true");
+
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const exit = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+    try {
+      expect(() => parseTimeBound("from", "")).toThrow("exit:2");
+      expect(String(err.mock.calls.at(-1)?.[0])).toContain("invalid --from value ''");
+
+      expect(() => parseTimeBound("from", "true")).toThrow("exit:2");
+      expect(String(err.mock.calls.at(-1)?.[0])).toContain("--from requires a value");
+
+      expect(() => parseTimeBound("to", "not-a-date")).toThrow("exit:2");
+      expect(String(err.mock.calls.at(-1)?.[0])).toContain("invalid --to value 'not-a-date'");
+
+      expect(parseTimeBound("from", undefined)).toBeUndefined();
+      expect(parseTimeBound("from", "1500")).toBe(1500);
+      expect(parseTimeBound("from", "1970-01-01T00:00:01.500Z")).toBe(1500);
+    } finally {
+      err.mockRestore();
+      exit.mockRestore();
+    }
+  });
+
   it("summarizes cost/cache by window and strategy version", () => {
     const records = [
       rec({ at: 1000, inputTokens: 1000, outputTokens: 400, cachedTokenShare: 0.5 }),
@@ -140,6 +183,30 @@ describe("cost legibility ledger", () => {
     expect(c.delta.avgCacheShare).toBeCloseTo(0.4);
     expect(renderCostComparisonMarkdown(c)).toContain("| Input tokens | 1000 | 600 | -400 |");
     expect(renderCostReportMarkdown(a)).toContain("Average cache share: 40.0%");
+  });
+
+  it("runs when invoked through a symlinked bin (F10)", () => {
+    const distCli = path.resolve(import.meta.dirname, "../dist/cli.js");
+    expect(fs.existsSync(distCli), "dist/cli.js missing — run npm run build first").toBe(true);
+    const link = path.join(dir, "claw-ctx-bin");
+    fs.symlinkSync(distCli, link);
+    const r = spawnSync(process.execPath, [link, "--help"], { encoding: "utf-8" });
+    expect(r.status).toBe(0);
+    expect(String(r.stdout ?? "")).toContain("claw-ctx CLI");
+    expect(String(r.stderr ?? "")).not.toContain("cli not invoked as main entry");
+  });
+
+  it("prints a debug hint when imported under CLAW_CTX_CLI_DEBUG (F10)", async () => {
+    vi.resetModules();
+    process.env.CLAW_CTX_CLI_DEBUG = "1";
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await import("../src/cli.js");
+      expect(String(err.mock.calls.at(-1)?.[0])).toContain("cli not invoked as main entry");
+    } finally {
+      delete process.env.CLAW_CTX_CLI_DEBUG;
+      err.mockRestore();
+    }
   });
 
   function writeSession(sessionFile: string): void {
