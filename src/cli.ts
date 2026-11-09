@@ -32,6 +32,14 @@ import {
   type CompactionQualityReport,
 } from "./metrics/optimizer-metrics.js";
 import { VERSION } from "./version.js";
+import {
+  costLedgerPath,
+  readCostAnnotations,
+  summarizeCost,
+  compareCostWindows,
+  renderCostReportMarkdown,
+  renderCostComparisonMarkdown,
+} from "./obs/cost-legibility.js";
 
 interface ParsedArgs {
   command: string;
@@ -77,7 +85,17 @@ Usage:
 Commands:
   model       Model profile management
   doctor      Diagnostics (--usage: per-turn usage + last trigger evaluation)
+  cost        Compaction cost/cache annotation report (read-only)
   help        Show this help message
+
+Cost Options:
+  --workspace <dir>       Workspace containing .claw-ctx/cost-annotations.jsonl
+  --from <epoch|ISO>      Window start
+  --to <epoch|ISO>        Window end
+  --strategy-version <v>  Filter by strategy version (e.g. claw-ctx@6.15.1)
+  --version-a <v>         Compare window A version
+  --version-b <v>         Compare window B version
+  --json                  Output in JSON format
 
 Model Subcommands:
   list              List all available model profiles
@@ -376,6 +394,45 @@ function cmdDoctorUsage(options: Record<string, string>): void {
   console.log("");
 }
 
+function parseTimeBound(v?: string): number | undefined {
+  if (!v) return undefined;
+  const n = Number(v);
+  if (Number.isFinite(n)) return n;
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? t : undefined;
+}
+
+/** Read-only cost/cache annotation ledger (Exo C1 legibility). */
+function cmdCost(options: Record<string, string>): void {
+  const workspace = options.workspace || process.cwd();
+  const file = costLedgerPath(workspace);
+  const { records, bad } = readCostAnnotations(file);
+  const from = parseTimeBound(options.from);
+  const to = parseTimeBound(options.to);
+
+  if (options.compare === "true" || options["version-a"] || options["version-b"]) {
+    const a = summarizeCost(records, { from, to, strategyVersion: options["version-a"] });
+    const b = summarizeCost(records, { from, to, strategyVersion: options["version-b"] });
+    const comparison = compareCostWindows(a, b);
+    console.log(
+      options.json === "true"
+        ? JSON.stringify(comparison, null, 2)
+        : renderCostComparisonMarkdown(comparison),
+    );
+    return;
+  }
+
+  const summary = summarizeCost(records, { from, to, strategyVersion: options["strategy-version"] });
+  console.log(
+    options.json === "true"
+      ? JSON.stringify({ ledger: file, badLines: bad, summary }, null, 2)
+      : renderCostReportMarkdown(summary, {
+          badLines: bad,
+          title: `Cost / Cache Report — ${workspace}`,
+        }),
+  );
+}
+
 function main(): void {
   const { command, subCommand, args, options } = parseArgs(process.argv.slice(2));
 
@@ -387,6 +444,11 @@ function main(): void {
   if (command === "doctor") {
     // v6.10.1: only --usage diagnostics for now
     cmdDoctorUsage(options);
+    return;
+  }
+
+  if (command === "cost") {
+    cmdCost(options);
     return;
   }
 

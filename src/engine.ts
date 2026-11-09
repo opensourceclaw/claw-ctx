@@ -96,6 +96,8 @@ import { ModelAwareOptimizer, modelAwareOptimizer, type OptimizationHint } from 
 import { validateWindowStartup } from "./model-profile.js";
 // v6.11.0 P4: compaction quality metrics (proactive rate / missing %)
 import { optimizerMetricsCollector } from "./metrics/optimizer-metrics.js";
+import { appendCostAnnotation, costLedgerPath } from "./obs/cost-legibility.js";
+import { VERSION } from "./version.js";
 
 // v4.11.0: RL-driven memory strategy selection
 import {
@@ -358,6 +360,8 @@ export class ClawContextEngine {
   private _contextAssembler: ContextAssembler | null = null;
   private _taskTypeDetector: TaskTypeDetector | null = null;
   private _lastAssemblyResult: AssemblyResult | null = null;
+  // Exo C1: append-only cost/cache annotation ledger (separate from session files)
+  private _costLedgerPath: string = "";
   // v5.16.0: Model-aware context optimizer
   private _modelOptimizer: ModelAwareOptimizer;
   private _lastOptimizationHint: OptimizationHint | null = null;
@@ -378,6 +382,7 @@ export class ClawContextEngine {
   constructor(config: ClawCtxConfig, logger: ClawCtxLogger, manager?: MemoryManager) {
     this.config = config; this.logger = logger;
     this.manager = manager ?? getMemoryManager({ workspace: config.workspaceDir || process.cwd(), autoDetect: false });
+    this._costLedgerPath = costLedgerPath(config.workspaceDir || process.cwd());
     this.budgetManager = new TokenBudgetManager();
     this.driftDetector = new DriftDetector();
     this._smartBudgetAllocator = new SmartBudgetAllocator();
@@ -962,6 +967,19 @@ export class ClawContextEngine {
       }
       // v5.1.1: Reset token warning flag after successful compaction
       this._tokenWarningEmitted = false;
+
+      // Exo C1: append-only cost/cache annotation (separate ledger; fail-open,
+      // never touches session history or compaction output).
+      appendCostAnnotation(this._costLedgerPath, {
+        at: Date.now(),
+        event: "compaction",
+        sessionId: p.sessionId,
+        strategyVersion: `claw-ctx@${VERSION}`,
+        triggerReason,
+        inputTokens: result.tokensBefore ?? 0,
+        outputTokens: result.tokensAfter ?? result.tokensBefore ?? 0,
+        cachedTokenShare: optimizerMetricsCollector.getCacheHitRate(),
+      });
 
       // v6.13.0 P3: arm the continuation guard + remember the summary (all
       // initiators: explicit / auto / force). No-op when the guard is disabled.
