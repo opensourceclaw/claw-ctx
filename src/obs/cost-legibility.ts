@@ -5,6 +5,15 @@
  * share, trigger reason and strategy version. Reads never mutate the ledger;
  * writes use fs.appendFileSync only. All failures are fail-open — observability
  * must never affect the compaction path.
+ *
+ * cachedTokenShare data source — priority order (F7):
+ *   1. in-process UsageLedger (host writeback in this process);
+ *   2. <workspace>/.claw-ctx/usage-ledger.jsonl — latest record for the session;
+ *   3. null — unknown (never 0).
+ * Hosts that keep a custom UsageLedger instance must persist to that ledger
+ * path (or feed the default `usageLedger` singleton); otherwise the engine
+ * cannot observe the usage and the field stays null. Release notes must not
+ * claim cache legibility is delivered while this data plane stays empty.
  */
 
 import * as fs from "fs";

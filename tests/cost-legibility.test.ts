@@ -185,11 +185,12 @@ describe("cost legibility ledger", () => {
     expect(renderCostReportMarkdown(a)).toContain("Average cache share: 40.0%");
   });
 
-  it("runs when invoked through a symlinked bin (F10)", () => {
-    const distCli = path.resolve(import.meta.dirname, "../dist/cli.js");
-    expect(fs.existsSync(distCli), "dist/cli.js missing — run npm run build first").toBe(true);
+  const distCliPath = path.resolve(import.meta.dirname, "../dist/cli.js");
+  const hasDistCli = fs.existsSync(distCliPath);
+
+  it.skipIf(!hasDistCli)("runs when invoked through a symlinked bin (F10; needs dist/cli.js — run npm run build first)", () => {
     const link = path.join(dir, "claw-ctx-bin");
-    fs.symlinkSync(distCli, link);
+    fs.symlinkSync(distCliPath, link);
     const r = spawnSync(process.execPath, [link, "--help"], { encoding: "utf-8" });
     expect(r.status).toBe(0);
     expect(String(r.stdout ?? "")).toContain("claw-ctx CLI");
@@ -276,5 +277,35 @@ describe("cost legibility ledger", () => {
     // 300 / (100 + 300 + 100) — a live value, discriminating from the old
     // always-zero (disconnected) behaviour.
     expect(records[0].cachedTokenShare).toBeCloseTo(0.6);
+  }, 120_000);
+
+  it("falls back to the workspace-persisted usage ledger (F7-a)", async () => {
+    const ledgerFile = path.join(dir, ".claw-ctx", "usage-ledger.jsonl");
+    fs.mkdirSync(path.dirname(ledgerFile), { recursive: true });
+    fs.writeFileSync(ledgerFile, JSON.stringify({
+      kind: "usage",
+      sessionId: "s1-persisted",
+      record: {
+        inputTokens: 100, cacheReadTokens: 300, cacheCreationTokens: 0,
+        outputTokens: 10, mergedTotal: 400, turn: 1, at: Date.now(),
+      },
+    }) + "\n", "utf-8");
+
+    const engine = createClawContextEngine({ workspaceDir: dir }, logger);
+    const sessionFile = path.join(dir, "session-persisted.jsonl");
+    writeSession(sessionFile);
+    const result = await engine.compact({
+      sessionId: "s1-persisted",
+      sessionFile,
+      force: false,
+      currentTokenCount: 110000,
+      tokenBudget: 4000,
+    });
+    expect(result.compacted).toBe(true);
+
+    const { records } = readCostAnnotations(costLedgerPath(dir));
+    expect(records).toHaveLength(1);
+    // No in-process usage for this session → persisted ledger fallback wins.
+    expect(records[0].cachedTokenShare).toBeCloseTo(0.75);
   }, 120_000);
 });

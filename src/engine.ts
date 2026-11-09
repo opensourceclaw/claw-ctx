@@ -97,8 +97,23 @@ import { validateWindowStartup } from "./model-profile.js";
 // v6.11.0 P4: compaction quality metrics (proactive rate / missing %)
 import { optimizerMetricsCollector } from "./metrics/optimizer-metrics.js";
 import { appendCostAnnotation, costLedgerPath } from "./obs/cost-legibility.js";
-import { usageLedger } from "./usage/usage-ledger.js";
+import { UsageLedger, usageLedger } from "./usage/usage-ledger.js";
 import { VERSION } from "./version.js";
+
+/**
+ * F7-a: read-only fallback for hosts that persist usage through their own
+ * ledger instance. Reuses UsageLedger's loader; any failure means "no usage"
+ * (fail-open — observability must never break compaction).
+ */
+function readPersistedUsage(cacheDir: string, sessionId: string): ReturnType<UsageLedger["getLastMerged"]> {
+  try {
+    const file = path.join(cacheDir, "usage-ledger.jsonl");
+    if (!fs.existsSync(file)) return undefined;
+    return new UsageLedger({ persistPath: file }).getLastMerged(sessionId);
+  } catch {
+    return undefined;
+  }
+}
 
 // v4.11.0: RL-driven memory strategy selection
 import {
@@ -972,8 +987,11 @@ export class ClawContextEngine {
       // Exo C1: append-only cost/cache annotation (separate ledger; fail-open,
       // never touches session history or compaction output).
       // F1: cache share comes from the latest host-reported usage of this
-      // session. No reported usage → null (unknown), never a fabricated 0.
-      const lastUsage = usageLedger.getLastMerged(p.sessionId);
+      // session — in-process ledger first, then the workspace-persisted ledger
+      // fallback (F7-a). No usage anywhere → null (unknown), never a fake 0.
+      const lastUsage =
+        usageLedger.getLastMerged(p.sessionId)
+        ?? readPersistedUsage(path.dirname(this._costLedgerPath), p.sessionId);
       const cachedTokenShare =
         lastUsage && lastUsage.mergedTotal > 0
           ? lastUsage.cacheReadTokens / lastUsage.mergedTotal
