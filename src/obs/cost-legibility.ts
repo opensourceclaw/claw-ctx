@@ -18,10 +18,16 @@ export interface CostAnnotation {
   /** Strategy identity for window comparisons, e.g. claw-ctx@6.15.1. */
   strategyVersion: string;
   triggerReason: "explicit" | "auto" | "force";
+  /** Message tokens before compaction — not provider input usage (billable caliber). */
   inputTokens: number;
+  /** Message tokens after compaction — not provider completion tokens. */
   outputTokens: number;
-  /** 0..1 share of input tokens served from cache at event time. */
-  cachedTokenShare: number;
+  /**
+   * 0..1 share of event-time input tokens served from cache
+   * (usage.cacheReadTokens / mergedTotal). `null` = no host usage was
+   * reported for this session at compaction time (unknown, not 0%).
+   */
+  cachedTokenShare: number | null;
 }
 
 export interface CostWindow {
@@ -34,8 +40,10 @@ export interface CostWindowSummary {
   eventCount: number;
   inputTokens: number;
   outputTokens: number;
+  /** Message tokens removed by compaction (inputTokens - outputTokens); not billable savings. */
   tokensSaved: number;
-  avgCacheShare: number;
+  /** Mean over events with a known share; `null` when no event has one. */
+  avgCacheShare: number | null;
   byTrigger: Record<string, number>;
   window: { start: number; end: number };
   strategyVersions: string[];
@@ -79,6 +87,9 @@ export function readCostAnnotations(filePath: string): {
       if (
         typeof rec.at !== "number" || typeof rec.sessionId !== "string"
         || typeof rec.inputTokens !== "number" || typeof rec.outputTokens !== "number"
+        || (rec.cachedTokenShare !== null && typeof rec.cachedTokenShare !== "number")
+        || typeof rec.strategyVersion !== "string"
+        || typeof rec.triggerReason !== "string"
       ) {
         bad++;
         continue;
@@ -108,10 +119,13 @@ export function summarizeCost(
   );
   const inputTokens = filtered.reduce((s, r) => s + r.inputTokens, 0);
   const outputTokens = filtered.reduce((s, r) => s + r.outputTokens, 0);
+  const knownShares = filtered
+    .map((r) => r.cachedTokenShare)
+    .filter((s): s is number => s !== null);
   const avgCacheShare =
-    filtered.length > 0
-      ? filtered.reduce((s, r) => s + r.cachedTokenShare, 0) / filtered.length
-      : 0;
+    knownShares.length > 0
+      ? knownShares.reduce((s, v) => s + v, 0) / knownShares.length
+      : null;
   const byTrigger: Record<string, number> = {};
   for (const r of filtered) {
     byTrigger[r.triggerReason] = (byTrigger[r.triggerReason] ?? 0) + 1;
@@ -121,7 +135,7 @@ export function summarizeCost(
     inputTokens,
     outputTokens,
     tokensSaved: Math.max(0, inputTokens - outputTokens),
-    avgCacheShare: round4(avgCacheShare),
+    avgCacheShare: avgCacheShare === null ? null : round4(avgCacheShare),
     byTrigger,
     window: {
       start: filtered.length ? Math.min(...filtered.map((r) => r.at)) : 0,
@@ -137,7 +151,8 @@ export interface CostComparison {
   delta: {
     inputTokens: number;
     outputTokens: number;
-    avgCacheShare: number;
+    /** `null` when either side has no known share. */
+    avgCacheShare: number | null;
     eventCount: number;
   };
 }
@@ -150,14 +165,17 @@ export function compareCostWindows(a: CostWindowSummary, b: CostWindowSummary): 
     delta: {
       inputTokens: b.inputTokens - a.inputTokens,
       outputTokens: b.outputTokens - a.outputTokens,
-      avgCacheShare: round4(b.avgCacheShare - a.avgCacheShare),
+      avgCacheShare:
+        a.avgCacheShare === null || b.avgCacheShare === null
+          ? null
+          : round4(b.avgCacheShare - a.avgCacheShare),
       eventCount: b.eventCount - a.eventCount,
     },
   };
 }
 
-function fmtShare(share: number): string {
-  return `${(share * 100).toFixed(1)}%`;
+function fmtShare(share: number | null): string {
+  return share === null ? "n/a" : `${(share * 100).toFixed(1)}%`;
 }
 
 function fmtTime(ts: number): string {
@@ -191,6 +209,9 @@ export function renderCostReportMarkdown(
 /** Markdown comparison of two window summaries. */
 export function renderCostComparisonMarkdown(c: CostComparison): string {
   const row = (label: string, a: number, b: number) => `| ${label} | ${a} | ${b} | ${round4(b - a)} |`;
+  const shareRow =
+    `| Avg cache share | ${fmtShare(c.a.avgCacheShare)} | ${fmtShare(c.b.avgCacheShare)}`
+    + ` | ${c.delta.avgCacheShare === null ? "n/a" : fmtShare(c.delta.avgCacheShare)} |`;
   return [
     "## Cost / Cache Version Comparison",
     "",
@@ -199,7 +220,7 @@ export function renderCostComparisonMarkdown(c: CostComparison): string {
     row("Events", c.a.eventCount, c.b.eventCount),
     row("Input tokens", c.a.inputTokens, c.b.inputTokens),
     row("Output tokens", c.a.outputTokens, c.b.outputTokens),
-    row("Avg cache share", c.a.avgCacheShare, c.b.avgCacheShare),
+    shareRow,
     "",
     `- A versions: ${c.a.strategyVersions.join(", ") || "-"}`,
     `- B versions: ${c.b.strategyVersions.join(", ") || "-"}`,

@@ -27,6 +27,7 @@ vi.mock("../../claw-rl/src/memory_strategy_selector", () => ({
 
 import { createClawContextEngine } from "../src/engine";
 import { VERSION } from "../src/version";
+import { usageLedger } from "../src/usage/usage-ledger";
 import {
   appendCostAnnotation,
   readCostAnnotations,
@@ -83,6 +84,19 @@ describe("cost legibility ledger", () => {
     expect(bad).toBe(1);
   });
 
+  it("rejects rows missing cachedTokenShare/strategyVersion/triggerReason (F2)", () => {
+    const file = costLedgerPath(dir);
+    appendCostAnnotation(file, rec({ cachedTokenShare: null })); // null = unknown, valid
+    for (const key of ["cachedTokenShare", "strategyVersion", "triggerReason"] as const) {
+      const row: Record<string, unknown> = { ...rec() };
+      delete row[key];
+      fs.appendFileSync(file, JSON.stringify(row) + "\n");
+    }
+    const { records, bad } = readCostAnnotations(file);
+    expect(records).toHaveLength(1);
+    expect(bad).toBe(3);
+  });
+
   it("summarizes cost/cache by window and strategy version", () => {
     const records = [
       rec({ at: 1000, inputTokens: 1000, outputTokens: 400, cachedTokenShare: 0.5 }),
@@ -106,6 +120,18 @@ describe("cost legibility ledger", () => {
     expect(windowed.window).toEqual({ start: 2000, end: 2000 });
   });
 
+  it("treats null cache share as unknown, never as 0%", () => {
+    const mixed = summarizeCost([
+      rec({ cachedTokenShare: null }),
+      rec({ at: 2000, cachedTokenShare: 0.5 }),
+    ]);
+    expect(mixed.avgCacheShare).toBe(0.5); // only known shares count
+
+    const allNull = summarizeCost([rec({ cachedTokenShare: null })]);
+    expect(allNull.avgCacheShare).toBeNull();
+    expect(renderCostReportMarkdown(allNull)).toContain("Average cache share: n/a");
+  });
+
   it("compares two strategy windows and renders markdown", () => {
     const a = summarizeCost([rec({ inputTokens: 1000, cachedTokenShare: 0.4 })]);
     const b = summarizeCost([rec({ at: 2000, inputTokens: 600, cachedTokenShare: 0.8 })]);
@@ -116,9 +142,7 @@ describe("cost legibility ledger", () => {
     expect(renderCostReportMarkdown(a)).toContain("Average cache share: 40.0%");
   });
 
-  it("records one annotation per successful compaction (engine integration)", async () => {
-    const engine = createClawContextEngine({ workspaceDir: dir }, logger);
-    const sessionFile = path.join(dir, "session.jsonl");
+  function writeSession(sessionFile: string): void {
     const filler = "Lorem ipsum dolor sit amet ".repeat(40);
     const entries = [JSON.stringify({ type: "session", version: "3", id: "t", timestamp: new Date().toISOString(), cwd: dir })];
     for (let i = 0; i < 30; i++) {
@@ -131,6 +155,12 @@ describe("cost legibility ledger", () => {
       }));
     }
     fs.writeFileSync(sessionFile, entries.join("\n") + "\n", "utf-8");
+  }
+
+  it("records one annotation per successful compaction (engine integration)", async () => {
+    const engine = createClawContextEngine({ workspaceDir: dir }, logger);
+    const sessionFile = path.join(dir, "session.jsonl");
+    writeSession(sessionFile);
 
     const result = await engine.compact({
       sessionId: "s1",
@@ -151,6 +181,33 @@ describe("cost legibility ledger", () => {
     });
     expect(records[0].inputTokens).toBeGreaterThan(0);
     expect(records[0].outputTokens).toBeGreaterThan(0);
-    expect(records[0].cachedTokenShare).toBeGreaterThanOrEqual(0);
+    // No host usage reported for s1 → unknown, explicitly not 0.
+    expect(records[0].cachedTokenShare).toBeNull();
+  }, 120_000);
+
+  it("writes event-time cache share from host-reported usage (F1 wiring)", async () => {
+    usageLedger.recordUsage("s1-cache", {
+      inputTokens: 100,
+      cacheReadTokens: 300,
+      cacheCreationTokens: 100,
+    });
+    const engine = createClawContextEngine({ workspaceDir: dir }, logger);
+    const sessionFile = path.join(dir, "session-cache.jsonl");
+    writeSession(sessionFile);
+
+    const result = await engine.compact({
+      sessionId: "s1-cache",
+      sessionFile,
+      force: false,
+      currentTokenCount: 110000,
+      tokenBudget: 4000,
+    });
+    expect(result.compacted).toBe(true);
+
+    const { records } = readCostAnnotations(costLedgerPath(dir));
+    expect(records).toHaveLength(1);
+    // 300 / (100 + 300 + 100) — a live value, discriminating from the old
+    // always-zero (disconnected) behaviour.
+    expect(records[0].cachedTokenShare).toBeCloseTo(0.6);
   }, 120_000);
 });

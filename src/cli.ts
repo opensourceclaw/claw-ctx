@@ -394,12 +394,17 @@ function cmdDoctorUsage(options: Record<string, string>): void {
   console.log("");
 }
 
-function parseTimeBound(v?: string): number | undefined {
-  if (!v) return undefined;
-  const n = Number(v);
-  if (Number.isFinite(n)) return n;
-  const t = Date.parse(v);
-  return Number.isFinite(t) ? t : undefined;
+/** Parse a CLI time bound. Absent → undefined; invalid → stderr + exit 2. */
+function parseTimeBound(flag: string, v?: string): number | undefined {
+  if (v === undefined) return undefined;
+  if (v.trim() !== "") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+    const t = Date.parse(v);
+    if (Number.isFinite(t)) return t;
+  }
+  console.error(`Error: invalid --${flag} value '${v}' (expected epoch ms or ISO date)`);
+  process.exit(2);
 }
 
 /** Read-only cost/cache annotation ledger (Exo C1 legibility). */
@@ -407,8 +412,8 @@ function cmdCost(options: Record<string, string>): void {
   const workspace = options.workspace || process.cwd();
   const file = costLedgerPath(workspace);
   const { records, bad } = readCostAnnotations(file);
-  const from = parseTimeBound(options.from);
-  const to = parseTimeBound(options.to);
+  const from = parseTimeBound("from", options.from);
+  const to = parseTimeBound("to", options.to);
 
   if (options.compare === "true" || options["version-a"] || options["version-b"]) {
     const a = summarizeCost(records, { from, to, strategyVersion: options["version-a"] });

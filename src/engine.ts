@@ -97,6 +97,7 @@ import { validateWindowStartup } from "./model-profile.js";
 // v6.11.0 P4: compaction quality metrics (proactive rate / missing %)
 import { optimizerMetricsCollector } from "./metrics/optimizer-metrics.js";
 import { appendCostAnnotation, costLedgerPath } from "./obs/cost-legibility.js";
+import { usageLedger } from "./usage/usage-ledger.js";
 import { VERSION } from "./version.js";
 
 // v4.11.0: RL-driven memory strategy selection
@@ -970,6 +971,13 @@ export class ClawContextEngine {
 
       // Exo C1: append-only cost/cache annotation (separate ledger; fail-open,
       // never touches session history or compaction output).
+      // F1: cache share comes from the latest host-reported usage of this
+      // session. No reported usage → null (unknown), never a fabricated 0.
+      const lastUsage = usageLedger.getLastMerged(p.sessionId);
+      const cachedTokenShare =
+        lastUsage && lastUsage.mergedTotal > 0
+          ? lastUsage.cacheReadTokens / lastUsage.mergedTotal
+          : null;
       appendCostAnnotation(this._costLedgerPath, {
         at: Date.now(),
         event: "compaction",
@@ -978,7 +986,7 @@ export class ClawContextEngine {
         triggerReason,
         inputTokens: result.tokensBefore ?? 0,
         outputTokens: result.tokensAfter ?? result.tokensBefore ?? 0,
-        cachedTokenShare: optimizerMetricsCollector.getCacheHitRate(),
+        cachedTokenShare,
       });
 
       // v6.13.0 P3: arm the continuation guard + remember the summary (all
