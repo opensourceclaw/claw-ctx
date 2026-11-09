@@ -132,6 +132,68 @@ describe("StructuredContextHandler", () => {
       });
       expect(relaxed.extractRelations("Bo has module", "kg").length).toBeGreaterThan(0);
     });
+
+    // ── OBS-3: composite entity truncation ──────────────────────────────
+    it("merges multi-word entities instead of truncating them", () => {
+      const handler = new StructuredContextHandler();
+      expect(handler.extractRelations("release pipeline has strict order", "kg")).toContainEqual({
+        subject: "release pipeline", predicate: "has", object: "strict order",
+      });
+      expect(handler.extractRelations("memory manager stores session data", "kg")).toContainEqual({
+        subject: "memory manager", predicate: "stores", object: "session data",
+      });
+      expect(handler.extractRelations("claw-mem has three tiers", "kg")).toContainEqual({
+        subject: "claw-mem", predicate: "has", object: "three tiers",
+      });
+      expect(handler.extractRelations("context engine requires token budget", "kg")).toContainEqual({
+        subject: "context engine", predicate: "requires", object: "token budget",
+      });
+      expect(handler.extractRelations("openclaw plugin sdk depends on node runtime", "kg")).toContainEqual({
+        subject: "openclaw plugin sdk", predicate: "depends on", object: "node runtime",
+      });
+    });
+
+    it("strips leading/trailing stopwords from merged entities", () => {
+      const handler = new StructuredContextHandler();
+      const rels = handler.extractRelations("the release pipeline has the strict order", "kg");
+      expect(rels[0]).toMatchObject({ subject: "release pipeline", object: "strict order" });
+    });
+
+    it("does not swallow the next clause subject across conjunctions (OBS-3 rework)", () => {
+      const handler = new StructuredContextHandler();
+      const rels = handler.extractRelations("Kai builds gateways and Edith reviews releases", "kg");
+      expect(rels).toContainEqual({ subject: "Kai", predicate: "builds", object: "gateways" });
+      expect(rels).toContainEqual({ subject: "Edith", predicate: "reviews", object: "releases" });
+      expect(rels.some((r) => r.object.includes("and"))).toBe(false);
+    });
+
+    it("splits a second clause with a different subject", () => {
+      const handler = new StructuredContextHandler();
+      const rels = handler.extractRelations("Friday writes code and Karen runs releases", "kg");
+      expect(rels).toContainEqual({ subject: "Friday", predicate: "writes", object: "code" });
+      expect(rels).toContainEqual({ subject: "Karen", predicate: "runs", object: "releases" });
+    });
+
+    it("conjunction boundary never invents a wrong subject (OBS-2 check)", () => {
+      const handler = new StructuredContextHandler();
+      const rels = handler.extractRelations("claw-mem has three tiers and supports semantic search", "kg");
+      expect(rels).toContainEqual({ subject: "claw-mem", predicate: "has", object: "three tiers" });
+      expect(rels.some((r) => r.subject === "tiers")).toBe(false);
+    });
+
+    it("fragment→composite fixture: fragments disappear, composites stay", () => {
+      const handler = new StructuredContextHandler();
+      const text = "release pipeline has strict order. memory manager stores session data.";
+      const rels = handler.extractRelations(text, "kg");
+      const subjects = rels.map((r) => r.subject);
+      const objects = rels.map((r) => r.object);
+      expect(subjects).not.toContain("pipeline");
+      expect(subjects).not.toContain("manager");
+      expect(subjects).toContain("release pipeline");
+      expect(subjects).toContain("memory manager");
+      expect(objects).toContain("strict order");
+      expect(objects).toContain("session data");
+    });
   });
 
   // ── verbalize ─────────────────────────────────────────────────────

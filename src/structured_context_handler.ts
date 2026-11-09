@@ -40,6 +40,8 @@ export interface RelationQualityConfig {
   stopwords: string[];
   /** Entity must be at least this many characters long. */
   minEntityLength: number;
+  /** Maximum words merged into one entity (1 = single-token entities). */
+  maxEntityWords: number;
 }
 
 export const DEFAULT_RELATION_QUALITY: RelationQualityConfig = {
@@ -52,17 +54,28 @@ export const DEFAULT_RELATION_QUALITY: RelationQualityConfig = {
     "me", "him", "her", "them", "us", "my", "your", "his", "their", "our",
   ],
   minEntityLength: 3,
+  maxEntityWords: 3,
 };
 
-// Action-verb / explicit relation patterns only. Copulas (is/are/was) never
-// form a relation on their own — question sentences used to yield junk triples
-// like `what --[is]--> the`.
-const RELATION_PATTERNS: RegExp[] = [
-  /\b(\w+)\s+(has|have)\s+(\w+)/gi,
-  /\b(\w+)\s+(contains|includes)\s+(\w+)/gi,
-  /\b(\w+)\s+(depends on|requires|needs)\s+(\w+)/gi,
-  /\b(\w+)\s+(writes|runs|cuts|builds|owns|manages|uses|supports|stores|searches|deploys|reviews|generates|produces|designs)\s+(\w+)/gi,
+// Action-verb / explicit relation verbs only. Copulas (is/are/was) never form
+// a relation on their own — question sentences used to yield junk triples like
+// `what --[is]--> the`.
+const RELATION_VERBS: string[] = [
+  "has|have",
+  "contains|includes",
+  "depends on|requires|needs",
+  "writes|runs|cuts|builds|owns|manages|uses|supports|stores|searches|deploys|reviews|generates|produces|designs",
 ];
+
+// Entity tokens: start with a letter, may carry hyphens/underscores. Relation
+// verbs are excluded so a greedy multi-word entity can never swallow the next
+// predicate (e.g. "code and runs tests").
+const ENTITY_TOKEN = "[A-Za-z][A-Za-z0-9_-]*";
+const ENTITY_VERB_LOOKAHEAD = "(?!(?:has|have|contains|includes|depends|requires|needs|writes|runs|cuts|builds|owns|manages|uses|supports|stores|searches|deploys|reviews|generates|produces|designs)\\b)";
+// Conjunctions end an entity: without this, `A builds B and C reviews D` merged
+// "B and C" into the object and the second clause was never matched.
+const ENTITY_CONJ_BOUNDARY = "(?!(?:and|or|but)\\b)";
+const ENTITY_EDGE = `${ENTITY_VERB_LOOKAHEAD}${ENTITY_CONJ_BOUNDARY}`;
 
 export interface Relation {
   subject: string;
@@ -88,6 +101,7 @@ export const DEFAULT_STRUCTURED_CONFIG: StructuredDataConfig = {
 export class StructuredContextHandler {
   config: StructuredDataConfig;
   relationQuality: RelationQualityConfig;
+  private relationPatterns: RegExp[];
 
   constructor(config?: Partial<StructuredDataConfig>) {
     this.config = { ...DEFAULT_STRUCTURED_CONFIG, ...config };
@@ -95,12 +109,29 @@ export class StructuredContextHandler {
       ...DEFAULT_RELATION_QUALITY,
       ...(config?.relationQuality ?? {}),
     };
+    const extraWords = Math.max(0, this.relationQuality.maxEntityWords - 1);
+    const entity = `(?:${ENTITY_EDGE}${ENTITY_TOKEN})(?:\\s+${ENTITY_EDGE}${ENTITY_TOKEN}){0,${extraWords}}`;
+    this.relationPatterns = RELATION_VERBS.map(
+      (verbs) => new RegExp(`\\b(${entity})\\s+(${verbs})\\s+(${entity})`, "gi"),
+    );
   }
 
   private isQualityEntity(word: string): boolean {
     const w = word.toLowerCase();
     return w.length >= this.relationQuality.minEntityLength
       && !this.relationQuality.stopwords.includes(w);
+  }
+
+  /** Merge multi-word entities and strip leading/trailing stopwords (OBS-3). */
+  private normalizeEntity(raw: string): string {
+    const words = raw.trim().split(/\s+/).filter(Boolean);
+    while (words.length > 0 && this.relationQuality.stopwords.includes(words[0].toLowerCase())) {
+      words.shift();
+    }
+    while (words.length > 0 && this.relationQuality.stopwords.includes(words[words.length - 1].toLowerCase())) {
+      words.pop();
+    }
+    return words.join(" ");
   }
 
   /** Detect the type of structured data from its format. */
@@ -215,13 +246,13 @@ export class StructuredContextHandler {
     const relations: Relation[] = [];
     const seen = new Set<string>();
 
-    for (const pattern of RELATION_PATTERNS) {
+    for (const pattern of this.relationPatterns) {
       let match: RegExpExecArray | null;
       pattern.lastIndex = 0;
       while ((match = pattern.exec(data)) !== null) {
-        const subject = match[1];
+        const subject = this.normalizeEntity(match[1]);
         const predicate = match[2].toLowerCase();
-        const object = match[3];
+        const object = this.normalizeEntity(match[3]);
         if (!this.isQualityEntity(subject) || !this.isQualityEntity(object)) continue;
 
         const key = `${subject.toLowerCase()}|${predicate}|${object.toLowerCase()}`;
