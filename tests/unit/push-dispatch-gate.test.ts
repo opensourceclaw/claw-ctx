@@ -1,5 +1,6 @@
-// push-dispatch gate (Peter ruling 2026-11-06): a main push must carry an
-// inbox/inbox-release/ record with Peter APPROVED + "Dispatcher: Karen".
+// push-dispatch gate (Peter ruling 2026-11-06; seat amendment 2026-11-22):
+// a main push must carry an inbox/inbox-release/ record with Peter APPROVED +
+// "Dispatcher: Edith" (canonical ReleaseAgent) or legacy "Dispatcher: Karen".
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawnSync } from "child_process";
@@ -60,7 +61,17 @@ describe("push-dispatch gate (audit-stage-gate --mode=client)", () => {
     return { code: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
   }
 
-  it("APPROVED + Dispatcher: Karen → push allowed", () => {
+  it("APPROVED + Dispatcher: Edith (current release seat) → push allowed", () => {
+    writeReceipt();
+    writeRelease(
+      "# Release approval\n\n**Approver**: Peter\n## 批复\n\n**RELEASE APPROVED**\n\n**Dispatcher**: Edith\n",
+    );
+    const r = run();
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("stage-gate OK: main");
+  });
+
+  it("APPROVED + legacy Dispatcher: Karen → push allowed", () => {
     writeReceipt();
     writeRelease(
       "# Release approval\n\n**Approver**: Peter\n## 批复\n\n**RELEASE APPROVED**\n\n**Dispatcher**: Karen\n",
@@ -70,12 +81,24 @@ describe("push-dispatch gate (audit-stage-gate --mode=client)", () => {
     expect(r.out).toContain("stage-gate OK: main");
   });
 
-  it("APPROVED without Karen → rejected, reports missing dispatch", () => {
+  it("APPROVED without a release-seat dispatcher → rejected, reports missing dispatch", () => {
     writeReceipt();
     writeRelease("# Release approval\n\n**Approver**: Peter\n## 批复\n\n**RELEASE APPROVED**\n");
     const r = run();
     expect(r.code).toBe(1);
-    expect(r.out).toContain("missing: Karen push dispatch");
+    expect(r.out).toContain("missing: ReleaseAgent push dispatch record");
+    expect(r.out).toContain("'Dispatcher: Edith'");
+    expect(r.out).toContain("[or legacy 'Dispatcher: Karen']");
+  });
+
+  it("APPROVED + Dispatcher: Friday → rejected (non-release seat)", () => {
+    writeReceipt();
+    writeRelease(
+      "# Release approval\n\n**Approver**: Peter\n## 批复\n\n**RELEASE APPROVED**\n\n**Dispatcher**: Friday\n",
+    );
+    const r = run();
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("missing: ReleaseAgent push dispatch record");
   });
 
   it("no release record → rejected", () => {
@@ -83,6 +106,6 @@ describe("push-dispatch gate (audit-stage-gate --mode=client)", () => {
     const r = run();
     expect(r.code).toBe(1);
     expect(r.out).toContain("missing: Peter RELEASE APPROVED record");
-    expect(r.out).toContain("missing: Karen push dispatch");
+    expect(r.out).toContain("missing: ReleaseAgent push dispatch record");
   });
 });
