@@ -216,16 +216,20 @@ audit_client() {
   - missing: Peter RELEASE APPROVED record (Approver: Peter + APPROVED, in inbox-release/) newer than batch start"
 
   # requirement 2b (Peter ruling 2026-11-06): push to a remote is a release
-  # action and belongs to Karen — Friday only commits. The dispatch record may
-  # be the SAME file as the approval (recommended: Approver: Peter + APPROVED +
-  # Dispatcher: Karen); two separate files are allowed but never required.
+  # action and belongs to the ReleaseAgent — Friday only commits. Since the
+  # 2026-11-22 seat swap (Peter ruling, aligning with upstream v11.1.0) the
+  # ReleaseAgent is Edith; Karen is accepted as the legacy/historical
+  # dispatcher face so pre-swap batch records stay valid.
+  # The dispatch record may be the SAME file as the approval (recommended:
+  # Approver: Peter + APPROVED + Dispatcher: Edith); two separate files are
+  # allowed but never required.
   # Asserted for every main push, independent of repo visibility.
   dispatch_ok=0
   for f in "$ROOT/inbox/inbox-release"/*.md; do
     [ -e "$f" ] || continue
     if grep -q 'APPROVED' "$f" 2>/dev/null \
       && grep -q 'Approver.*Peter' "$f" 2>/dev/null \
-      && grep -qE '(Dispatcher|To|Assignee)[^:]*:.*Karen' "$f" 2>/dev/null \
+      && grep -qE '(Dispatcher|To|Assignee)[^:]*:.*(Edith|Karen)' "$f" 2>/dev/null \
       && ! grep -qE 'From.*:.*(TestAgent|Edith)' "$f" 2>/dev/null; then
       if [ "$(mtime_of "$f")" -ge "$wstart" ]; then
         dispatch_ok=1
@@ -234,7 +238,7 @@ audit_client() {
     fi
   done
   [ "$dispatch_ok" -eq 1 ] || missing="$missing
-  - missing: Karen push dispatch record (Approver: Peter + APPROVED + 'Dispatcher: Karen' or 'To: Karen'/'Assignee: Karen', in inbox/inbox-release/) newer than batch start — add one file in inbox/inbox-release/ (or extend the approval file)"
+  - missing: ReleaseAgent push dispatch record (Approver: Peter + APPROVED + 'Dispatcher: Edith' [or legacy 'Dispatcher: Karen'], in inbox/inbox-release/) newer than batch start — add one file in inbox/inbox-release/ (or extend the approval file)"
 
   # requirement 3 (CX-9): every adjudication/approval doc that entered the
   # batch window must have a Refs: receipt in inbox-inbox-results/.

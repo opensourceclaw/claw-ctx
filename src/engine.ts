@@ -59,6 +59,7 @@ try {
 }
 import { RLInjector, type RLExperience, type RLProvider } from "./rl_injector.js";
 import { GovernanceInjector, type GovernanceSignal, type GovernanceProvider, type GovernanceLayer } from "./governance_injector.js";
+import { TurnCommitLedger } from "./turn-commit.js";
 import { CrossDomainInjector, type InjectedSignal, type CrossDomainProvider } from "./cross_domain_injector.js";
 import { TokenBudgetManager, type BudgetResult } from "./token_budget_manager.js";
 import { TiktokenCounter, FallbackCounter, createTokenCounter, type TokenCounterResult } from "./token-counter.js";
@@ -292,7 +293,7 @@ function selectByBudget(items: ScoredItem[], budget: number): ScoredItem[] {
   return sorted.slice(0, lo);
 }
 
-const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "5.2.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {} };
+const INFO = { id: "claw-ctx", name: "Claw Context Engine", version: "5.2.0", ownsCompaction: true, turnMaintenanceMode: "foreground" as const, hostRequirements: {}, transcriptSemantics: { currentTurnFence: "before-current-turn-entry-v1", turnAdvancementIdempotency: "atomic-idempotent-v1" } } as const;
 
 class SearchCache<T> {
   private store = new Map<string, { data: T; ts: number }>();
@@ -378,6 +379,7 @@ export class ClawContextEngine {
   private _lastAssemblyResult: AssemblyResult | null = null;
   // Exo C1: append-only cost/cache annotation ledger (separate from session files)
   private _costLedgerPath: string = "";
+  private _turnCommits: TurnCommitLedger;
   // v5.16.0: Model-aware context optimizer
   private _modelOptimizer: ModelAwareOptimizer;
   private _lastOptimizationHint: OptimizationHint | null = null;
@@ -399,6 +401,7 @@ export class ClawContextEngine {
     this.config = config; this.logger = logger;
     this.manager = manager ?? getMemoryManager({ workspace: config.workspaceDir || process.cwd(), autoDetect: false });
     this._costLedgerPath = costLedgerPath(config.workspaceDir || process.cwd());
+    this._turnCommits = new TurnCommitLedger(config.workspaceDir || process.cwd());
     this.budgetManager = new TokenBudgetManager();
     this.driftDetector = new DriftDetector();
     this._smartBudgetAllocator = new SmartBudgetAllocator();
@@ -1428,6 +1431,22 @@ export class ClawContextEngine {
    */
   countTokens(text: string): TokenCounterResult {
     return this._tokenCounter.count(text);
+  }
+
+  /**
+   * Context-engine host contract (transcriptSemantics = atomic-idempotent-v1):
+   * durably record that the admitted user entry through the accepted terminal
+   * entry has been applied. Idempotent per `advancementKey` — hosts may retry
+   * the same key after a process or plugin failure and receive "duplicate".
+   */
+  async commitTurn(p: {
+    advancementKey: string;
+    sessionId: string;
+    // The host also supplies the accepted range (admission/terminal/messages)
+    // and runtime context; the ledger only needs the idempotency key + session.
+    [key: string]: unknown;
+  }): Promise<{ status: "committed" | "duplicate" }> {
+    return { status: this._turnCommits.commit({ advancementKey: p.advancementKey, sessionId: p.sessionId }) };
   }
 
   async afterTurn(p: { sessionId: string; sessionKey?: string; sessionFile: string; messages: any[]; prePromptMessageCount: number; autoCompactionSummary?: string; isHeartbeat?: boolean; tokenBudget?: number }): Promise<void> {
