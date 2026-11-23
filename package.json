@@ -1,6 +1,6 @@
 {
   "name": "@opensourceclaw/claw-ctx",
-  "version": "6.16.0",
+  "version": "6.16.1",
   "description": "Context Engine for OpenClaw with C2 gating, RL injection, governance, cross-domain, and CI/CD signals — standalone TypeScript plugin",
   "main": "dist/index.js",
   "type": "module",
@@ -25,6 +25,7 @@
   },
   "files": [
     "dist/",
+    "scripts/postinstall-hooks.mjs",
     "openclaw.plugin.json",
     "CHANGELOG.md",
     "README.md",
@@ -43,7 +44,7 @@
     "build": "node scripts/gen-version.mjs && tsc && cp openclaw.plugin.json dist/",
     "lint": "eslint src/",
     "setup": "git config core.hooksPath .githooks || echo '[setup] not a git checkout — core.hooksPath skipped'",
-    "postinstall": "npm run setup",
+    "postinstall": "node scripts/postinstall-hooks.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",

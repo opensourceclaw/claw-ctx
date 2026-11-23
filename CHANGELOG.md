@@ -12,6 +12,17 @@ upgrade is a separate decision (B-2, Peter ruling 2026-11-06).
      Nested keys scope the bump to the direct holder; eslint keeps 3.1.5.
 -->
 
+## [6.16.1] - 2026-11-23
+
+### Fixed
+
+- **postinstall 污染消费者仓库 hooksPath（P0）**：`postinstall` 改为 `node scripts/postinstall-hooks.mjs` —— 仅当包自身是 git 顶层（维护者 checkout）时才以 `git config --local core.hooksPath .githooks` 写入；作为依赖安装（cwd 位于消费者 `node_modules/<pkg>`）或非 git 目录时静默 no-op，不再改写消费者 `.git/config`。6.16.0 窗口内受影响的 claw-mem / devclaw 已恢复为各自维护值（`scripts/git-hooks`）。`files` 白名单加入 `scripts/postinstall-hooks.mjs`，确保发布 tarball 携带脚本（`cce4fb3`）。
+
+### Tests
+
+- 新增 `tests/unit/postinstall-hooks.test.ts` 四案：消费者已有 hooksPath 不被改写 / 消费者未设置仍保持未设置 / 自仓 checkout 设置 `.githooks` / 非 git 目录静默 no-op。
+- 全量 **124 files / 1506 passed / 5 skipped / 0 failed**；`tsc --noEmit` 0 error；`npm run build` ✓；`npm pack --dry-run` 含 `scripts/postinstall-hooks.mjs`。
+
 ## [6.16.0] - 2026-11-23
 
 ### Added
