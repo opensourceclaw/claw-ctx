@@ -12,6 +12,38 @@ upgrade is a separate decision (B-2, Peter ruling 2026-11-06).
      Nested keys scope the bump to the direct holder; eslint keeps 3.1.5.
 -->
 
+## [6.16.0] - 2026-11-23
+
+### Added
+
+- **成本/缓存注解账本 + `claw-ctx cost` 查询 CLI（Exo C1）**：压缩成功后向 `<workspace>/.claw-ctx/cost-annotations.jsonl` 追加 JSONL 注解（append-only、fail-open、与会话历史隔离）；新增只读 `claw-ctx cost` 命令，支持窗口聚合、strategy-version A/B 对比、`--json` 输出与 markdown 报告（`9ed6dce`；验收 `回执-edith-clawctx-cost-legibility-acceptance-20261109.md`）。
+- **persisted usage fallback 与 cache-source 契约文档**：进程内 usage 账本缺失时，只读回退读取会话最新 usage 于 `<workspace>/.claw-ctx/usage-ledger.jsonl`；优先级 内存 → 持久 JSONL → null（诚实未知，绝不以假 0 填充）；模块头文档化数据源优先级与宿主持久化契约（`9fee534`）。
+- **transcript 语义宣告 + 幂等 `commitTurn`**：`INFO.transcriptSemantics` 声明 `before-current-turn-entry-v1` / `atomic-idempotent-v1`；新增 `TurnCommitLedger`（按 session 的 JSONL、append+fsync、撕裂尾部容忍、空 key fail-fast、per-session 幂等域）；`commitTurn()` 返回 `committed | duplicate`（`eb2a1d3`，closes #18）。
+- **stage-gate client mode 要求 main push 的 dispatch 记录**：主分支 push 的 client-mode 审计要求 release dispatch 记录（`6a88993`）。
+- **release CJK 预检与发布流程收紧**：`gh release create` 前对 title+body 做 CJK 预检（OBS-2），发布后 gate 保留为 backstop（`86a921b`）；禁止 `--generate-notes` 回落，强制 `--notes-file`（`6561207`）。
+
+### Fixed
+
+- **座位制 gate：按席位而非人名放行**：release dispatch 正则接受 Edith（现任 ReleaseAgent）与 Karen（legacy/historical），修复席位置换后 hardcode Karen 导致的任务外 push 被接受；注释与 hint 同步（`6dd16d2`）；push-dispatch 测试断言对齐新 hint（`b01815e`）。
+- **release 审批口径收紧**：requirement 2 改为 `## 批复` 小节内行首 `**RELEASE APPROVED**`；散文中「视为 RELEASE APPROVED」不再算 Peter 批准（`09016de`）。
+- **check-release-cjk 字段解析**：改用 `gh` 的 `name` 字段，并收紧 mock 字段白名单（`35f7a5c`）。
+- **CLI 严格时间界 / 账本校验 / symlink-safe main guard**：区分 missing / empty / bare-flag 的 `--from`/`--to`（exit 2）；`readCostAnnotations` 校验 `cachedTokenShare ∈ [0,1]` 与 `triggerReason` 枚举，非法行计入 badLines；`invokedDirectly()` 对两侧 realpath，修复 npm bin / npx / 全局调用静默 no-op（`4c35e87`）。
+- **cachedTokenShare 接线真实 usage**：由 `usageLedger.getLastMerged` 计算 `cacheRead / (input+cacheRead+cacheCreation)`；无 usage 或 mergedTotal=0 时为 null，avg/delta 跳过未知行（`f3c5a41`）。
+- **KG 实体边界**：多词实体合并把连词（and/or/but）视为边界，避免吞掉下一子句主语；宁可缺失不产生错误主语（`5fdeb0d`）。
+- **context 关系质量过滤**：移除 copula 关系模式，阻止疑问词进入知识图谱（`c63aedf`）。
+- **memory hit score 与 gate 诊断**：hit score 改从 `metadata.retention` 读取；`confidenceReport` 暴露 gate-drop 诊断（`abf0a68`）。
+
+### Changed / Chore
+
+- **deps**：hono 4.13.13 → 4.13.18（安全修复，`fe88718`）；minimatch 11.0.1 nested overrides，`npm audit` 0 vulnerabilities（`7a18420`）；dependabot 治理（overrides + dev bumps，high 6→0，`92de2c8`）；openclaw devDep 钉 2026.9.2——2026.9.3+ 要求 Node >=24.16，宿主无法运行 Node 24（`3a30f9d`）。
+- **CI**：`test`（matrix）改名 `test-matrix`，新增 fail-closed 聚合 job `test`；分支保护 contexts 恢复 `lint`/`test`/`build`，不再随 Node matrix 命名漂移（`598e58f`）。
+- **docs**：流程文档化强制英文 notes + CJK gate，移除 fallback 说明（`a57e61b`）。
+- **仓库整理**：删除不再跟踪的 `inbox/` 与 `docs/architecture/` 目录（`5ce4152`、`ee9b014`）。
+
+### Tests
+
+- 全量 **123 files / 1502 passed / 5 skipped / 0 failed**；`tsc --noEmit` 0 error；`npm run build` ✓（dist/version.js、dist/openclaw.plugin.json、src/version.ts 等六处版本面 = 6.16.0）。
+
 ## [6.15.1] - 2026-11-05
 
 ### Fixed
