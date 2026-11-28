@@ -136,24 +136,39 @@ rc=0
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ -n "${local_ref:-}" ] || continue
 
-  case "$remote_ref" in
-    refs/heads/main) kind=main ;;
-    refs/tags/v*)    kind=tag ;;
-    *) continue ;;
-  esac
-
+  # Phase A v2 (Vision §B): bypass FIRST — above the ref-kind case — so a valid
+  # emergency sig covers every ref, not just main/tag. Logic unchanged.
   if [ -n "$BYPASS_SIG" ]; then
     log_bypass "$remote_ref" "$local_sha"
     echo "[pre-push] BYPASS (valid emergency-bypass sig) for $remote_ref — logged to inbox/govern/bypass-log.md" >&2
     continue
   fi
 
-  # nothing new to push
-  if [ "$local_sha" = "$remote_sha" ]; then
+  # --- Phase A guard (all refs; ADR-FAM-002) --------------------------------
+  # deletion / non-fast-forward / force. A pre-existing tag being overwritten
+  # fails the ancestor test (tag objects are not commits) → rejected, which is
+  # exactly "tag rewrite = force".
+  if is_zero_sha "$local_sha"; then
+    if ! is_zero_sha "$remote_sha"; then
+      echo "[pre-push] PUSH REJECTED (ff-guard): deletion of $remote_ref is not allowed." >&2
+      rc=1
+    fi
     continue
   fi
-  # deleting a ref: nothing to validate
-  if is_zero_sha "$local_sha"; then
+  if ! is_zero_sha "$remote_sha" && ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+    echo "[pre-push] PUSH REJECTED (ff-guard): non-fast-forward update of $remote_ref (force/tag-rewrite not allowed)." >&2
+    rc=1
+    continue
+  fi
+
+  case "$remote_ref" in
+    refs/heads/main) kind=main ;;
+    refs/tags/v*)    kind=tag ;;
+    *) continue ;;
+  esac
+
+  # nothing new to push
+  if [ "$local_sha" = "$remote_sha" ]; then
     continue
   fi
 
